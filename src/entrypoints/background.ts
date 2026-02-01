@@ -10,8 +10,9 @@ import type {
   TrackingSession,
   JP343UserState,
   ExtensionSettings,
-  DEFAULT_SETTINGS
+  BlockedChannel
 } from '../types';
+import { DEFAULT_SETTINGS } from '../types';
 
 export default defineBackground(() => {
   console.log('[JP343] Background Service Worker gestartet');
@@ -23,6 +24,17 @@ export default defineBackground(() => {
     USER: 'jp343_extension_user',
     SETTINGS: 'jp343_extension_settings'
   };
+
+  // Settings laden
+  async function loadSettings(): Promise<ExtensionSettings> {
+    const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+    return { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
+  }
+
+  // Settings speichern
+  async function saveSettings(settings: ExtensionSettings): Promise<void> {
+    await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
+  }
 
   // Pending Entries laden
   async function loadPendingEntries(): Promise<PendingEntry[]> {
@@ -64,6 +76,15 @@ export default defineBackground(() => {
 
   // Badge basierend auf Status und Pending-Count aktualisieren
   async function updateStatusBadge(): Promise<void> {
+    // Pruefen ob Tracking aktiviert ist
+    const settings = await loadSettings();
+    if (!settings.enabled) {
+      browser.action.setBadgeText({ text: 'OFF' });
+      browser.action.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
+      browser.action.setTitle({ title: 'JP343 - Tracking disabled' });
+      return;
+    }
+
     const status = getCurrentStatus();
     const pending = await loadPendingEntries();
     const unsyncedCount = pending.filter(e => !e.synced).length;
@@ -125,7 +146,21 @@ export default defineBackground(() => {
   ): Promise<unknown> {
     switch (message.type) {
       case 'VIDEO_PLAY': {
+        // Pruefen ob Tracking aktiviert ist
+        const settings = await loadSettings();
+        if (!settings.enabled) {
+          console.log('[JP343] Tracking deaktiviert - ignoriere VIDEO_PLAY');
+          return { success: true, skipped: true };
+        }
+
         if ('state' in message && message.state) {
+          // Pruefen ob Kanal blockiert ist
+          const channelId = message.state.channelId;
+          if (channelId && settings.blockedChannels.some(c => c.channelId === channelId)) {
+            console.log('[JP343] Kanal blockiert - ignoriere VIDEO_PLAY:', channelId);
+            return { success: true, skipped: true, blocked: true };
+          }
+
           // TabId aus Message oder Sender extrahieren
           const tabId = ('tabId' in message ? message.tabId : undefined) || _sender.tab?.id;
           const session = tracker.startSession(message.state, tabId);
@@ -305,6 +340,77 @@ export default defineBackground(() => {
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: unsynced });
         updateBadge(unsynced.length);
         return { success: true, data: { removed: pending.length - unsynced.length } };
+      }
+
+      case 'GET_SETTINGS': {
+        const settings = await loadSettings();
+        return { success: true, data: { settings } };
+      }
+
+      case 'SET_ENABLED': {
+        if ('enabled' in message) {
+          const settings = await loadSettings();
+          settings.enabled = message.enabled;
+          await saveSettings(settings);
+
+          // Badge-Anzeige aktualisieren wenn deaktiviert
+          if (!message.enabled) {
+            browser.action.setBadgeText({ text: 'OFF' });
+            browser.action.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
+            browser.action.setTitle({ title: 'JP343 - Tracking disabled' });
+          } else {
+            await updateStatusBadge();
+          }
+
+          console.log('[JP343] Tracking', message.enabled ? 'enabled' : 'disabled');
+          return { success: true };
+        }
+        return { success: false, error: 'No enabled value provided' };
+      }
+
+      case 'BLOCK_CHANNEL': {
+        if ('channel' in message && message.channel) {
+          const settings = await loadSettings();
+          // Pruefen ob bereits blockiert
+          if (!settings.blockedChannels.some(c => c.channelId === message.channel.channelId)) {
+            settings.blockedChannels.push(message.channel);
+            await saveSettings(settings);
+            console.log('[JP343] Kanal blockiert:', message.channel.channelName);
+          }
+          return { success: true };
+        }
+        return { success: false, error: 'No channel provided' };
+      }
+
+      case 'UNBLOCK_CHANNEL': {
+        if ('channelId' in message && message.channelId) {
+          const settings = await loadSettings();
+          const before = settings.blockedChannels.length;
+          settings.blockedChannels = settings.blockedChannels.filter(
+            c => c.channelId !== message.channelId
+          );
+          await saveSettings(settings);
+          console.log('[JP343] Kanal entblockiert:', message.channelId);
+          return { success: true, removed: before > settings.blockedChannels.length };
+        }
+        return { success: false, error: 'No channelId provided' };
+      }
+
+      case 'GET_CURRENT_CHANNEL': {
+        // Aktuellen Kanal aus laufender Session holen
+        const session = tracker.getCurrentSession();
+        if (session && session.channelId) {
+          return {
+            success: true,
+            data: {
+              channelId: session.channelId,
+              channelName: session.channelName,
+              channelUrl: session.channelUrl,
+              platform: session.platform
+            }
+          };
+        }
+        return { success: true, data: null };
       }
 
       default:

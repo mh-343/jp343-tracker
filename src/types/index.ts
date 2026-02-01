@@ -106,10 +106,20 @@ export interface ExtensionStorage {
 }
 
 export interface ExtensionSettings {
+  enabled: boolean;           // Globaler On/Off Switch
   autoSync: boolean;          // Auto-sync beim JP343-Besuch
   minDurationMinutes: number; // Minimum Dauer (default: 1)
   enabledPlatforms: Platform[];
   showNotifications: boolean;
+  blockedChannels: BlockedChannel[]; // Blockierte YouTube-Kanaele
+}
+
+// Blockierter Kanal
+export interface BlockedChannel {
+  channelId: string;
+  channelName: string;
+  channelUrl: string | null;
+  blockedAt: string;          // ISO 8601
 }
 
 // Message-Typen zwischen Content Scripts und Background
@@ -132,7 +142,12 @@ export type ExtensionMessage =
   | { type: 'STOP_SESSION' }
   | { type: 'PAUSE_SESSION' }
   | { type: 'RESUME_SESSION' }
-  | { type: 'SYNC_NOW' };
+  | { type: 'SYNC_NOW' }
+  | { type: 'GET_SETTINGS' }
+  | { type: 'SET_ENABLED'; enabled: boolean }
+  | { type: 'BLOCK_CHANNEL'; channel: BlockedChannel }
+  | { type: 'UNBLOCK_CHANNEL'; channelId: string }
+  | { type: 'GET_CURRENT_CHANNEL' };
 
 // Response-Typen
 export type ExtensionResponse =
@@ -141,8 +156,10 @@ export type ExtensionResponse =
 
 // Default Settings
 export const DEFAULT_SETTINGS: ExtensionSettings = {
+  enabled: true,
   autoSync: true,
   minDurationMinutes: 1,
   enabledPlatforms: ['youtube', 'netflix'],
-  showNotifications: true
+  showNotifications: true,
+  blockedChannels: []
 };
