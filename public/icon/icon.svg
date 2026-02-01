@@ -1,5 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="16" fill="#1a1a2e"/>
-  <text x="64" y="80" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="#875aff" text-anchor="middle">JP</text>
-  <circle cx="100" cy="28" r="12" fill="#4caf50"/>
+  <defs>
+    <!-- JP343 Gradient: Cyan to Purple -->
+    <linearGradient id="jp343-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4dd4e8"/>
+      <stop offset="50%" style="stop-color:#5fb4e8"/>
+      <stop offset="100%" style="stop-color:#875aff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dunkler Hintergrund mit abgerundeten Ecken -->
+  <rect width="128" height="128" rx="20" fill="#1a1a2e"/>
+
+  <!-- Sakura Bluete - 5 Blaetter -->
+  <g transform="translate(64, 68)">
+    <!-- Blatt 1 (oben) -->
+    <path d="M0,-40 C10,-40 16,-28 16,-18 C16,-8 10,0 0,0 C-10,0 -16,-8 -16,-18 C-16,-28 -10,-40 0,-40 Z"
+          fill="url(#jp343-gradient)" transform="rotate(0)"/>
+    <!-- Blatt 2 (rechts oben) -->
+    <path d="M0,-40 C10,-40 16,-28 16,-18 C16,-8 10,0 0,0 C-10,0 -16,-8 -16,-18 C-16,-28 -10,-40 0,-40 Z"
+          fill="url(#jp343-gradient)" transform="rotate(72)"/>
+    <!-- Blatt 3 (rechts unten) -->
+    <path d="M0,-40 C10,-40 16,-28 16,-18 C16,-8 10,0 0,0 C-10,0 -16,-8 -16,-18 C-16,-28 -10,-40 0,-40 Z"
+          fill="url(#jp343-gradient)" transform="rotate(144)"/>
+    <!-- Blatt 4 (links unten) -->
+    <path d="M0,-40 C10,-40 16,-28 16,-18 C16,-8 10,0 0,0 C-10,0 -16,-8 -16,-18 C-16,-28 -10,-40 0,-40 Z"
+          fill="url(#jp343-gradient)" transform="rotate(216)"/>
+    <!-- Blatt 5 (links oben) -->
+    <path d="M0,-40 C10,-40 16,-28 16,-18 C16,-8 10,0 0,0 C-10,0 -16,-8 -16,-18 C-16,-28 -10,-40 0,-40 Z"
+          fill="url(#jp343-gradient)" transform="rotate(288)"/>
+
+    <!-- Innerer Kreis (Hintergrund) -->
+    <circle cx="0" cy="0" r="12" fill="#1a1a2e"/>
+
+    <!-- Zentrum der Bluete -->
+    <circle cx="0" cy="0" r="8" fill="url(#jp343-gradient)"/>
+
+    <!-- Staubgefaesse (5 kleine Punkte) -->
+    <circle cx="0" cy="-18" r="4" fill="url(#jp343-gradient)"/>
+    <circle cx="17.1" cy="-5.6" r="4" fill="url(#jp343-gradient)"/>
+    <circle cx="10.6" cy="14.6" r="4" fill="url(#jp343-gradient)"/>
+    <circle cx="-10.6" cy="14.6" r="4" fill="url(#jp343-gradient)"/>
+    <circle cx="-17.1" cy="-5.6" r="4" fill="url(#jp343-gradient)"/>
+  </g>
 </svg>
