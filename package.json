@@ -10,12 +10,20 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "release": "node scripts/build-release.cjs",
     "postinstall": "wxt prepare"
   },
-  "keywords": ["browser-extension", "japanese", "immersion", "time-tracking"],
+  "keywords": [
+    "browser-extension",
+    "japanese",
+    "immersion",
+    "time-tracking"
+  ],
   "author": "JP343",
   "license": "MIT",
   "devDependencies": {
+    "archiver": "^7.0.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.9.3",
     "wxt": "^0.20.13"
   }

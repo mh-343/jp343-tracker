@@ -27,6 +27,13 @@ export default defineConfig({
       '*://127.0.0.1/*'
     ],
 
+    // Icon-Dateien (Anime-Maskottchen)
+    icons: {
+      16: 'icon/icon-16.png',
+      32: 'icon/icon-32.png',
+      48: 'icon/icon-48.png',
+      128: 'icon/icon-128.png'
+    },
   },
 
   browser: 'chrome'
