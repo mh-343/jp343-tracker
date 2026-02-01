@@ -362,15 +362,240 @@
     .footer a:hover {
       text-decoration: underline;
     }
+
+    /* Update Banner */
+    .update-banner {
+      display: none;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, rgba(135, 90, 255, 0.2), rgba(77, 212, 232, 0.2));
+      border-bottom: 1px solid var(--accent);
+    }
+
+    .update-banner.visible {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .update-info {
+      flex: 1;
+    }
+
+    .update-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .update-version {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .btn-update {
+      padding: 6px 12px;
+      font-size: 11px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn-update:hover {
+      background: var(--accent-hover);
+    }
+
+    /* Toggle Switch (Yomitan-style) */
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 48px;
+      height: 26px;
+      background: linear-gradient(135deg, #6b7280, #4b5563);
+      border-radius: 13px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+      padding: 0;
+    }
+
+    .toggle-switch.enabled {
+      background: linear-gradient(135deg, var(--accent), #4dd4e8);
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.3s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .toggle-switch.enabled::after {
+      transform: translateX(22px);
+    }
+
+    .toggle-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .toggle-label.on {
+      color: var(--accent);
+    }
+
+    /* Disabled State Overlay */
+    .session-card.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    /* Channel Section */
+    .channel-section {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--bg-tertiary);
+    }
+
+    .channel-info {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .channel-name {
+      font-size: 12px;
+      color: var(--text-secondary);
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .channel-name strong {
+      color: var(--text-primary);
+    }
+
+    .btn-block {
+      padding: 4px 10px;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid var(--danger);
+      color: var(--danger);
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-block:hover {
+      background: var(--danger);
+      color: white;
+    }
+
+    .btn-block.blocked {
+      background: var(--danger);
+      color: white;
+    }
+
+    /* Blocked Channels List */
+    .blocked-section {
+      padding: 12px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--bg-tertiary);
+    }
+
+    .blocked-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .blocked-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      letter-spacing: 0.5px;
+    }
+
+    .blocked-list {
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    .blocked-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+      margin-bottom: 4px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .blocked-item-name {
+      flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-unblock {
+      padding: 2px 8px;
+      font-size: 10px;
+      background: transparent;
+      border: 1px solid var(--text-secondary);
+      color: var(--text-secondary);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    .btn-unblock:hover {
+      border-color: var(--success);
+      color: var(--success);
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>JP343 Tracker</h1>
-    <div class="status-indicator" id="status">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">Idle</span>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <h1>JP343 Tracker</h1>
+      <div class="status-indicator" id="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Idle</span>
+      </div>
     </div>
+    <div class="toggle-container">
+      <button class="toggle-switch enabled" id="toggleEnabled" title="Enable/Disable tracking"></button>
+    </div>
+  </div>
+
+  <div class="update-banner" id="updateBanner">
+    <div class="update-info">
+      <div class="update-title">Update available</div>
+      <div class="update-version" id="updateVersion">v1.0.0 → v1.0.1</div>
+    </div>
+    <a href="https://jp343.com/extension" target="_blank" class="btn-update" id="btnUpdate">Update</a>
   </div>
 
   <div class="session-card" id="sessionCard">
@@ -400,6 +625,20 @@
         <button class="btn btn-danger" id="btnStop">Stop & Save</button>
       </div>
     </div>
+  </div>
+
+  <div class="channel-section" id="channelSection" style="display: none;">
+    <div class="channel-info">
+      <span class="channel-name">Channel: <strong id="currentChannelName">-</strong></span>
+      <button class="btn-block" id="btnBlockChannel">Block</button>
+    </div>
+  </div>
+
+  <div class="blocked-section" id="blockedSection" style="display: none;">
+    <div class="blocked-header">
+      <span class="blocked-title">Blocked channels</span>
+    </div>
+    <div class="blocked-list" id="blockedList"></div>
   </div>
 
   <div class="pending-section" id="pendingSection" style="display: none;">

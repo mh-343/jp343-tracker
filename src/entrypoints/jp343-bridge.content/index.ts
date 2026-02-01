@@ -19,6 +19,10 @@ export default defineContentScript({
   main() {
     console.log('[JP343 Bridge] Content Script geladen');
 
+    const version = browser.runtime.getManifest().version;
+    document.documentElement.setAttribute('data-jp343-extension', version);
+    console.log('[JP343 Bridge] Extension v' + version + ' signalisiert');
+
     const STORAGE_KEYS = {
       IMMERSION_LOG: 'jp343_immersion_log',
       PROJECTS: 'jp343_tracker_projects'

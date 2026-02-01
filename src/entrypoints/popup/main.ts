@@ -1,6 +1,6 @@
 // JP343 Extension - Popup UI Logik
 
-import type { TrackingSession, Platform, PendingEntry } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings } from '../../types';
 
 // DOM Elements
 const elements = {
@@ -22,7 +22,16 @@ const elements = {
   syncedCount: document.getElementById('syncedCount') as HTMLElement,
   pendingList: document.getElementById('pendingList') as HTMLElement,
   btnSync: document.getElementById('btnSync') as HTMLButtonElement,
-  btnClear: document.getElementById('btnClear') as HTMLButtonElement
+  btnClear: document.getElementById('btnClear') as HTMLButtonElement,
+  updateBanner: document.getElementById('updateBanner') as HTMLElement,
+  updateVersion: document.getElementById('updateVersion') as HTMLElement,
+  toggleEnabled: document.getElementById('toggleEnabled') as HTMLButtonElement,
+  sessionCard: document.getElementById('sessionCard') as HTMLElement,
+  channelSection: document.getElementById('channelSection') as HTMLElement,
+  currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
+  btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
+  blockedSection: document.getElementById('blockedSection') as HTMLElement,
+  blockedList: document.getElementById('blockedList') as HTMLElement
 };
 
 // Platform Icons
@@ -38,6 +47,146 @@ let currentSession: TrackingSession | null = null;
 let isAdPlaying = false;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
 let pendingEntries: PendingEntry[] = [];
+let isEnabled = true;
+let blockedChannels: BlockedChannel[] = [];
+let currentChannelId: string | null = null;
+
+// Toggle-Anzeige aktualisieren
+function updateToggleDisplay(enabled: boolean): void {
+  isEnabled = enabled;
+  if (enabled) {
+    elements.toggleEnabled.classList.add('enabled');
+    elements.sessionCard.classList.remove('disabled');
+  } else {
+    elements.toggleEnabled.classList.remove('enabled');
+    elements.sessionCard.classList.add('disabled');
+  }
+}
+
+// Settings laden und Toggle aktualisieren
+async function loadAndApplySettings(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    if (response.success && response.data?.settings) {
+      const settings = response.data.settings as ExtensionSettings;
+      updateToggleDisplay(settings.enabled);
+      blockedChannels = settings.blockedChannels || [];
+      renderBlockedList();
+    }
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler beim Laden der Settings:', error);
+  }
+}
+
+// Toggle Handler
+elements.toggleEnabled.addEventListener('click', async () => {
+  const newState = !isEnabled;
+  try {
+    await browser.runtime.sendMessage({ type: 'SET_ENABLED', enabled: newState });
+    updateToggleDisplay(newState);
+    // Status sofort aktualisieren
+    await fetchCurrentState();
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler beim Toggle:', error);
+  }
+});
+
+// CHANNEL BLOCKING
+
+// Pruefen ob Kanal blockiert ist
+function isChannelBlocked(channelId: string): boolean {
+  return blockedChannels.some(c => c.channelId === channelId);
+}
+
+// Channel-Anzeige aktualisieren
+function updateChannelDisplay(session: TrackingSession | null): void {
+  if (session && session.channelId && session.platform === 'youtube') {
+    currentChannelId = session.channelId;
+    elements.channelSection.style.display = 'block';
+    elements.currentChannelName.textContent = session.channelName || session.channelId;
+
+    // Button-Status aktualisieren
+    const blocked = isChannelBlocked(session.channelId);
+    elements.btnBlockChannel.textContent = blocked ? 'Blocked' : 'Block';
+    elements.btnBlockChannel.classList.toggle('blocked', blocked);
+  } else {
+    currentChannelId = null;
+    elements.channelSection.style.display = 'none';
+  }
+}
+
+// Blocked-Liste rendern
+function renderBlockedList(): void {
+  if (blockedChannels.length === 0) {
+    elements.blockedSection.style.display = 'none';
+    return;
+  }
+
+  elements.blockedSection.style.display = 'block';
+  elements.blockedList.innerHTML = blockedChannels.map(channel => `
+    <div class="blocked-item" data-id="${channel.channelId}">
+      <span class="blocked-item-name">${escapeHtml(channel.channelName)}</span>
+      <button class="btn-unblock" data-id="${channel.channelId}">Unblock</button>
+    </div>
+  `).join('');
+
+  // Unblock-Buttons Event Listener
+  elements.blockedList.querySelectorAll('.btn-unblock').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const channelId = (btn as HTMLElement).dataset.id;
+      if (channelId) {
+        await unblockChannel(channelId);
+      }
+    });
+  });
+}
+
+// Kanal blockieren
+async function blockChannel(): Promise<void> {
+  if (!currentSession || !currentSession.channelId) return;
+
+  const channel: BlockedChannel = {
+    channelId: currentSession.channelId,
+    channelName: currentSession.channelName || currentSession.channelId,
+    channelUrl: currentSession.channelUrl,
+    blockedAt: new Date().toISOString()
+  };
+
+  try {
+    await browser.runtime.sendMessage({ type: 'BLOCK_CHANNEL', channel });
+    blockedChannels.push(channel);
+    updateChannelDisplay(currentSession);
+    renderBlockedList();
+    console.log('[JP343 Popup] Kanal blockiert:', channel.channelName);
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler beim Blockieren:', error);
+  }
+}
+
+// Kanal entblockieren
+async function unblockChannel(channelId: string): Promise<void> {
+  try {
+    await browser.runtime.sendMessage({ type: 'UNBLOCK_CHANNEL', channelId });
+    blockedChannels = blockedChannels.filter(c => c.channelId !== channelId);
+    updateChannelDisplay(currentSession);
+    renderBlockedList();
+    console.log('[JP343 Popup] Kanal entblockiert:', channelId);
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler beim Entblockieren:', error);
+  }
+}
+
+// Block-Button Handler
+elements.btnBlockChannel.addEventListener('click', async () => {
+  if (!currentChannelId) return;
+
+  if (isChannelBlocked(currentChannelId)) {
+    await unblockChannel(currentChannelId);
+  } else {
+    await blockChannel();
+  }
+});
 
 // Status aktualisieren
 function updateStatus(session: TrackingSession | null, isAd: boolean): void {
@@ -214,6 +363,7 @@ async function fetchCurrentState(): Promise<void> {
 
       updateStatus(session, isAd);
       updateSessionDisplay(session, duration, isAd);
+      updateChannelDisplay(session);
     }
   } catch (error) {
     console.error('[JP343 Popup] Fehler beim Laden:', error);
@@ -269,9 +419,56 @@ elements.btnClear.addEventListener('click', async () => {
   }
 });
 
+function isNewerVersion(currentVer: string, newVer: string): boolean {
+  const current = currentVer.replace(/^v/, '').split('.').map(Number);
+  const latest = newVer.replace(/^v/, '').split('.').map(Number);
+
+  for (let i = 0; i < Math.max(current.length, latest.length); i++) {
+    const c = current[i] || 0;
+    const l = latest[i] || 0;
+    if (l > c) return true;
+    if (l < c) return false;
+  }
+  return false;
+}
+
+// Update-Check via GitHub Releases API
+async function checkForUpdates(): Promise<void> {
+  try {
+    const currentVersion = browser.runtime.getManifest().version;
+
+    // GitHub API: Letztes Release abrufen
+    const response = await fetch(
+      'https://api.github.com/repos/mh-343/jp343-extension/releases/latest',
+      { headers: { 'Accept': 'application/vnd.github.v3+json' } }
+    );
+
+    if (!response.ok) {
+      console.log('[JP343 Popup] Update-Check fehlgeschlagen:', response.status);
+      return;
+    }
+
+    const release = await response.json();
+    const latestVersion = release.tag_name?.replace(/^v/, '') || '';
+
+    console.log('[JP343 Popup] Version check:', currentVersion, '→', latestVersion);
+
+    if (latestVersion && isNewerVersion(currentVersion, latestVersion)) {
+      // Update verfuegbar - Banner anzeigen
+      elements.updateVersion.textContent = `v${currentVersion} → v${latestVersion}`;
+      elements.updateBanner.classList.add('visible');
+      console.log('[JP343 Popup] Update verfuegbar:', latestVersion);
+    }
+  } catch (error) {
+    console.log('[JP343 Popup] Update-Check nicht moeglich');
+  }
+}
+
 // Initial laden
+loadAndApplySettings();
 fetchCurrentState();
 fetchPendingEntries();
+checkForUpdates();
 
 updateInterval = setInterval(fetchCurrentState, 1000);
 setInterval(fetchPendingEntries, 5000);
