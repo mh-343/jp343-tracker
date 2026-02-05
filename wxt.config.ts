@@ -7,7 +7,7 @@ export default defineConfig({
 
   manifest: {
     name: 'JP343 Streaming Tracker',
-    version: '1.0.0',
+    version: '1.1.0',
     description: 'Track your Japanese immersion time on streaming platforms',
 
     permissions: [
@@ -34,6 +34,13 @@ export default defineConfig({
       48: 'icon/icon-48.png',
       128: 'icon/icon-128.png'
     },
+
+    web_accessible_resources: [
+      {
+        resources: ['inject-user-state.js'],
+        matches: ['*://jp343.com/*', '*://*.jp343.com/*', '*://localhost/*', '*://127.0.0.1/*']
+      }
+    ]
   },
 
   browser: 'chrome'

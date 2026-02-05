@@ -7,7 +7,8 @@ import type {
   TrackingSession,
   JP343UserState,
   ExtensionSettings,
-  BlockedChannel
+  BlockedChannel,
+  VideoState
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
 
@@ -151,6 +152,15 @@ export default defineBackground(() => {
             return { success: true, skipped: true, blocked: true };
           }
 
+          const currentSession = tracker.getCurrentSession();
+          if (currentSession && currentSession.url !== message.state.url) {
+            const previousEntry = tracker.finalizeSession();
+            if (previousEntry) {
+              await savePendingEntry(previousEntry);
+              console.log('[JP343] Vorherige Session gespeichert bei Video-Wechsel:', previousEntry.project, previousEntry.duration_min, 'min');
+            }
+          }
+
           const tabId = ('tabId' in message ? message.tabId : undefined) || _sender.tab?.id;
           const session = tracker.startSession(message.state, tabId);
           await saveSessionState(session);
@@ -191,6 +201,19 @@ export default defineBackground(() => {
 
       case 'VIDEO_STATE_UPDATE': {
         // Session laeuft weiter, nur State-Update
+        if ('state' in message && message.state) {
+          if (message.state.title) {
+            tracker.updateSessionTitleFromAutoFetch(message.state.title);
+          }
+
+          if (message.state.channelName) {
+            tracker.updateSessionChannelInfo(
+              message.state.channelId || null,
+              message.state.channelName,
+              message.state.channelUrl || null
+            );
+          }
+        }
         const session = tracker.getCurrentSession();
         await saveSessionState(session);
         return { success: true };
@@ -396,6 +419,119 @@ export default defineBackground(() => {
           };
         }
         return { success: true, data: null };
+      }
+
+      case 'UPDATE_SESSION_TITLE': {
+        if ('title' in message && message.title) {
+          const updated = tracker.updateSessionTitle(message.title as string);
+          if (updated) {
+            const session = tracker.getCurrentSession();
+            await saveSessionState(session);
+            console.log('[JP343] Session-Titel aktualisiert:', message.title);
+            return { success: true };
+          }
+          return { success: false, error: 'No active session' };
+        }
+        return { success: false, error: 'No title provided' };
+      }
+
+      case 'UPDATE_PENDING_ENTRY_TITLE': {
+        if ('entryId' in message && 'title' in message && message.entryId && message.title) {
+          const pending = await loadPendingEntries();
+          const updated = pending.map(e => {
+            if (e.id === message.entryId) {
+              return { ...e, project: message.title as string };
+            }
+            return e;
+          });
+          await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+          console.log('[JP343] Pending Entry Titel aktualisiert:', message.title);
+          return { success: true };
+        }
+        return { success: false, error: 'No entryId or title provided' };
+      }
+
+      case 'GET_ACTIVE_TAB_INFO': {
+        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+        const tab = tabs[0];
+        if (!tab || !tab.url || !tab.id) {
+          return { success: false, error: 'No active tab' };
+        }
+
+        if (tab.url.startsWith('chrome-extension://') ||
+            tab.url.startsWith('moz-extension://') ||
+            tab.url.startsWith('about:') ||
+            tab.url.startsWith('chrome://') ||
+            tab.url.startsWith('edge://')) {
+          return { success: false, error: 'Cannot track browser pages' };
+        }
+
+        const streamingPatterns = [
+          /youtube\.com\/watch/,
+          /netflix\.com\/watch/,
+          /crunchyroll\.com\/watch/
+        ];
+        const isStreamingSite = streamingPatterns.some(p => p.test(tab.url || ''));
+
+        // Domain extrahieren
+        let domain = '';
+        try {
+          domain = new URL(tab.url).hostname.replace(/^www\./, '');
+        } catch { /* ignore */ }
+
+        return {
+          success: true,
+          data: {
+            tabId: tab.id,
+            url: tab.url,
+            title: tab.title || 'Untitled',
+            domain: domain,
+            isStreamingSite: isStreamingSite
+          }
+        };
+      }
+
+      case 'MANUAL_TRACK_START': {
+        // Manuelles Tracking starten
+        const settings = await loadSettings();
+        if (!settings.enabled) {
+          return { success: false, error: 'Tracking disabled' };
+        }
+
+        if (!('title' in message) || !('url' in message) || !('tabId' in message)) {
+          return { success: false, error: 'Missing required fields' };
+        }
+
+        const currentSession = tracker.getCurrentSession();
+        if (currentSession) {
+          const previousEntry = tracker.finalizeSession();
+          if (previousEntry) {
+            await savePendingEntry(previousEntry);
+            console.log('[JP343] Vorherige Session gespeichert:', previousEntry.project);
+          }
+        }
+
+        const manualState: VideoState = {
+          isPlaying: true,
+          currentTime: 0,
+          duration: 0,
+          title: message.title as string,
+          url: message.url as string,
+          platform: 'generic',
+          isAd: false,
+          thumbnailUrl: null,
+          videoId: null,
+          channelId: null,
+          channelName: null,
+          channelUrl: null
+        };
+
+        const session = tracker.startSession(manualState, message.tabId as number);
+        await saveSessionState(session);
+        await updateStatusBadge();
+
+        console.log('[JP343] Manual Tracking gestartet:', message.title);
+        return { success: true, data: { session } };
       }
 
       default:

@@ -1,6 +1,6 @@
 // JP343 Extension - Popup UI Logik
 
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo } from '../../types';
 
 // DOM Elements
 const elements = {
@@ -31,7 +31,15 @@ const elements = {
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
   blockedSection: document.getElementById('blockedSection') as HTMLElement,
-  blockedList: document.getElementById('blockedList') as HTMLElement
+  blockedList: document.getElementById('blockedList') as HTMLElement,
+  btnEditTitle: document.getElementById('btnEditTitle') as HTMLButtonElement,
+  // Manual Tracking
+  manualTrackMode: document.getElementById('manualTrackMode') as HTMLElement,
+  currentDomain: document.getElementById('currentDomain') as HTMLElement,
+  manualTitle: document.getElementById('manualTitle') as HTMLInputElement,
+  btnStartManual: document.getElementById('btnStartManual') as HTMLButtonElement,
+  // Toast
+  toast: document.getElementById('toast') as HTMLElement
 };
 
 // Platform Icons
@@ -50,6 +58,23 @@ let pendingEntries: PendingEntry[] = [];
 let isEnabled = true;
 let blockedChannels: BlockedChannel[] = [];
 let currentChannelId: string | null = null;
+let activeTabInfo: ActiveTabInfo | null = null;
+let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// Toast anzeigen
+function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
+  // Vorherigen Toast abbrechen
+  if (toastTimeout) {
+    clearTimeout(toastTimeout);
+  }
+
+  elements.toast.textContent = message;
+  elements.toast.className = `toast ${type} visible`;
+
+  toastTimeout = setTimeout(() => {
+    elements.toast.classList.remove('visible');
+  }, duration);
+}
 
 // Toggle-Anzeige aktualisieren
 function updateToggleDisplay(enabled: boolean): void {
@@ -77,6 +102,68 @@ async function loadAndApplySettings(): Promise<void> {
     console.error('[JP343 Popup] Fehler beim Laden der Settings:', error);
   }
 }
+
+// MANUAL TRACKING
+
+async function loadActiveTabInfo(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
+    if (response.success && response.data) {
+      activeTabInfo = response.data as ActiveTabInfo;
+      updateManualTrackDisplay();
+    }
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler beim Laden der Tab-Info:', error);
+  }
+}
+
+// Manual Track Anzeige aktualisieren
+function updateManualTrackDisplay(): void {
+  if (!activeTabInfo) {
+    elements.manualTrackMode.style.display = 'none';
+    return;
+  }
+
+  const shouldShowManual = !currentSession && !activeTabInfo.isStreamingSite;
+
+  if (shouldShowManual) {
+    elements.noSession.style.display = 'none';
+    elements.manualTrackMode.style.display = 'block';
+    elements.currentDomain.textContent = activeTabInfo.domain;
+    elements.manualTitle.value = activeTabInfo.title;
+    elements.manualTitle.placeholder = activeTabInfo.title;
+  } else {
+    elements.manualTrackMode.style.display = 'none';
+    if (!currentSession) {
+      elements.noSession.style.display = 'block';
+    }
+  }
+}
+
+// Start Manual Tracking Handler
+elements.btnStartManual.addEventListener('click', async () => {
+  if (!activeTabInfo) return;
+
+  const title = elements.manualTitle.value.trim() || activeTabInfo.title;
+
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'MANUAL_TRACK_START',
+      title: title,
+      url: activeTabInfo.url,
+      tabId: activeTabInfo.tabId
+    });
+
+    if (response.success) {
+      // UI aktualisieren
+      await fetchCurrentState();
+    } else {
+      console.error('[JP343 Popup] Fehler beim Starten:', response.error);
+    }
+  } catch (error) {
+    console.error('[JP343 Popup] Fehler:', error);
+  }
+});
 
 // Toggle Handler
 elements.toggleEnabled.addEventListener('click', async () => {
@@ -188,6 +275,75 @@ elements.btnBlockChannel.addEventListener('click', async () => {
   }
 });
 
+// TITLE EDITING
+
+let isEditingTitle = false;
+
+elements.btnEditTitle.addEventListener('click', () => {
+  if (isEditingTitle || !currentSession) return;
+  startTitleEdit();
+});
+
+function startTitleEdit(): void {
+  if (!currentSession) return;
+  isEditingTitle = true;
+
+  const titleRow = elements.sessionTitle.parentElement;
+  if (!titleRow) return;
+
+  const currentTitle = elements.sessionTitle.textContent || '';
+
+  // Input erstellen
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'session-title-input';
+  input.value = currentTitle;
+
+  // Title und Edit-Button verstecken
+  elements.sessionTitle.style.display = 'none';
+  elements.btnEditTitle.style.display = 'none';
+
+  // Input einfuegen
+  titleRow.insertBefore(input, elements.sessionTitle);
+  input.focus();
+  input.select();
+
+  const saveEdit = async () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== currentTitle) {
+      // Titel im Background aktualisieren
+      try {
+        await browser.runtime.sendMessage({
+          type: 'UPDATE_SESSION_TITLE',
+          title: newTitle
+        });
+        elements.sessionTitle.textContent = newTitle;
+        console.log('[JP343 Popup] Titel aktualisiert:', newTitle);
+      } catch (error) {
+        console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+      }
+    }
+
+    // Aufräumen
+    input.remove();
+    elements.sessionTitle.style.display = '';
+    elements.btnEditTitle.style.display = '';
+    isEditingTitle = false;
+  };
+
+  input.addEventListener('blur', saveEdit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEdit();
+    }
+    if (e.key === 'Escape') {
+      input.value = currentTitle;
+      saveEdit();
+    }
+  });
+}
+
 // Status aktualisieren
 function updateStatus(session: TrackingSession | null, isAd: boolean): void {
   if (!session) {
@@ -230,7 +386,16 @@ function updateSessionDisplay(
 
   // Details
   elements.sessionTitle.textContent = session.title;
-  elements.sessionPlatform.textContent = session.platform + '.com';
+  if (session.platform === 'generic' && session.url) {
+    try {
+      const domain = new URL(session.url).hostname.replace(/^www\./, '');
+      elements.sessionPlatform.textContent = domain;
+    } catch {
+      elements.sessionPlatform.textContent = 'Manual tracking';
+    }
+  } else {
+    elements.sessionPlatform.textContent = session.platform + '.com';
+  }
 
   // Timer
   elements.sessionTimer.textContent = duration;
@@ -267,11 +432,59 @@ function getStatusBadge(entry: PendingEntry): string {
   return '<span class="pending-entry-status pending">●</span>';
 }
 
-// Pending Entries Liste rendern
+function getGroupStatusBadge(group: GroupedEntry): string {
+  if (group.allSynced) {
+    return '<span class="pending-entry-status synced">✓</span>';
+  }
+  if (group.hasError) {
+    return '<span class="pending-entry-status failed" title="Sync error">!</span>';
+  }
+  return '<span class="pending-entry-status pending">●</span>';
+}
+
+interface GroupedEntry {
+  primary: PendingEntry;      // Erster/neuester Entry als Referenz
+  entries: PendingEntry[];    // Alle Entries in der Gruppe
+  entryIds: string[];         // Alle Entry-IDs in der Gruppe
+  totalMinutes: number;       // Aufsummierte Zeit
+  sessionCount: number;       // Anzahl Sessions
+  allSynced: boolean;         // Alle Entries synced?
+  hasError: boolean;          // Mindestens ein Fehler?
+}
+
+function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
+  const groups = new Map<string, GroupedEntry>();
+
+  for (const entry of entries) {
+    const key = entry.url || entry.project_id;
+
+    if (groups.has(key)) {
+      const group = groups.get(key)!;
+      group.entries.push(entry);
+      group.entryIds.push(entry.id);
+      group.totalMinutes += entry.duration_min;
+      group.sessionCount++;
+      if (!entry.synced) group.allSynced = false;
+      if (entry.lastSyncError) group.hasError = true;
+    } else {
+      groups.set(key, {
+        primary: entry,
+        entries: [entry],
+        entryIds: [entry.id],
+        totalMinutes: entry.duration_min,
+        sessionCount: 1,
+        allSynced: entry.synced,
+        hasError: !!entry.lastSyncError
+      });
+    }
+  }
+
+  return Array.from(groups.values());
+}
+
 function renderPendingList(entries: PendingEntry[]): void {
   pendingEntries = entries;
 
-  // Display aktualisieren
   updatePendingDisplay(entries);
 
   if (entries.length === 0) {
@@ -279,29 +492,140 @@ function renderPendingList(entries: PendingEntry[]): void {
     return;
   }
 
+  const grouped = groupEntriesByVideo(entries);
+
   // Sortieren: Unsynced zuerst, dann synced
-  const sorted = [...entries].sort((a, b) => {
-    if (a.synced === b.synced) return 0;
-    return a.synced ? 1 : -1;
+  const sorted = [...grouped].sort((a, b) => {
+    if (a.allSynced === b.allSynced) return 0;
+    return a.allSynced ? 1 : -1;
   });
 
-  elements.pendingList.innerHTML = sorted.map(entry => `
-    <div class="pending-entry ${entry.synced ? 'synced' : ''}" data-id="${entry.id}">
-      ${entry.thumbnail
-        ? `<img src="${entry.thumbnail}" class="pending-entry-thumb" alt="">`
-        : `<div class="pending-entry-thumb" style="display:flex;align-items:center;justify-content:center;font-size:12px;">${platformIcons[entry.platform] || '⏵'}</div>`
-      }
-      <div class="pending-entry-info">
-        <div class="pending-entry-title">${escapeHtml(entry.project)}</div>
-        <div class="pending-entry-meta">${entry.platform} · ${entry.duration_min}m</div>
-      </div>
-      ${getStatusBadge(entry)}
-      <button class="pending-entry-delete" data-id="${entry.id}" title="Delete">×</button>
-    </div>
-  `).join('');
+  elements.pendingList.innerHTML = sorted.map((group, groupIndex) => {
+    const entry = group.primary;
+    const hasMultipleSessions = group.sessionCount > 1;
 
-  // Delete-Buttons Event Listener
+    const sessionDetails = group.entries.map(e => `
+      <div class="session-detail" data-id="${e.id}">
+        <span class="session-detail-date">${formatSessionDate(e.date)}</span>
+        <span class="session-detail-duration">${e.duration_min}m</span>
+        <span class="session-detail-status ${e.synced ? 'synced' : 'pending'}">${e.synced ? '✓' : '●'}</span>
+        <button class="session-detail-delete" data-id="${e.id}" title="Delete this session">×</button>
+      </div>
+    `).join('');
+
+    return `
+    <div class="pending-entry-group ${group.allSynced ? 'synced' : ''}" data-group="${groupIndex}">
+      <div class="pending-entry" data-ids="${group.entryIds.join(',')}" data-url="${entry.url || ''}">
+        <div class="pending-entry-thumb-wrap ${entry.url ? 'clickable' : ''}" data-url="${entry.url || ''}" title="${entry.url ? 'Open video' : ''}">
+          ${entry.thumbnail
+            ? `<img src="${entry.thumbnail}" class="pending-entry-thumb" alt="">`
+            : `<div class="pending-entry-thumb" style="display:flex;align-items:center;justify-content:center;font-size:12px;">${platformIcons[entry.platform] || '⏵'}</div>`
+          }
+          ${entry.url ? '<span class="pending-entry-play">▶</span>' : ''}
+        </div>
+        <div class="pending-entry-info">
+          <div class="pending-entry-title-row">
+            <span class="pending-entry-title ${entry.url ? 'clickable' : ''}" data-ids="${group.entryIds.join(',')}" data-url="${entry.url || ''}">${escapeHtml(entry.project)}</span>
+            ${!group.allSynced ? `
+              <button class="pending-entry-edit" data-id="${entry.id}" title="Edit title">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                </svg>
+              </button>
+            ` : ''}
+          </div>
+          <div class="pending-entry-meta">
+            ${entry.platform} · <strong>${group.totalMinutes}m</strong>
+            ${hasMultipleSessions ? `<button class="pending-entry-expand" data-group="${groupIndex}" title="Show ${group.sessionCount} sessions">(${group.sessionCount}×) ▼</button>` : ''}
+            ${entry.url && !group.allSynced ? (
+              currentSession && isSameVideo(currentSession.url, entry.url)
+                ? `<span class="pending-entry-tracking">● Tracking</span>`
+                : `<button class="pending-entry-continue" data-url="${entry.url}" title="Continue watching">Continue ▶</button>`
+            ) : ''}
+          </div>
+        </div>
+        ${getGroupStatusBadge(group)}
+        <button class="pending-entry-delete" data-ids="${group.entryIds.join(',')}" title="Delete all sessions">×</button>
+      </div>
+      ${hasMultipleSessions ? `
+        <div class="session-details-list" data-group="${groupIndex}" style="display: none;">
+          ${sessionDetails}
+        </div>
+      ` : ''}
+    </div>
+  `;
+  }).join('');
+
   elements.pendingList.querySelectorAll('.pending-entry-delete').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const ids = (btn as HTMLElement).dataset.ids;
+      if (ids) {
+        // Alle Entries der Gruppe loeschen
+        for (const entryId of ids.split(',')) {
+          await deleteEntry(entryId);
+        }
+      }
+    });
+  });
+
+  elements.pendingList.querySelectorAll('.pending-entry-edit').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const entryId = (btn as HTMLElement).dataset.id;
+      if (entryId) {
+        startPendingEntryTitleEdit(entryId);
+      }
+    });
+  });
+
+  // Klickbare Thumbnails - Video oeffnen
+  elements.pendingList.querySelectorAll('.pending-entry-thumb-wrap.clickable').forEach(thumb => {
+    thumb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = (thumb as HTMLElement).dataset.url;
+      if (url) {
+        browser.tabs.create({ url });
+      }
+    });
+  });
+
+  // Klickbare Titel - Video oeffnen
+  elements.pendingList.querySelectorAll('.pending-entry-title.clickable').forEach(title => {
+    title.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const url = (title as HTMLElement).dataset.url;
+      if (url) {
+        browser.tabs.create({ url });
+      }
+    });
+  });
+
+  elements.pendingList.querySelectorAll('.pending-entry-continue').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const url = (btn as HTMLElement).dataset.url;
+      if (url) {
+        await browser.tabs.create({ url });
+        window.close();
+      }
+    });
+  });
+
+  elements.pendingList.querySelectorAll('.pending-entry-expand').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const groupIndex = (btn as HTMLElement).dataset.group;
+      const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group="${groupIndex}"]`) as HTMLElement;
+      if (detailsList) {
+        const isExpanded = detailsList.style.display !== 'none';
+        detailsList.style.display = isExpanded ? 'none' : 'block';
+        btn.textContent = btn.textContent?.replace(isExpanded ? '▲' : '▼', isExpanded ? '▼' : '▲') || '';
+      }
+    });
+  });
+
+  elements.pendingList.querySelectorAll('.session-detail-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const entryId = (btn as HTMLElement).dataset.id;
@@ -312,11 +636,114 @@ function renderPendingList(entries: PendingEntry[]): void {
   });
 }
 
+// Pending Entry Titel bearbeiten
+function startPendingEntryTitleEdit(entryId: string): void {
+  const titleSpan = elements.pendingList.querySelector(`.pending-entry-title[data-id="${entryId}"]`) as HTMLElement;
+  const editBtn = elements.pendingList.querySelector(`.pending-entry-edit[data-id="${entryId}"]`) as HTMLElement;
+  if (!titleSpan) return;
+
+  const titleRow = titleSpan.parentElement;
+  if (!titleRow) return;
+
+  const currentTitle = titleSpan.textContent || '';
+
+  // Input erstellen
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'pending-entry-title-input';
+  input.value = currentTitle;
+
+  // Title und Edit-Button verstecken
+  titleSpan.style.display = 'none';
+  if (editBtn) editBtn.style.display = 'none';
+
+  // Input einfuegen
+  titleRow.insertBefore(input, titleSpan);
+  input.focus();
+  input.select();
+
+  const saveEdit = async () => {
+    const newTitle = input.value.trim();
+    if (newTitle && newTitle !== currentTitle) {
+      // Titel im Background aktualisieren
+      try {
+        await browser.runtime.sendMessage({
+          type: 'UPDATE_PENDING_ENTRY_TITLE',
+          entryId,
+          title: newTitle
+        });
+        titleSpan.textContent = newTitle;
+        console.log('[JP343 Popup] Pending Entry Titel aktualisiert:', newTitle);
+      } catch (error) {
+        console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+      }
+    }
+
+    // Aufraeumen
+    input.remove();
+    titleSpan.style.display = '';
+    if (editBtn) editBtn.style.display = '';
+  };
+
+  input.addEventListener('blur', saveEdit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEdit();
+    }
+    if (e.key === 'Escape') {
+      input.value = currentTitle;
+      saveEdit();
+    }
+  });
+}
+
 // HTML escapen
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function formatSessionDate(isoDate: string): string {
+  try {
+    const date = new Date(isoDate);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+function isSameVideo(url1: string, url2: string): boolean {
+  if (!url1 || !url2) return false;
+  if (url1 === url2) return true;
+
+  try {
+    const u1 = new URL(url1);
+    const u2 = new URL(url2);
+
+    // YouTube: Video-ID vergleichen
+    if (u1.hostname.includes('youtube') && u2.hostname.includes('youtube')) {
+      const v1 = u1.searchParams.get('v');
+      const v2 = u2.searchParams.get('v');
+      if (v1 && v2) return v1 === v2;
+    }
+
+    if (u1.hostname.includes('netflix') && u2.hostname.includes('netflix')) {
+      return u1.pathname === u2.pathname;
+    }
+
+    return u1.hostname === u2.hostname && u1.pathname === u2.pathname;
+  } catch {
+    return false;
+  }
 }
 
 // Entry loeschen
@@ -364,6 +791,7 @@ async function fetchCurrentState(): Promise<void> {
       updateStatus(session, isAd);
       updateSessionDisplay(session, duration, isAd);
       updateChannelDisplay(session);
+      updateManualTrackDisplay(); // Manual Track Anzeige aktualisieren
     }
   } catch (error) {
     console.error('[JP343 Popup] Fehler beim Laden:', error);
@@ -392,6 +820,10 @@ elements.btnStop.addEventListener('click', async () => {
     if (response.success) {
       await fetchCurrentState();
       await fetchPendingEntries();
+
+      if (response.saved === false) {
+        showToast('Session too short (min. 1 minute)', 'warning');
+      }
     }
   } catch (error) {
     console.error('[JP343 Popup] Fehler:', error);
@@ -466,6 +898,7 @@ async function checkForUpdates(): Promise<void> {
 
 // Initial laden
 loadAndApplySettings();
+loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
 checkForUpdates();

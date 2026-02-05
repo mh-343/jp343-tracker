@@ -41,6 +41,14 @@ export class TimeTracker {
       this.session.lastUpdate = now;
       // TabId aktualisieren falls neu
       if (tabId) this.session.tabId = tabId;
+
+      if (this.session.channelName === null && videoState.channelName) {
+        this.session.channelId = videoState.channelId || null;
+        this.session.channelName = videoState.channelName;
+        this.session.channelUrl = videoState.channelUrl || null;
+        console.log('[JP343] Channel bei Session-Fortsetzung aktualisiert:', videoState.channelName);
+      }
+
       console.log('[JP343] Session fortgesetzt:', this.session.title);
       return this.session;
     }
@@ -207,6 +215,47 @@ export class TimeTracker {
 
   isAdPlaying(): boolean {
     return this.isInAd;
+  }
+
+  updateSessionTitle(newTitle: string): boolean {
+    if (!this.session) {
+      return false;
+    }
+    this.session.title = newTitle;
+    this.session.titleManuallyEdited = true;
+    console.log('[JP343] Session-Titel manuell geaendert:', newTitle);
+    return true;
+  }
+
+  updateSessionTitleFromAutoFetch(newTitle: string): boolean {
+    if (!this.session) {
+      return false;
+    }
+    if (this.session.titleManuallyEdited) {
+      console.log('[JP343] Titel-Update ignoriert (manuell bearbeitet)');
+      return false;
+    }
+    this.session.title = newTitle;
+    return true;
+  }
+
+  isTitleManuallyEdited(): boolean {
+    return this.session?.titleManuallyEdited || false;
+  }
+
+  updateSessionChannelInfo(channelId: string | null, channelName: string | null, channelUrl: string | null): boolean {
+    if (!this.session) return false;
+
+    // 1. Aktuelle Session hat keine Channel-Info (null)
+    // 2. UND neue Channel-Info ist vorhanden
+    if (this.session.channelName === null && channelName) {
+      this.session.channelId = channelId;
+      this.session.channelName = channelName;
+      this.session.channelUrl = channelUrl;
+      console.log('[JP343] Channel-Info nachtraeglich gesetzt:', channelName);
+      return true;
+    }
+    return false;
   }
 
   // Cleanup
