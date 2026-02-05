@@ -36,6 +36,7 @@ export interface TrackingSession {
   isActive: boolean;         // Laeuft gerade?
   isPaused: boolean;         // Manuell pausiert?
   thumbnailUrl: string | null;
+  titleManuallyEdited?: boolean; // Titel wurde manuell bearbeitet - nicht ueberschreiben
   // Channel-Informationen
   channelId: string | null;
   channelName: string | null;
@@ -147,12 +148,25 @@ export type ExtensionMessage =
   | { type: 'SET_ENABLED'; enabled: boolean }
   | { type: 'BLOCK_CHANNEL'; channel: BlockedChannel }
   | { type: 'UNBLOCK_CHANNEL'; channelId: string }
-  | { type: 'GET_CURRENT_CHANNEL' };
+  | { type: 'GET_CURRENT_CHANNEL' }
+  | { type: 'UPDATE_SESSION_TITLE'; title: string }
+  | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
+  | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number }
+  | { type: 'GET_ACTIVE_TAB_INFO' };
 
 // Response-Typen
 export type ExtensionResponse =
   | { success: true; data?: unknown }
   | { success: false; error: string };
+
+// Aktiver Tab Info (fuer Manual Tracking)
+export interface ActiveTabInfo {
+  tabId: number;
+  url: string;
+  title: string;
+  domain: string;
+  isStreamingSite: boolean;  // true wenn YouTube/Netflix/Crunchyroll
+}
 
 // Default Settings
 export const DEFAULT_SETTINGS: ExtensionSettings = {

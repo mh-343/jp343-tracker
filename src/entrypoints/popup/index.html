@@ -13,6 +13,7 @@
       --text-secondary: #a0a0a0;
       --accent: #875aff;
       --accent-hover: #9d7aff;
+      --neon: #00ffea;
       --success: #4caf50;
       --warning: #ff9800;
       --danger: #f44336;
@@ -129,12 +130,62 @@
       min-width: 0;
     }
 
+    .session-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
     .session-title {
       font-weight: 500;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-title-edit {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .session-details:hover .session-title-edit {
+      opacity: 1;
+    }
+
+    .session-title-edit:hover {
+      background: rgba(0, 255, 234, 0.2);
+      color: var(--neon);
+    }
+
+    .session-title-input {
+      flex: 1;
+      min-width: 0;
+      padding: 2px 6px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--neon);
+      border-radius: 4px;
+      outline: none;
+    }
+
+    .session-title-input:focus {
+      box-shadow: 0 0 0 2px rgba(0, 255, 234, 0.3);
     }
 
     .session-platform {
@@ -147,7 +198,7 @@
       font-size: 28px;
       font-weight: 600;
       font-variant-numeric: tabular-nums;
-      color: var(--accent);
+      color: var(--neon);
       margin-bottom: 16px;
     }
 
@@ -270,16 +321,252 @@
       min-width: 0;
     }
 
+    .pending-entry-title-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
     .pending-entry-title {
       font-size: 12px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pending-entry-edit {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      background: transparent;
+      border: none;
+      border-radius: 3px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      opacity: 0;
+      transition: all 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    .pending-entry:hover .pending-entry-edit {
+      opacity: 1;
+    }
+
+    .pending-entry-edit:hover {
+      background: rgba(0, 255, 234, 0.2);
+      color: var(--neon);
+    }
+
+    .pending-entry-title-input {
+      flex: 1;
+      min-width: 0;
+      padding: 1px 4px;
+      font-size: 12px;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      border: 1px solid var(--neon);
+      border-radius: 3px;
+      outline: none;
     }
 
     .pending-entry-meta {
       font-size: 10px;
       color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* Klickbare Thumbnails */
+    .pending-entry-thumb-wrap {
+      position: relative;
+      width: 48px;
+      height: 27px;
+      border-radius: 2px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .pending-entry-thumb-wrap.clickable {
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .pending-entry-thumb-wrap.clickable:hover {
+      transform: scale(1.08);
+      box-shadow: 0 2px 8px rgba(135, 90, 255, 0.4);
+    }
+
+    .pending-entry-play {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .pending-entry-thumb-wrap.clickable:hover .pending-entry-play {
+      opacity: 1;
+    }
+
+    /* Klickbare Titel */
+    .pending-entry-title.clickable {
+      cursor: pointer;
+      transition: color 0.15s ease;
+    }
+
+    .pending-entry-title.clickable:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    /* Continue Button */
+    .pending-entry-continue {
+      padding: 2px 6px;
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--accent);
+      background: rgba(135, 90, 255, 0.15);
+      border: 1px solid rgba(135, 90, 255, 0.3);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .pending-entry-continue:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Tracking-Status Badge (wenn Video gerade laeuft) */
+    .pending-entry-tracking {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 6px;
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--danger);
+      background: rgba(244, 67, 54, 0.15);
+      border: 1px solid rgba(244, 67, 54, 0.3);
+      border-radius: 3px;
+      animation: tracking-pulse 1.5s infinite;
+    }
+
+    @keyframes tracking-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Expand Button fuer Session-Details */
+    .pending-entry-expand {
+      padding: 1px 4px;
+      font-size: 9px;
+      color: var(--text-secondary);
+      background: transparent;
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .pending-entry-expand:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Entry Group Container */
+    .pending-entry-group {
+      margin-bottom: 4px;
+    }
+
+    .pending-entry-group .pending-entry {
+      margin-bottom: 0;
+    }
+
+    /* Session Details Liste (aufklappbar) */
+    .session-details-list {
+      margin-left: 56px;
+      margin-top: 4px;
+      padding: 6px 8px;
+      background: var(--bg-primary);
+      border-radius: 4px;
+      border-left: 2px solid var(--accent);
+    }
+
+    .session-detail {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 11px;
+      border-bottom: 1px solid var(--bg-tertiary);
+    }
+
+    .session-detail:last-child {
+      border-bottom: none;
+    }
+
+    .session-detail-date {
+      color: var(--text-secondary);
+      min-width: 60px;
+    }
+
+    .session-detail-duration {
+      color: var(--text-primary);
+      font-weight: 500;
+      min-width: 30px;
+    }
+
+    .session-detail-status {
+      font-size: 10px;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    .session-detail-status.synced {
+      color: var(--success);
+      background: rgba(76, 175, 80, 0.15);
+    }
+
+    .session-detail-status.pending {
+      color: var(--warning);
+      background: rgba(255, 152, 0, 0.15);
+    }
+
+    .session-detail-delete {
+      margin-left: auto;
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 3px;
+      font-size: 12px;
+      opacity: 0;
+      transition: all 0.15s ease;
+    }
+
+    .session-detail:hover .session-detail-delete {
+      opacity: 1;
+    }
+
+    .session-detail-delete:hover {
+      background: var(--danger);
+      color: white;
     }
 
     .pending-entry-delete {
@@ -406,7 +693,8 @@
     }
 
     .btn-update:hover {
-      background: var(--accent-hover);
+      background: #fff;
+      color: var(--accent);
     }
 
     /* Toggle Switch (Yomitan-style) */
@@ -574,6 +862,93 @@
       border-color: var(--success);
       color: var(--success);
     }
+
+    /* Manual Track Mode */
+    #manualTrackMode {
+      padding: 16px;
+    }
+
+    .manual-track-header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .manual-track-domain {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: var(--bg-tertiary);
+      padding: 4px 12px;
+      border-radius: 4px;
+    }
+
+    .manual-track-input {
+      margin-bottom: 16px;
+    }
+
+    .manual-track-input label {
+      display: block;
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .manual-track-input input {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--bg-tertiary);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .manual-track-input input:focus {
+      border-color: var(--accent);
+    }
+
+    .btn-track {
+      width: 100%;
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 10px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+      z-index: 100;
+      border: 1px solid var(--warning);
+      max-width: 280px;
+      text-align: center;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .toast.warning {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    .toast.success {
+      border-color: var(--success);
+      color: var(--success);
+    }
   </style>
 </head>
 <body>
@@ -604,13 +979,36 @@
       <p class="hint">Visit YouTube or Netflix to start tracking</p>
     </div>
 
+    <!-- Manual Tracking Mode (fuer nicht-unterstuetzte Seiten) -->
+    <div id="manualTrackMode" style="display: none;">
+      <div class="manual-track-header">
+        <span class="manual-track-domain" id="currentDomain">example.com</span>
+      </div>
+
+      <div class="manual-track-input">
+        <label for="manualTitle">Title</label>
+        <input type="text" id="manualTitle" placeholder="Enter a title..." />
+      </div>
+
+      <button class="btn btn-primary btn-track" id="btnStartManual">
+        Track This Page
+      </button>
+    </div>
+
     <div id="activeSession" style="display: none;">
       <div class="session-info">
         <div class="session-thumbnail placeholder" id="thumbnail">
           <span id="platformIcon"></span>
         </div>
         <div class="session-details">
-          <div class="session-title" id="sessionTitle">Video Title</div>
+          <div class="session-title-row">
+            <div class="session-title" id="sessionTitle">Video Title</div>
+            <button class="session-title-edit" id="btnEditTitle" title="Edit title">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+              </svg>
+            </button>
+          </div>
           <div class="session-platform" id="sessionPlatform">youtube.com</div>
         </div>
       </div>
@@ -658,6 +1056,9 @@
   <div class="footer">
     <a href="https://jp343.com" target="_blank">Open JP343</a>
   </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
 
   <script type="module" src="./main.ts"></script>
 </body>
