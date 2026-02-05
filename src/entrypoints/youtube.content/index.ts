@@ -90,28 +90,62 @@ export default defineContentScript({
       let channelName: string | null = null;
       let channelUrl: string | null = null;
 
-      // Methode 1: Channel-Link unter dem Video
-      const channelElement = document.querySelector(
-        '#channel-name a, ' +
-        'ytd-channel-name a, ' +
-        '.ytd-video-owner-renderer a, ' +
+      const channelNameSelectors = [
+        // Neue YouTube Layouts
+        '#owner #channel-name yt-formatted-string#text a',
+        '#owner #channel-name yt-formatted-string a',
+        '#owner ytd-channel-name yt-formatted-string a',
+        '#owner ytd-channel-name a',
+        'ytd-video-owner-renderer #channel-name a',
+        'ytd-video-owner-renderer ytd-channel-name a',
+        '#owner #channel-name yt-formatted-string#text',
+        '#owner ytd-channel-name yt-formatted-string',
+        '#channel-name a',
+        'ytd-channel-name a',
+        '.ytd-video-owner-renderer a',
         '#owner a'
-      ) as HTMLAnchorElement | null;
+      ];
 
-      if (channelElement) {
-        channelName = channelElement.textContent?.trim() || null;
-        channelUrl = channelElement.href || null;
+      // Erst Channel-Name finden
+      for (const selector of channelNameSelectors) {
+        const element = document.querySelector(selector);
+        if (element?.textContent?.trim()) {
+          channelName = element.textContent.trim();
+          if (element instanceof HTMLAnchorElement && element.href) {
+            channelUrl = element.href;
+          }
+          break;
+        }
+      }
 
-        // Channel-ID aus URL extrahieren
-        if (channelUrl) {
-          const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
-          if (channelMatch) {
-            channelId = channelMatch[1];
-          } else {
-            const handleMatch = channelUrl.match(/\/@([a-zA-Z0-9_-]+)/);
-            if (handleMatch) {
-              channelId = `@${handleMatch[1]}`;
+      if (!channelUrl) {
+        const linkSelectors = [
+          '#owner #channel-name a',
+          '#owner ytd-channel-name a',
+          'ytd-video-owner-renderer #channel-name a',
+          '#owner a.yt-simple-endpoint'
+        ];
+        for (const selector of linkSelectors) {
+          const link = document.querySelector(selector) as HTMLAnchorElement | null;
+          if (link?.href && (link.href.includes('/channel/') || link.href.includes('/@'))) {
+            channelUrl = link.href;
+            if (!channelName && link.textContent?.trim()) {
+              channelName = link.textContent.trim();
             }
+            break;
+          }
+        }
+      }
+
+      // Channel-ID aus URL extrahieren
+      if (channelUrl) {
+        const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
+        if (channelMatch) {
+          channelId = channelMatch[1];
+        } else {
+          const handleMatch = channelUrl.match(/\/@([a-zA-Z0-9_-]+)/);
+          if (handleMatch) {
+            channelId = `@${handleMatch[1]}`;
           }
         }
       }
@@ -140,7 +174,6 @@ export default defineContentScript({
         }
       }
 
-      console.log('[JP343] Channel Info:', { id: channelId, name: channelName });
       return { id: channelId, name: channelName, url: channelUrl };
     }
 
