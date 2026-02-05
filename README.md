@@ -6,13 +6,16 @@ Browser extension to automatically track your Japanese immersion time on streami
 
 | Browser | Download | Status |
 |---------|----------|--------|
-| **Chrome** | [Download v1.0.0](https://github.com/mh-343/jp343-extension/releases/download/v1.0.0/jp343-extension-v1.0.0-chrome.zip) | ✅ Ready |
-| **Firefox** | [Download v1.0.0](https://github.com/mh-343/jp343-extension/releases/download/v1.0.0/jp343-extension-v1.0.0-firefox.zip) | ✅ Ready |
+| **Chrome/Edge** | [Download v1.2.0](https://github.com/mh-343/jp343-extension/releases/download/v1.2.0/jp343-extension-v1.2.0-chrome.zip) | ✅ Ready |
+| **Firefox** | [Download v1.2.0](https://github.com/mh-343/jp343-extension/releases/download/v1.2.0/jp343-extension-v1.2.0-firefox.zip) | ✅ Ready |
 
 ## Features
 
 - **Automatic Tracking** - Detects video playback on YouTube and Netflix
+- **Manual Tracking** - Track time on ANY website with one click
 - **Ad Exclusion** - Ads are not counted towards your immersion time
+- **Title Editing** - Edit titles during or after tracking sessions
+- **Channel Blocking** - Block specific YouTube channels from tracking
 - **Sync with JP343** - Tracked time syncs to your JP343 account
 - **Visual Status** - Extension icon shows recording status
 - **Offline Support** - Entries are saved locally until sync
