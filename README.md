@@ -6,8 +6,8 @@ Browser extension to automatically track your Japanese immersion time on streami
 
 | Browser | Download | Status |
 |---------|----------|--------|
-| **Chrome/Edge** | [Download v1.2.0](https://github.com/mh-343/jp343-extension/releases/download/v1.2.0/jp343-extension-v1.2.0-chrome.zip) | ✅ Ready |
-| **Firefox** | [Download v1.2.0](https://github.com/mh-343/jp343-extension/releases/download/v1.2.0/jp343-extension-v1.2.0-firefox.zip) | ✅ Ready |
+| **Chrome/Edge** | [Download v1.3.0](https://github.com/mh-343/jp343-extension/releases/download/v1.3.0/jp343-extension-v1.3.0-chrome.zip) | ✅ Ready |
+| **Firefox** | [Download v1.3.0](https://github.com/mh-343/jp343-extension/releases/download/v1.3.0/jp343-extension-v1.3.0-firefox.zip) | ✅ Ready |
 
 ## Features
 
