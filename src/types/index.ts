@@ -47,7 +47,7 @@ export interface TrackingSession {
 export interface PendingEntry {
   id: string;
   date: string;              // ISO 8601
-  duration_min: number;      // IMMER Minuten, minimum 1
+  duration_min: number;      // Minuten als Float (z.B. 1.5 = 90 Sekunden)
   project: string;           // Anzeigename
   project_id: string;        // Technische ID
   platform: Platform;
@@ -89,6 +89,7 @@ export interface JP343UserState {
   userId: number | null;
   nonce: string | null;
   ajaxUrl: string | null;
+  guestToken: string | null;
 }
 
 // Extension Storage Schema
@@ -173,7 +174,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix'],
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll'],
   showNotifications: true,
   blockedChannels: []
 };

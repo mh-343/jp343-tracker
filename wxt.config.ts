@@ -2,13 +2,16 @@ import { defineConfig } from 'wxt';
 
 // WXT Konfiguration fuer JP343 Streaming Time Tracker
 // Siehe: https://wxt.dev/api/config.html
+// HINWEIS (Fix 14): Firefox MV3 wird von WXT automatisch unterstuetzt.
+// Wenn Firefox irgendwann volle MV3-Kompatibilitaet erhaelt (background.service_worker),
+// muss hier nichts angepasst werden — WXT generiert das korrekte Manifest pro Browser.
 export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
 
   manifest: {
     name: 'JP343 Streaming Tracker',
-    version: '1.1.0',
+    version: '1.4.0',
     description: 'Track your Japanese immersion time on streaming platforms',
 
     permissions: [
@@ -24,8 +27,11 @@ export default defineConfig({
       // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',
-      '*://localhost/*',
-      '*://127.0.0.1/*'
+      // localhost nur im Dev-Build (Fix 12)
+      ...(process.env.NODE_ENV !== 'production' ? [
+        '*://localhost/*',
+        '*://127.0.0.1/*'
+      ] : [])
     ],
 
     // Icon-Dateien (Anime-Maskottchen)
@@ -40,7 +46,15 @@ export default defineConfig({
     web_accessible_resources: [
       {
         resources: ['inject-user-state.js'],
-        matches: ['*://jp343.com/*', '*://*.jp343.com/*', '*://localhost/*', '*://127.0.0.1/*']
+        matches: [
+          '*://jp343.com/*',
+          '*://*.jp343.com/*',
+          // localhost nur im Dev-Build (Fix 12)
+          ...(process.env.NODE_ENV !== 'production' ? [
+            '*://localhost/*',
+            '*://127.0.0.1/*'
+          ] : [])
+        ]
       }
     ]
   },

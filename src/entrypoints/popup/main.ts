@@ -4,6 +4,9 @@
 
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo } from '../../types';
 
+const DEBUG_MODE = import.meta.env.DEV;
+const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+
 // DOM Elements
 const elements = {
   statusDot: document.getElementById('statusDot') as HTMLElement,
@@ -43,6 +46,15 @@ const elements = {
   // Toast
   toast: document.getElementById('toast') as HTMLElement
 };
+
+// Duration mit Sekunden-Praezision formatieren
+function formatDuration(minutes: number): string {
+  const totalSec = Math.round(minutes * 60);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m === 0) return `${s}s`;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
 
 // Platform Icons
 const platformIcons: Record<Platform, string> = {
@@ -143,6 +155,16 @@ function updateManualTrackDisplay(): void {
     // noSession nur anzeigen wenn keine Session
     if (!currentSession) {
       elements.noSession.style.display = 'block';
+      // Streaming-Seite ohne aktive Session -> Hinweis anpassen
+      const noSessionTitle = document.getElementById('noSessionTitle');
+      const noSessionHint = document.getElementById('noSessionHint');
+      if (activeTabInfo.isStreamingSite && noSessionTitle && noSessionHint) {
+        noSessionTitle.textContent = 'Waiting for playback';
+        noSessionHint.textContent = 'Start a video to auto-track';
+      } else if (noSessionTitle && noSessionHint) {
+        noSessionTitle.textContent = 'No active session';
+        noSessionHint.textContent = 'Visit YouTube, Netflix or Crunchyroll to start tracking';
+      }
     }
   }
 }
@@ -220,9 +242,9 @@ function renderBlockedList(): void {
 
   elements.blockedSection.style.display = 'block';
   elements.blockedList.innerHTML = blockedChannels.map(channel => `
-    <div class="blocked-item" data-id="${channel.channelId}">
+    <div class="blocked-item" data-id="${escapeHtml(channel.channelId)}">
       <span class="blocked-item-name">${escapeHtml(channel.channelName)}</span>
-      <button class="btn-unblock" data-id="${channel.channelId}">Unblock</button>
+      <button class="btn-unblock" data-id="${escapeHtml(channel.channelId)}">Unblock</button>
     </div>
   `).join('');
 
@@ -254,7 +276,7 @@ async function blockChannel(): Promise<void> {
     blockedChannels.push(channel);
     updateChannelDisplay(currentSession);
     renderBlockedList();
-    console.log('[JP343 Popup] Kanal blockiert:', channel.channelName);
+    log('[JP343 Popup] Kanal blockiert:', channel.channelName);
   } catch (error) {
     console.error('[JP343 Popup] Fehler beim Blockieren:', error);
   }
@@ -267,7 +289,7 @@ async function unblockChannel(channelId: string): Promise<void> {
     blockedChannels = blockedChannels.filter(c => c.channelId !== channelId);
     updateChannelDisplay(currentSession);
     renderBlockedList();
-    console.log('[JP343 Popup] Kanal entblockiert:', channelId);
+    log('[JP343 Popup] Kanal entblockiert:', channelId);
   } catch (error) {
     console.error('[JP343 Popup] Fehler beim Entblockieren:', error);
   }
@@ -329,7 +351,7 @@ function startTitleEdit(): void {
           title: newTitle
         });
         elements.sessionTitle.textContent = newTitle;
-        console.log('[JP343 Popup] Titel aktualisiert:', newTitle);
+        log('[JP343 Popup] Titel aktualisiert:', newTitle);
       } catch (error) {
         console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
       }
@@ -357,12 +379,13 @@ function startTitleEdit(): void {
 
 // Status aktualisieren
 function updateStatus(session: TrackingSession | null, isAd: boolean): void {
-  if (!session) {
-    elements.statusDot.className = 'status-dot';
-    elements.statusText.textContent = 'Idle';
-  } else if (isAd) {
+  // Ad-Check ZUERST: Bei Pre-Roll Ads gibt es noch keine Session
+  if (isAd) {
     elements.statusDot.className = 'status-dot ad';
     elements.statusText.textContent = 'Ad';
+  } else if (!session) {
+    elements.statusDot.className = 'status-dot';
+    elements.statusText.textContent = 'Idle';
   } else if (session.isPaused) {
     elements.statusDot.className = 'status-dot paused';
     elements.statusText.textContent = 'Paused';
@@ -387,9 +410,14 @@ function updateSessionDisplay(
   elements.noSession.style.display = 'none';
   elements.activeSession.style.display = 'block';
 
-  // Thumbnail
-  if (session.thumbnailUrl) {
-    elements.thumbnail.innerHTML = `<img src="${session.thumbnailUrl}" class="session-thumbnail" alt="">`;
+  // Thumbnail (Fix 1: XSS-sicher via createElement statt innerHTML)
+  if (session.thumbnailUrl && isValidImageUrl(session.thumbnailUrl)) {
+    elements.thumbnail.textContent = '';
+    const img = document.createElement('img');
+    img.src = session.thumbnailUrl;
+    img.className = 'session-thumbnail';
+    img.alt = '';
+    elements.thumbnail.appendChild(img);
   } else {
     elements.thumbnail.className = 'session-thumbnail placeholder';
     elements.platformIcon.textContent = platformIcons[session.platform] || '⏵';
@@ -426,7 +454,7 @@ function updatePendingDisplay(entries: PendingEntry[]): void {
   if (entries.length > 0) {
     elements.pendingSection.style.display = 'block';
     elements.pendingCount.textContent = String(unsynced.length);
-    elements.pendingMinutes.textContent = String(unsynced.reduce((sum, e) => sum + e.duration_min, 0));
+    elements.pendingMinutes.textContent = formatDuration(unsynced.reduce((sum, e) => sum + e.duration_min, 0));
     elements.syncedCount.textContent = String(synced.length);
 
     // Clear-Button nur zeigen wenn synced entries existieren
@@ -474,8 +502,9 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
   const groups = new Map<string, GroupedEntry>();
 
   for (const entry of entries) {
-    // URL als Gruppierungs-Key, fallback auf project_id
-    const key = entry.url || entry.project_id;
+    // project_id ist konsistenter als URL (gleiche Video-ID = gleiche project_id)
+    // Fallback auf URL fuer manuell getrackte Entries ohne project_id
+    const key = entry.project_id || entry.url;
 
     if (groups.has(key)) {
       const group = groups.get(key)!;
@@ -485,6 +514,10 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
       group.sessionCount++;
       if (!entry.synced) group.allSynced = false;
       if (entry.lastSyncError) group.hasError = true;
+      // primary = neuester Entry (fuer Sortierung und Anzeige)
+      if (new Date(entry.date) > new Date(group.primary.date)) {
+        group.primary = entry;
+      }
     } else {
       groups.set(key, {
         primary: entry,
@@ -498,7 +531,13 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
     }
   }
 
-  return Array.from(groups.values());
+  // Einzelne Sessions innerhalb jeder Gruppe: neueste zuerst
+  const result = Array.from(groups.values());
+  for (const group of result) {
+    group.entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    group.entryIds = group.entries.map(e => e.id);
+  }
+  return result;
 }
 
 // Pending Entries Liste rendern (gruppiert nach Video)
@@ -513,13 +552,21 @@ function renderPendingList(entries: PendingEntry[]): void {
     return;
   }
 
+  // Expanded-State merken vor Re-Render
+  const expandedGroups = new Set<string>();
+  elements.pendingList.querySelectorAll('.session-details-list').forEach(el => {
+    if ((el as HTMLElement).style.display !== 'none') {
+      expandedGroups.add((el as HTMLElement).dataset.group || '');
+    }
+  });
+
   // Entries nach Video gruppieren
   const grouped = groupEntriesByVideo(entries);
 
-  // Sortieren: Unsynced zuerst, dann synced
+  // Sortieren: Unsynced zuerst, dann synced. Innerhalb: neueste zuerst
   const sorted = [...grouped].sort((a, b) => {
-    if (a.allSynced === b.allSynced) return 0;
-    return a.allSynced ? 1 : -1;
+    if (a.allSynced !== b.allSynced) return a.allSynced ? 1 : -1;
+    return new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime();
   });
 
   elements.pendingList.innerHTML = sorted.map((group, groupIndex) => {
@@ -528,29 +575,33 @@ function renderPendingList(entries: PendingEntry[]): void {
 
     // Session-Details fuer aufklappbare Liste rendern
     const sessionDetails = group.entries.map(e => `
-      <div class="session-detail" data-id="${e.id}">
+      <div class="session-detail" data-id="${escapeHtml(e.id)}">
         <span class="session-detail-date">${formatSessionDate(e.date)}</span>
-        <span class="session-detail-duration">${e.duration_min}m</span>
+        <span class="session-detail-duration">${formatDuration(e.duration_min)}</span>
         <span class="session-detail-status ${e.synced ? 'synced' : 'pending'}">${e.synced ? '✓' : '●'}</span>
-        <button class="session-detail-delete" data-id="${e.id}" title="Delete this session">×</button>
+        <button class="session-detail-delete" data-id="${escapeHtml(e.id)}" title="Delete this session">×</button>
       </div>
     `).join('');
 
+    // Fix 1: URL-Validierung und Escaping fuer Thumbnails/URLs
+    const safeUrl = entry.url ? escapeHtml(entry.url) : '';
+    const safeThumbnail = entry.thumbnail && isValidImageUrl(entry.thumbnail) ? escapeHtml(entry.thumbnail) : '';
+
     return `
     <div class="pending-entry-group ${group.allSynced ? 'synced' : ''}" data-group="${groupIndex}">
-      <div class="pending-entry" data-ids="${group.entryIds.join(',')}" data-url="${entry.url || ''}">
-        <div class="pending-entry-thumb-wrap ${entry.url ? 'clickable' : ''}" data-url="${entry.url || ''}" title="${entry.url ? 'Open video' : ''}">
-          ${entry.thumbnail
-            ? `<img src="${entry.thumbnail}" class="pending-entry-thumb" alt="">`
+      <div class="pending-entry" data-ids="${escapeHtml(group.entryIds.join(','))}" data-url="${safeUrl}">
+        <div class="pending-entry-thumb-wrap ${entry.url ? 'clickable' : ''}" data-url="${safeUrl}" title="${entry.url ? 'Open video' : ''}">
+          ${safeThumbnail
+            ? `<img src="${safeThumbnail}" class="pending-entry-thumb" alt="">`
             : `<div class="pending-entry-thumb" style="display:flex;align-items:center;justify-content:center;font-size:12px;">${platformIcons[entry.platform] || '⏵'}</div>`
           }
           ${entry.url ? '<span class="pending-entry-play">▶</span>' : ''}
         </div>
         <div class="pending-entry-info">
           <div class="pending-entry-title-row">
-            <span class="pending-entry-title ${entry.url ? 'clickable' : ''}" data-ids="${group.entryIds.join(',')}" data-url="${entry.url || ''}">${escapeHtml(entry.project)}</span>
+            <span class="pending-entry-title ${entry.url ? 'clickable' : ''}" data-ids="${escapeHtml(group.entryIds.join(','))}" data-url="${safeUrl}">${escapeHtml(entry.project)}</span>
             ${!group.allSynced ? `
-              <button class="pending-entry-edit" data-id="${entry.id}" title="Edit title">
+              <button class="pending-entry-edit" data-id="${escapeHtml(entry.id)}" title="Edit title">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
                 </svg>
@@ -558,17 +609,17 @@ function renderPendingList(entries: PendingEntry[]): void {
             ` : ''}
           </div>
           <div class="pending-entry-meta">
-            ${entry.platform} · <strong>${group.totalMinutes}m</strong>
+            ${entry.platform} · <strong>${formatDuration(group.totalMinutes)}</strong>
             ${hasMultipleSessions ? `<button class="pending-entry-expand" data-group="${groupIndex}" title="Show ${group.sessionCount} sessions">(${group.sessionCount}×) ▼</button>` : ''}
             ${entry.url && !group.allSynced ? (
               currentSession && isSameVideo(currentSession.url, entry.url)
                 ? `<span class="pending-entry-tracking">● Tracking</span>`
-                : `<button class="pending-entry-continue" data-url="${entry.url}" title="Continue watching">Continue ▶</button>`
+                : `<button class="pending-entry-continue" data-url="${safeUrl}" title="Continue watching">Continue ▶</button>`
             ) : ''}
           </div>
         </div>
         ${getGroupStatusBadge(group)}
-        <button class="pending-entry-delete" data-ids="${group.entryIds.join(',')}" title="Delete all sessions">×</button>
+        <button class="pending-entry-delete" data-ids="${escapeHtml(group.entryIds.join(','))}" title="Delete all sessions">×</button>
       </div>
       ${hasMultipleSessions ? `
         <div class="session-details-list" data-group="${groupIndex}" style="display: none;">
@@ -662,12 +713,25 @@ function renderPendingList(entries: PendingEntry[]): void {
       }
     });
   });
+
+  // Expanded-State wiederherstellen nach Re-Render
+  expandedGroups.forEach(groupIndex => {
+    const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group="${groupIndex}"]`) as HTMLElement;
+    const expandBtn = elements.pendingList.querySelector(`.pending-entry-expand[data-group="${groupIndex}"]`) as HTMLElement;
+    if (detailsList) {
+      detailsList.style.display = 'block';
+      if (expandBtn) {
+        expandBtn.textContent = expandBtn.textContent?.replace('▼', '▲') || '';
+      }
+    }
+  });
 }
 
 // Pending Entry Titel bearbeiten
 function startPendingEntryTitleEdit(entryId: string): void {
-  const titleSpan = elements.pendingList.querySelector(`.pending-entry-title[data-id="${entryId}"]`) as HTMLElement;
   const editBtn = elements.pendingList.querySelector(`.pending-entry-edit[data-id="${entryId}"]`) as HTMLElement;
+  // Title span is sibling of edit button in the same .pending-entry-title-row
+  const titleSpan = editBtn?.parentElement?.querySelector('.pending-entry-title') as HTMLElement;
   if (!titleSpan) return;
 
   const titleRow = titleSpan.parentElement;
@@ -693,15 +757,18 @@ function startPendingEntryTitleEdit(entryId: string): void {
   const saveEdit = async () => {
     const newTitle = input.value.trim();
     if (newTitle && newTitle !== currentTitle) {
-      // Titel im Background aktualisieren
+      // Alle Entry-IDs der Gruppe aktualisieren
+      const allIds = titleSpan.dataset.ids?.split(',') || [entryId];
       try {
-        await browser.runtime.sendMessage({
-          type: 'UPDATE_PENDING_ENTRY_TITLE',
-          entryId,
-          title: newTitle
-        });
+        for (const id of allIds) {
+          await browser.runtime.sendMessage({
+            type: 'UPDATE_PENDING_ENTRY_TITLE',
+            entryId: id,
+            title: newTitle
+          });
+        }
         titleSpan.textContent = newTitle;
-        console.log('[JP343 Popup] Pending Entry Titel aktualisiert:', newTitle);
+        log('[JP343 Popup] Pending Entry Titel aktualisiert:', newTitle, `(${allIds.length} Eintraege)`);
       } catch (error) {
         console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
       }
@@ -733,6 +800,16 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+// URL-Validierung: Nur https:// URLs erlauben (Fix 1)
+function isValidImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // Datum fuer Session-Details formatieren
 function formatSessionDate(isoDate: string): string {
   try {
@@ -740,7 +817,7 @@ function formatSessionDate(isoDate: string): string {
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) return 'Today';
+    if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays}d ago`;
 
@@ -877,7 +954,7 @@ elements.btnClear.addEventListener('click', async () => {
     const response = await browser.runtime.sendMessage({ type: 'CLEAR_SYNCED_ENTRIES' });
 
     if (response.success) {
-      console.log('[JP343 Popup] Synced entries geloescht:', response.data?.removed);
+      log('[JP343 Popup] Synced entries geloescht:', response.data?.removed);
       await fetchPendingEntries();
     }
   } catch (error) {
@@ -899,10 +976,22 @@ function isNewerVersion(currentVer: string, newVer: string): boolean {
   return false;
 }
 
-// Update-Check via GitHub Releases API
+// Update-Check via GitHub Releases API (mit 24h Cache)
 async function checkForUpdates(): Promise<void> {
   try {
     const currentVersion = browser.runtime.getManifest().version;
+
+    // Cache pruefen (24h TTL)
+    const CACHE_KEY = 'jp343_update_cache';
+    const cached = await browser.storage.local.get(CACHE_KEY);
+    if (cached[CACHE_KEY] && (Date.now() - cached[CACHE_KEY].ts) < 86400000) {
+      const latestVersion = cached[CACHE_KEY].version;
+      if (latestVersion && isNewerVersion(currentVersion, latestVersion)) {
+        elements.updateVersion.textContent = `v${currentVersion} → v${latestVersion}`;
+        elements.updateBanner.classList.add('visible');
+      }
+      return;
+    }
 
     // GitHub API: Letztes Release abrufen
     const response = await fetch(
@@ -911,24 +1000,22 @@ async function checkForUpdates(): Promise<void> {
     );
 
     if (!response.ok) {
-      console.log('[JP343 Popup] Update-Check fehlgeschlagen:', response.status);
       return;
     }
 
     const release = await response.json();
     const latestVersion = release.tag_name?.replace(/^v/, '') || '';
 
-    console.log('[JP343 Popup] Version check:', currentVersion, '→', latestVersion);
+    // Cache schreiben
+    await browser.storage.local.set({ [CACHE_KEY]: { version: latestVersion, ts: Date.now() } });
 
     if (latestVersion && isNewerVersion(currentVersion, latestVersion)) {
       // Update verfuegbar - Banner anzeigen
       elements.updateVersion.textContent = `v${currentVersion} → v${latestVersion}`;
       elements.updateBanner.classList.add('visible');
-      console.log('[JP343 Popup] Update verfuegbar:', latestVersion);
     }
-  } catch (error) {
-    // Kein Fehler loggen - Update-Check ist optional
-    console.log('[JP343 Popup] Update-Check nicht moeglich');
+  } catch {
+    // Update-Check ist optional
   }
 }
 
@@ -941,11 +1028,12 @@ checkForUpdates();
 
 // Periodisches Update (alle Sekunde fuer Timer, alle 5 Sekunden fuer Liste)
 updateInterval = setInterval(fetchCurrentState, 1000);
-setInterval(fetchPendingEntries, 5000);
+const pendingInterval = setInterval(fetchPendingEntries, 5000);
 
-// Cleanup beim Schliessen
+// Cleanup beim Schliessen (Fix 15)
 window.addEventListener('unload', () => {
   if (updateInterval) {
     clearInterval(updateInterval);
   }
+  clearInterval(pendingInterval);
 });
