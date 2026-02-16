@@ -11,17 +11,22 @@ export default defineContentScript({
   matches: [
     '*://jp343.com/*',
     '*://*.jp343.com/*',
-    '*://localhost/*',
-    '*://127.0.0.1/*'
+    ...(import.meta.env.DEV ? [
+      '*://localhost/*',
+      '*://127.0.0.1/*'
+    ] : [])
   ],
   runAt: 'document_idle',
 
   main() {
-    console.log('[JP343 Bridge] Content Script geladen');
+    const DEBUG_MODE = import.meta.env.DEV;
+    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+
+    log('[JP343 Bridge] Content Script geladen');
 
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
-    console.log('[JP343 Bridge] Extension v' + version + ' signalisiert');
+    log('[JP343 Bridge] Extension v' + version + ' signalisiert');
 
     function injectUserStateScript(): void {
       const script = document.createElement('script');
@@ -33,12 +38,23 @@ export default defineContentScript({
     injectUserStateScript();
 
     const STORAGE_KEYS = {
-      IMMERSION_LOG: 'jp343_immersion_log',
-      PROJECTS: 'jp343_tracker_projects'
+      IMMERSION_LOG: 'jp343_immersion_log'
     };
 
     let extensionContextValid = true;
     let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+
+    // Cleanup-Registry (Fix 4+5)
+    const intervalIds: ReturnType<typeof setInterval>[] = [];
+    function cleanup(): void {
+      intervalIds.forEach(clearInterval);
+      intervalIds.length = 0;
+      if (syncIntervalId) {
+        clearInterval(syncIntervalId);
+        syncIntervalId = null;
+      }
+    }
+    window.addEventListener('pagehide', cleanup);
 
     function isExtensionContextValid(): boolean {
       try {
@@ -50,7 +66,7 @@ export default defineContentScript({
 
     function invalidateExtensionContext(): void {
       if (extensionContextValid) {
-        console.log('[JP343 Bridge] Extension Context ungueltig - stoppe Sync');
+        log('[JP343 Bridge] Extension Context ungueltig - stoppe Sync');
         extensionContextValid = false;
         if (syncIntervalId) {
           clearInterval(syncIntervalId);
@@ -71,7 +87,7 @@ export default defineContentScript({
           const userState = getUserState();
 
           if (userState.ajaxUrl || Date.now() - startTime > maxWait) {
-            console.log('[JP343 Bridge] User State:', userState.isLoggedIn ? 'eingeloggt' : 'Gast');
+            log('[JP343 Bridge] User State:', userState.isLoggedIn ? 'eingeloggt' : userState.guestToken ? 'Gast mit Token' : 'Gast');
             resolve(userState);
             return;
           }
@@ -88,11 +104,32 @@ export default defineContentScript({
       if (dataAttr) {
         try {
           const userData = JSON.parse(dataAttr);
+
+          // ajaxUrl validieren: muss auf jp343.com zeigen
+          let validatedAjaxUrl: string | null = null;
+          if (userData.ajaxUrl) {
+            try {
+              const url = new URL(userData.ajaxUrl);
+              const isJp343 = url.protocol === 'https:' &&
+                (url.hostname === 'jp343.com' || url.hostname.endsWith('.jp343.com'));
+              const isLocalDev = import.meta.env.DEV &&
+                (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
+              if (isJp343 || isLocalDev) {
+                validatedAjaxUrl = userData.ajaxUrl;
+              } else {
+                console.warn('[JP343 Bridge] Ungueltige ajaxUrl ignoriert:', url.hostname);
+              }
+            } catch {
+              console.warn('[JP343 Bridge] ajaxUrl ist keine gueltige URL');
+            }
+          }
+
           return {
             isLoggedIn: userData.isLoggedIn || false,
             userId: userData.userId || null,
             nonce: userData.nonce || null,
-            ajaxUrl: userData.ajaxUrl || null
+            ajaxUrl: validatedAjaxUrl,
+            guestToken: userData.guestToken || null
           };
         } catch (e) {
           console.error('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
@@ -103,23 +140,14 @@ export default defineContentScript({
         isLoggedIn: false,
         userId: null,
         nonce: null,
-        ajaxUrl: null
+        ajaxUrl: null,
+        guestToken: null
       };
     }
 
     function getActivityType(platform: Platform): 'watching' | 'reading' | 'listening' | 'other' {
       const watchingPlatforms: Platform[] = ['youtube', 'netflix', 'crunchyroll'];
       return watchingPlatforms.includes(platform) ? 'watching' : 'other';
-    }
-
-    function getPlatformIcon(platform: Platform): string {
-      const icons: Record<Platform, string> = {
-        youtube: 'logos:youtube-icon',
-        netflix: 'logos:netflix-icon',
-        crunchyroll: 'simple-icons:crunchyroll',
-        generic: 'mdi:play-circle'
-      };
-      return icons[platform] || icons.generic;
     }
 
     function convertToJP343Format(entry: PendingEntry): JP343ImmersionLogEntry {
@@ -141,70 +169,32 @@ export default defineContentScript({
       };
     }
 
-    function entryExists(log: JP343ImmersionLogEntry[], entryId: string): boolean {
-      return log.some(e => e.id === entryId || e.sessionId === entryId);
+    function entryExists(immersionLog: JP343ImmersionLogEntry[], entryId: string): boolean {
+      return immersionLog.some(e => e.id === entryId || e.sessionId === entryId);
     }
 
     function injectEntry(entry: JP343ImmersionLogEntry): boolean {
       try {
         const logData = localStorage.getItem(STORAGE_KEYS.IMMERSION_LOG);
-        const log: JP343ImmersionLogEntry[] = logData ? JSON.parse(logData) : [];
+        const immersionLog: JP343ImmersionLogEntry[] = logData ? JSON.parse(logData) : [];
 
-        if (entryExists(log, entry.id)) {
-          console.log('[JP343 Bridge] Entry existiert bereits:', entry.id);
+        if (entryExists(immersionLog, entry.id)) {
+          log('[JP343 Bridge] Entry existiert bereits:', entry.id);
           return true;
         }
 
-        log.push(entry);
-        localStorage.setItem(STORAGE_KEYS.IMMERSION_LOG, JSON.stringify(log));
+        immersionLog.push(entry);
+        localStorage.setItem(STORAGE_KEYS.IMMERSION_LOG, JSON.stringify(immersionLog));
 
         window.dispatchEvent(new CustomEvent('jp343:tracker:changed', {
           detail: { entry, action: 'log_added', source: 'extension' }
         }));
 
-        console.log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
+        log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
         return true;
       } catch (error) {
         console.error('[JP343 Bridge] Fehler beim Injizieren:', error);
         return false;
-      }
-    }
-
-    function ensureProjectExists(entry: PendingEntry): void {
-      try {
-        const projectsData = localStorage.getItem(STORAGE_KEYS.PROJECTS);
-        const projects = projectsData ? JSON.parse(projectsData) : [];
-
-        const projectName = entry.channelName || entry.project;
-
-        const exists = projects.some((p: { id?: string; name?: string }) =>
-          p.id === entry.project_id || p.name === projectName
-        );
-
-        if (exists) return;
-
-        const newProject = {
-          id: entry.project_id,
-          name: projectName,
-          icon: getPlatformIcon(entry.platform),
-          color: '#875aff',
-          image: entry.thumbnail,
-          resourceUrl: entry.url,
-          isCustom: true,
-          source: 'extension',
-          platform: entry.platform
-        };
-
-        projects.push(newProject);
-        localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(projects));
-
-        window.dispatchEvent(new CustomEvent('jp343:projects:changed', {
-          detail: { project: newProject, action: 'created' }
-        }));
-
-        console.log('[JP343 Bridge] Projekt erstellt:', newProject.name);
-      } catch (error) {
-        console.error('[JP343 Bridge] Fehler beim Projekt erstellen:', error);
       }
     }
 
@@ -214,7 +204,8 @@ export default defineContentScript({
       originalVideoTitle?: string,
       originalResourceUrl?: string
     ): Promise<boolean> {
-      if (!userState.isLoggedIn || !userState.nonce || !userState.ajaxUrl) {
+      const hasAuth = userState.isLoggedIn || userState.guestToken;
+      if (!hasAuth || !userState.nonce || !userState.ajaxUrl) {
         return false;
       }
 
@@ -222,30 +213,39 @@ export default defineContentScript({
       const resourceUrl = originalResourceUrl || entry.resourceUrl || '';
 
       try {
+        const params: Record<string, string> = {
+          action: 'jp343_log_time',
+          nonce: userState.nonce,
+          project_id: entry.project_id,
+          duration_seconds: String(Math.round(entry.duration_min * 60)),
+          source: 'extension',
+          session_id: entry.id,
+          // Felder die bisher fehlten
+          type: entry.type || 'other',
+          notes: entry.note || '',
+          project_title: entry.project || '',
+          project_url: entry.resourceUrl || '',
+          project_thumbnail: entry.thumbnail || '',
+          channel_id: entry.channelId || '',
+          channel_name: entry.channelName || '',
+          channel_url: entry.channelUrl || '',
+          video_title: videoTitle,
+          resource_url: resourceUrl
+        };
+
+        if (userState.guestToken) {
+          params.guest_token = userState.guestToken;
+        }
+
         const response = await fetch(userState.ajaxUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            action: 'jp343_log_time',
-            nonce: userState.nonce,
-            project_id: entry.project_id,
-            duration_seconds: String(entry.duration_min * 60),
-            source: 'extension',
-            session_id: entry.id,
-            project_title: entry.project || '',
-            project_url: entry.resourceUrl || '',
-            project_thumbnail: entry.thumbnail || '',
-            channel_id: entry.channelId || '',
-            channel_name: entry.channelName || '',
-            channel_url: entry.channelUrl || '',
-            video_title: videoTitle,
-            resource_url: resourceUrl
-          })
+          body: new URLSearchParams(params)
         });
 
         const result = await response.json();
         if (result.success) {
-          console.log('[JP343 Bridge] Entry zu Server gesynct', result.data?.debug || '');
+          log('[JP343 Bridge] Entry zu Server gesynct', result.data?.debug || '');
           return true;
         }
         console.warn('[JP343 Bridge] Server antwortete mit Fehler:', result);
@@ -317,16 +317,17 @@ export default defineContentScript({
         const result = await browser.storage.local.get('jp343_extension_pending');
         const pending: PendingEntry[] = result.jp343_extension_pending || [];
         const unsynced = pending.filter(e => !e.synced);
+        const synced = pending.filter(e => e.synced);
 
         if (unsynced.length === 0) {
-          console.log('[JP343 Bridge] Keine unsynced Entries');
+          log('[JP343 Bridge] Keine unsynced Entries' + (synced.length > 0 ? ' (' + synced.length + ' synced vorhanden)' : ''));
           return;
         }
 
-        console.log('[JP343 Bridge] ' + unsynced.length + ' unsynced Entries gefunden - zeige Dialog');
+        log('[JP343 Bridge] ' + unsynced.length + ' unsynced Entries gefunden' + (synced.length > 0 ? ' + ' + synced.length + ' synced' : '') + ' - zeige Dialog');
 
         window.dispatchEvent(new CustomEvent('jp343:extension:pending-entries', {
-          detail: { entries: unsynced }
+          detail: { entries: unsynced, syncedEntries: synced }
         }));
 
       } catch (error) {
@@ -341,7 +342,8 @@ export default defineContentScript({
     async function syncConfirmedEntries(
       entries: PendingEntry[],
       projectAssignments: Record<string, { projectId: string; projectName: string }>,
-      titleEdits: Record<string, string>
+      titleEdits: Record<string, string>,
+      channelThumbnails: Record<string, string> = {}
     ): Promise<void> {
       if (!isExtensionContextValid()) {
         invalidateExtensionContext();
@@ -350,7 +352,7 @@ export default defineContentScript({
 
       try {
         const userState = await waitForJP343User();
-        console.log('[JP343 Bridge] Starte Sync von ' + entries.length + ' Entries');
+        log('[JP343 Bridge] Starte Sync von ' + entries.length + ' Entries');
 
         for (const entry of entries) {
           if (!isExtensionContextValid()) {
@@ -365,7 +367,7 @@ export default defineContentScript({
             const customTitle = titleEdits[entry.id];
             if (customTitle) {
               entry.project = customTitle;
-              console.log('[JP343 Bridge] Titel geaendert zu:', customTitle);
+              log('[JP343 Bridge] Titel geaendert zu:', customTitle);
             }
 
             const assignment = projectAssignments[entry.id];
@@ -374,29 +376,36 @@ export default defineContentScript({
               entry.project = assignment.projectName;
             }
 
-            // Projekt sicherstellen
-            ensureProjectExists(entry);
-
-            // In localStorage injizieren
             const jp343Entry = convertToJP343Format(entry);
-            const localSuccess = injectEntry(jp343Entry);
 
-            if (!localSuccess) {
-              await markEntryFailed(entry.id, 'localStorage injection failed');
-              continue;
+            if (channelThumbnails[jp343Entry.project_id]) {
+              jp343Entry.thumbnail = channelThumbnails[jp343Entry.project_id];
             }
 
-            if (userState.isLoggedIn) {
+            if (userState.isLoggedIn || userState.guestToken) {
               const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl);
-              if (!serverSuccess) {
-                await markEntryFailed(entry.id, 'Server sync failed');
-                console.error('[JP343 Bridge] Server sync fehlgeschlagen - Entry bleibt pending');
+              if (serverSuccess) {
+                await markEntrySynced(entry.id);
+                log('[JP343 Bridge] Entry via Server gesynct (kein localStorage):', entry.project);
+              } else {
+                const localSuccess = injectEntry(jp343Entry);
+                if (!localSuccess) {
+                  await markEntryFailed(entry.id, 'Server + localStorage failed');
+                  continue;
+                }
+                await markEntryFailed(entry.id, 'Server sync failed, saved locally');
+                console.warn('[JP343 Bridge] Server-Sync fehlgeschlagen, lokal gespeichert:', entry.project);
+              }
+            } else {
+              // Gaeste: localStorage reicht
+              const localSuccess = injectEntry(jp343Entry);
+              if (!localSuccess) {
+                await markEntryFailed(entry.id, 'localStorage injection failed');
                 continue;
               }
+              await markEntrySynced(entry.id);
+              log('[JP343 Bridge] Entry lokal gespeichert (Gast):', entry.project);
             }
-
-            await markEntrySynced(entry.id);
-            console.log('[JP343 Bridge] Entry synced:', entry.project);
 
           } catch (error) {
             if (error instanceof Error && error.message.includes('Extension context invalidated')) {
@@ -410,7 +419,7 @@ export default defineContentScript({
         }
 
         window.dispatchEvent(new CustomEvent('jp343:extension:sync-complete'));
-        console.log('[JP343 Bridge] Sync abgeschlossen');
+        log('[JP343 Bridge] Sync abgeschlossen');
 
       } catch (error) {
         if (error instanceof Error && error.message.includes('Extension context invalidated')) {
@@ -421,16 +430,23 @@ export default defineContentScript({
       }
     }
 
-    window.addEventListener('jp343:extension:sync-confirmed', ((e: CustomEvent) => {
-      console.log('[JP343 Bridge] Sync-Bestaetigung erhalten');
-      const { entries, projectAssignments, titleEdits } = e.detail || {};
-      if (entries && Array.isArray(entries)) {
-        syncConfirmedEntries(entries, projectAssignments || {}, titleEdits || {});
+    window.addEventListener('jp343:extension:sync-confirmed', (async (e: CustomEvent) => {
+      log('[JP343 Bridge] Sync-Bestaetigung erhalten');
+      const { entries, projectAssignments, titleEdits, channelThumbnails } = e.detail || {};
+      if (!entries || !Array.isArray(entries)) return;
+
+      const result = await browser.storage.local.get('jp343_extension_pending');
+      const pending: PendingEntry[] = result.jp343_extension_pending || [];
+      const pendingIds = new Set(pending.map(p => p.id));
+
+      const validEntries = entries.filter((entry: PendingEntry) => pendingIds.has(entry.id));
+      if (validEntries.length > 0) {
+        syncConfirmedEntries(validEntries, projectAssignments || {}, titleEdits || {}, channelThumbnails || {});
       }
     }) as EventListener);
 
     window.addEventListener('jp343:extension:sync-skipped', () => {
-      console.log('[JP343 Bridge] Sync uebersprungen');
+      log('[JP343 Bridge] Sync uebersprungen');
     });
 
     // Initial: User State melden

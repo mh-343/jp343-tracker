@@ -7,7 +7,7 @@ export default defineConfig({
 
   manifest: {
     name: 'JP343 Streaming Tracker',
-    version: '1.1.0',
+    version: '1.4.0',
     description: 'Track your Japanese immersion time on streaming platforms',
 
     permissions: [
@@ -23,8 +23,11 @@ export default defineConfig({
       // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',
-      '*://localhost/*',
-      '*://127.0.0.1/*'
+      // localhost nur im Dev-Build (Fix 12)
+      ...(process.env.NODE_ENV !== 'production' ? [
+        '*://localhost/*',
+        '*://127.0.0.1/*'
+      ] : [])
     ],
 
     // Icon-Dateien (Anime-Maskottchen)
@@ -38,7 +41,15 @@ export default defineConfig({
     web_accessible_resources: [
       {
         resources: ['inject-user-state.js'],
-        matches: ['*://jp343.com/*', '*://*.jp343.com/*', '*://localhost/*', '*://127.0.0.1/*']
+        matches: [
+          '*://jp343.com/*',
+          '*://*.jp343.com/*',
+          // localhost nur im Dev-Build (Fix 12)
+          ...(process.env.NODE_ENV !== 'production' ? [
+            '*://localhost/*',
+            '*://127.0.0.1/*'
+          ] : [])
+        ]
       }
     ]
   },
