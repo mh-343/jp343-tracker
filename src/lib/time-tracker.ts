@@ -2,11 +2,12 @@
 
 import type { TrackingSession, VideoState, PendingEntry, Platform } from '../types';
 
+const DEBUG_MODE = import.meta.env.DEV;
+const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+
 // Generiert eindeutige Extension-IDs
 function generateId(): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).slice(2, 7);
-  return `ext_${timestamp}_${random}`;
+  return `ext_${crypto.randomUUID()}`;
 }
 
 function generateProjectId(platform: Platform, title: string, videoId: string | null): string {
@@ -42,14 +43,26 @@ export class TimeTracker {
       // TabId aktualisieren falls neu
       if (tabId) this.session.tabId = tabId;
 
-      if (this.session.channelName === null && videoState.channelName) {
+      const hadNoChId = this.session.channelId === null;
+      const chIdChanged = videoState.channelId && !hadNoChId && this.session.channelId !== videoState.channelId;
+      const gotChId = videoState.channelId && hadNoChId;
+      const chNameCorrection = !videoState.channelId && hadNoChId
+        && videoState.channelName && this.session.channelName
+        && videoState.channelName !== this.session.channelName;
+      if (videoState.channelName && (this.session.channelName === null || chIdChanged || gotChId || chNameCorrection)) {
         this.session.channelId = videoState.channelId || null;
         this.session.channelName = videoState.channelName;
         this.session.channelUrl = videoState.channelUrl || null;
-        console.log('[JP343] Channel bei Session-Fortsetzung aktualisiert:', videoState.channelName);
+        const reason = chIdChanged ? '(korrigiert)' : gotChId ? '(ID nachgeliefert)' : chNameCorrection ? '(Name korrigiert)' : '(initial)';
+        log('[JP343] Channel bei Session-Fortsetzung aktualisiert:', videoState.channelName, reason);
       }
 
-      console.log('[JP343] Session fortgesetzt:', this.session.title);
+      if (this.session.thumbnailUrl === null && videoState.thumbnailUrl) {
+        this.session.thumbnailUrl = videoState.thumbnailUrl;
+        log('[JP343] Thumbnail bei Session-Fortsetzung aktualisiert');
+      }
+
+      log('[JP343] Session fortgesetzt:', this.session.title);
       return this.session;
     }
 
@@ -76,7 +89,7 @@ export class TimeTracker {
       channelUrl: videoState.channelUrl || null
     };
 
-    console.log('[JP343] Neue Session gestartet:', this.session.title);
+    log('[JP343] Neue Session gestartet:', this.session.title);
     return this.session;
   }
 
@@ -86,7 +99,7 @@ export class TimeTracker {
       this.tick(); // Letzte Zeit erfassen
       this.session.isActive = false;
       this.session.isPaused = true;
-      console.log('[JP343] Session pausiert');
+      log('[JP343] Session pausiert');
     }
   }
 
@@ -96,14 +109,14 @@ export class TimeTracker {
       this.session.isActive = true;
       this.session.isPaused = false;
       this.session.lastUpdate = Date.now();
-      console.log('[JP343] Session fortgesetzt');
+      log('[JP343] Session fortgesetzt');
     }
   }
 
   onAdStart(): void {
     if (!this.isInAd) {
       this.isInAd = true;
-      console.log('[JP343] Werbung erkannt - Tracking pausiert');
+      log('[JP343] Werbung erkannt - Tracking pausiert');
     }
   }
 
@@ -113,7 +126,7 @@ export class TimeTracker {
       if (this.session) {
         this.session.lastUpdate = Date.now();
       }
-      console.log('[JP343] Werbung beendet - Tracking fortgesetzt');
+      log('[JP343] Werbung beendet - Tracking fortgesetzt');
     }
   }
 
@@ -141,13 +154,13 @@ export class TimeTracker {
     // Letzte Zeit erfassen
     this.tick();
 
-    if (this.session.accumulatedMs < 30000) {
-      console.log('[JP343] Session zu kurz (<30s), wird verworfen');
+    if (this.session.accumulatedMs < 60000) {
+      log('[JP343] Session zu kurz (<1min), wird verworfen');
       this.session = null;
       return null;
     }
 
-    const durationMinutes = Math.max(1, Math.round(this.session.accumulatedMs / 60000));
+    const durationMinutes = this.session.accumulatedMs / 60000;
 
     const entry: PendingEntry = {
       id: this.session.id,
@@ -172,7 +185,7 @@ export class TimeTracker {
       channelUrl: this.session.channelUrl
     };
 
-    console.log('[JP343] Session finalisiert:', durationMinutes, 'Minuten');
+    log('[JP343] Session finalisiert:', durationMinutes, 'Minuten');
 
     this.session = null;
     return entry;
@@ -223,7 +236,7 @@ export class TimeTracker {
     }
     this.session.title = newTitle;
     this.session.titleManuallyEdited = true;
-    console.log('[JP343] Session-Titel manuell geaendert:', newTitle);
+    log('[JP343] Session-Titel manuell geaendert:', newTitle);
     return true;
   }
 
@@ -232,7 +245,7 @@ export class TimeTracker {
       return false;
     }
     if (this.session.titleManuallyEdited) {
-      console.log('[JP343] Titel-Update ignoriert (manuell bearbeitet)');
+      log('[JP343] Titel-Update ignoriert (manuell bearbeitet)');
       return false;
     }
     this.session.title = newTitle;
@@ -246,13 +259,44 @@ export class TimeTracker {
   updateSessionChannelInfo(channelId: string | null, channelName: string | null, channelUrl: string | null): boolean {
     if (!this.session) return false;
 
-    // 1. Aktuelle Session hat keine Channel-Info (null)
-    // 2. UND neue Channel-Info ist vorhanden
-    if (this.session.channelName === null && channelName) {
+    const hadNoChannelId = this.session.channelId === null;
+    const channelIdChanged = channelId && !hadNoChannelId && this.session.channelId !== channelId;
+    const gotNewChannelId = channelId && hadNoChannelId;
+    const nameOnlyCorrection = !channelId && hadNoChannelId
+      && channelName && this.session.channelName
+      && channelName !== this.session.channelName;
+
+    if (channelName && (
+      this.session.channelName === null
+      || channelIdChanged
+      || gotNewChannelId
+      || nameOnlyCorrection
+    )) {
+      const reason = channelIdChanged ? '(ID korrigiert)'
+        : gotNewChannelId ? '(ID nachgeliefert)'
+        : nameOnlyCorrection ? '(Name korrigiert)'
+        : '(initial)';
       this.session.channelId = channelId;
       this.session.channelName = channelName;
       this.session.channelUrl = channelUrl;
-      console.log('[JP343] Channel-Info nachtraeglich gesetzt:', channelName);
+      log('[JP343] Channel-Info aktualisiert:', channelName, reason);
+      return true;
+    }
+    return false;
+  }
+
+  updateSessionUrl(newUrl: string): void {
+    if (this.session) {
+      this.session.url = newUrl;
+    }
+  }
+
+  updateSessionThumbnail(thumbnailUrl: string): boolean {
+    if (!this.session) return false;
+
+    if (this.session.thumbnailUrl === null && thumbnailUrl) {
+      this.session.thumbnailUrl = thumbnailUrl;
+      log('[JP343] Thumbnail nachtraeglich gesetzt');
       return true;
     }
     return false;
