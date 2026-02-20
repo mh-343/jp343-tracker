@@ -117,10 +117,10 @@ export default defineContentScript({
               if (isJp343 || isLocalDev) {
                 validatedAjaxUrl = userData.ajaxUrl;
               } else {
-                console.warn('[JP343 Bridge] Ungueltige ajaxUrl ignoriert:', url.hostname);
+                log('[JP343 Bridge] Ungueltige ajaxUrl ignoriert:', url.hostname);
               }
             } catch {
-              console.warn('[JP343 Bridge] ajaxUrl ist keine gueltige URL');
+              log('[JP343 Bridge] ajaxUrl ist keine gueltige URL');
             }
           }
 
@@ -132,7 +132,7 @@ export default defineContentScript({
             guestToken: userData.guestToken || null
           };
         } catch (e) {
-          console.error('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
+          log('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
         }
       }
 
@@ -193,7 +193,7 @@ export default defineContentScript({
         log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
         return true;
       } catch (error) {
-        console.error('[JP343 Bridge] Fehler beim Injizieren:', error);
+        log('[JP343 Bridge] Fehler beim Injizieren:', error);
         return false;
       }
     }
@@ -248,10 +248,10 @@ export default defineContentScript({
           log('[JP343 Bridge] Entry zu Server gesynct', result.data?.debug || '');
           return true;
         }
-        console.warn('[JP343 Bridge] Server antwortete mit Fehler:', result);
+        log('[JP343 Bridge] Server antwortete mit Fehler:', result);
         return false;
       } catch (error) {
-        console.error('[JP343 Bridge] Server sync Fehler:', error);
+        log('[JP343 Bridge] Server sync Fehler:', error);
         return false;
       }
     }
@@ -263,7 +263,7 @@ export default defineContentScript({
           entryId
         });
       } catch (error) {
-        console.error('[JP343 Bridge] Fehler beim Markieren als synced:', error);
+        log('[JP343 Bridge] Fehler beim Markieren als synced:', error);
       }
     }
 
@@ -276,7 +276,7 @@ export default defineContentScript({
           error
         });
       } catch (err) {
-        console.error('[JP343 Bridge] Fehler beim Markieren als failed:', err);
+        log('[JP343 Bridge] Fehler beim Markieren als failed:', err);
       }
     }
 
@@ -335,7 +335,7 @@ export default defineContentScript({
           invalidateExtensionContext();
           return;
         }
-        console.error('[JP343 Bridge] Fehler beim Pruefen der pending Entries:', error);
+        log('[JP343 Bridge] Fehler beim Pruefen der pending Entries:', error);
       }
     }
 
@@ -394,7 +394,7 @@ export default defineContentScript({
                   continue;
                 }
                 await markEntryFailed(entry.id, 'Server sync failed, saved locally');
-                console.warn('[JP343 Bridge] Server-Sync fehlgeschlagen, lokal gespeichert:', entry.project);
+                log('[JP343 Bridge] Server-Sync fehlgeschlagen, lokal gespeichert:', entry.project);
               }
             } else {
               // Gaeste: localStorage reicht
@@ -414,7 +414,7 @@ export default defineContentScript({
             }
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
             await markEntryFailed(entry.id, errorMsg);
-            console.error('[JP343 Bridge] Sync fehlgeschlagen fuer:', entry.id, error);
+            log('[JP343 Bridge] Sync fehlgeschlagen fuer:', entry.id, error);
           }
         }
 
@@ -426,7 +426,7 @@ export default defineContentScript({
           invalidateExtensionContext();
           return;
         }
-        console.error('[JP343 Bridge] Sync Fehler:', error);
+        log('[JP343 Bridge] Sync Fehler:', error);
       }
     }
 

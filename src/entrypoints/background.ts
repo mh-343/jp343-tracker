@@ -42,7 +42,7 @@ export default defineBackground(() => {
       cachedSettings = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
       return { ...cachedSettings };
     } catch (error) {
-      console.error('[JP343] Fehler beim Laden der Settings:', error);
+      log('[JP343] Fehler beim Laden der Settings:', error);
       return { ...DEFAULT_SETTINGS };
     }
   }
@@ -52,7 +52,7 @@ export default defineBackground(() => {
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
     } catch (error) {
-      console.error('[JP343] Fehler beim Speichern der Settings:', error);
+      log('[JP343] Fehler beim Speichern der Settings:', error);
     }
   }
 
@@ -62,7 +62,7 @@ export default defineBackground(() => {
       const result = await browser.storage.local.get(STORAGE_KEYS.PENDING);
       return result[STORAGE_KEYS.PENDING] || [];
     } catch (error) {
-      console.error('[JP343] Fehler beim Laden der Pending Entries:', error);
+      log('[JP343] Fehler beim Laden der Pending Entries:', error);
       return [];
     }
   }
@@ -78,7 +78,7 @@ export default defineBackground(() => {
         // Badge aktualisieren
         updateBadge(pending.length);
       } catch (error) {
-        console.error('[JP343] Fehler beim Speichern des Entries:', error);
+        log('[JP343] Fehler beim Speichern des Entries:', error);
       }
     });
   }
@@ -87,7 +87,7 @@ export default defineBackground(() => {
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SESSION]: session });
     } catch (error) {
-      console.error('[JP343] Fehler beim Speichern des Session-States:', error);
+      log('[JP343] Fehler beim Speichern des Session-States:', error);
     }
   }
 
@@ -629,7 +629,7 @@ export default defineBackground(() => {
         return { success: false, error: 'Unknown message type' };
     }
     } catch (error) {
-      console.error('[JP343] Fehler in handleMessage:', message.type, error);
+      log('[JP343] Fehler in handleMessage:', message.type, error);
       return { success: false, error: 'Internal error' };
     }
   }
@@ -703,7 +703,7 @@ export default defineBackground(() => {
     await saveSessionState(null);
     log('[JP343] Recovery: Vorherige Session gerettet:', entry.project, durationMinutes, 'min');
     } catch (error) {
-      console.error('[JP343] Fehler bei Session Recovery:', error);
+      log('[JP343] Fehler bei Session Recovery:', error);
       await saveSessionState(null);
     }
   }
