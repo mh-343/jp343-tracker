@@ -28,8 +28,6 @@ const elements = {
   pendingList: document.getElementById('pendingList') as HTMLElement,
   btnSync: document.getElementById('btnSync') as HTMLButtonElement,
   btnClear: document.getElementById('btnClear') as HTMLButtonElement,
-  updateBanner: document.getElementById('updateBanner') as HTMLElement,
-  updateVersion: document.getElementById('updateVersion') as HTMLElement,
   toggleEnabled: document.getElementById('toggleEnabled') as HTMLButtonElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
   channelSection: document.getElementById('channelSection') as HTMLElement,
@@ -113,7 +111,7 @@ async function loadAndApplySettings(): Promise<void> {
       renderBlockedList();
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Laden der Settings:', error);
+    log('[JP343 Popup] Fehler beim Laden der Settings:', error);
   }
 }
 
@@ -130,7 +128,7 @@ async function loadActiveTabInfo(): Promise<void> {
       updateManualTrackDisplay();
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Laden der Tab-Info:', error);
+    log('[JP343 Popup] Fehler beim Laden der Tab-Info:', error);
   }
 }
 
@@ -187,10 +185,10 @@ elements.btnStartManual.addEventListener('click', async () => {
       // UI aktualisieren
       await fetchCurrentState();
     } else {
-      console.error('[JP343 Popup] Fehler beim Starten:', response.error);
+      log('[JP343 Popup] Fehler beim Starten:', response.error);
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Fehler:', error);
   }
 });
 
@@ -203,7 +201,7 @@ elements.toggleEnabled.addEventListener('click', async () => {
     // Status sofort aktualisieren
     await fetchCurrentState();
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Toggle:', error);
+    log('[JP343 Popup] Fehler beim Toggle:', error);
   }
 });
 
@@ -278,7 +276,7 @@ async function blockChannel(): Promise<void> {
     renderBlockedList();
     log('[JP343 Popup] Kanal blockiert:', channel.channelName);
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Blockieren:', error);
+    log('[JP343 Popup] Fehler beim Blockieren:', error);
   }
 }
 
@@ -291,7 +289,7 @@ async function unblockChannel(channelId: string): Promise<void> {
     renderBlockedList();
     log('[JP343 Popup] Kanal entblockiert:', channelId);
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Entblockieren:', error);
+    log('[JP343 Popup] Fehler beim Entblockieren:', error);
   }
 }
 
@@ -353,7 +351,7 @@ function startTitleEdit(): void {
         elements.sessionTitle.textContent = newTitle;
         log('[JP343 Popup] Titel aktualisiert:', newTitle);
       } catch (error) {
-        console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+        log('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
       }
     }
 
@@ -770,7 +768,7 @@ function startPendingEntryTitleEdit(entryId: string): void {
         titleSpan.textContent = newTitle;
         log('[JP343 Popup] Pending Entry Titel aktualisiert:', newTitle, `(${allIds.length} Eintraege)`);
       } catch (error) {
-        console.error('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+        log('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
       }
     }
 
@@ -869,7 +867,7 @@ async function deleteEntry(entryId: string): Promise<void> {
       await fetchCurrentState();
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Loeschen:', error);
+    log('[JP343 Popup] Fehler beim Loeschen:', error);
   }
 }
 
@@ -882,7 +880,7 @@ async function fetchPendingEntries(): Promise<void> {
       renderPendingList(response.data.entries);
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Laden der Entries:', error);
+    log('[JP343 Popup] Fehler beim Laden der Entries:', error);
   }
 }
 
@@ -904,7 +902,7 @@ async function fetchCurrentState(): Promise<void> {
       // Pending display wird in renderPendingList aktualisiert
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Laden:', error);
+    log('[JP343 Popup] Fehler beim Laden:', error);
   }
 }
 
@@ -918,7 +916,7 @@ elements.btnPause.addEventListener('click', async () => {
     await browser.runtime.sendMessage({ type: action });
     await fetchCurrentState();
   } catch (error) {
-    console.error('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Fehler:', error);
   }
 });
 
@@ -937,7 +935,7 @@ elements.btnStop.addEventListener('click', async () => {
       }
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Fehler:', error);
   }
 });
 
@@ -958,73 +956,15 @@ elements.btnClear.addEventListener('click', async () => {
       await fetchPendingEntries();
     }
   } catch (error) {
-    console.error('[JP343 Popup] Fehler beim Loeschen:', error);
+    log('[JP343 Popup] Fehler beim Loeschen:', error);
   }
 });
-
-// Versionen vergleichen (true wenn newVer > currentVer)
-function isNewerVersion(currentVer: string, newVer: string): boolean {
-  const current = currentVer.replace(/^v/, '').split('.').map(Number);
-  const latest = newVer.replace(/^v/, '').split('.').map(Number);
-
-  for (let i = 0; i < Math.max(current.length, latest.length); i++) {
-    const c = current[i] || 0;
-    const l = latest[i] || 0;
-    if (l > c) return true;
-    if (l < c) return false;
-  }
-  return false;
-}
-
-// Update-Check via GitHub Releases API (mit 24h Cache)
-async function checkForUpdates(): Promise<void> {
-  try {
-    const currentVersion = browser.runtime.getManifest().version;
-
-    // Cache pruefen (24h TTL)
-    const CACHE_KEY = 'jp343_update_cache';
-    const cached = await browser.storage.local.get(CACHE_KEY);
-    if (cached[CACHE_KEY] && (Date.now() - cached[CACHE_KEY].ts) < 86400000) {
-      const latestVersion = cached[CACHE_KEY].version;
-      if (latestVersion && isNewerVersion(currentVersion, latestVersion)) {
-        elements.updateVersion.textContent = `v${currentVersion} → v${latestVersion}`;
-        elements.updateBanner.classList.add('visible');
-      }
-      return;
-    }
-
-    // GitHub API: Letztes Release abrufen
-    const response = await fetch(
-      'https://api.github.com/repos/mh-343/jp343-extension/releases/latest',
-      { headers: { 'Accept': 'application/vnd.github.v3+json' } }
-    );
-
-    if (!response.ok) {
-      return;
-    }
-
-    const release = await response.json();
-    const latestVersion = release.tag_name?.replace(/^v/, '') || '';
-
-    // Cache schreiben
-    await browser.storage.local.set({ [CACHE_KEY]: { version: latestVersion, ts: Date.now() } });
-
-    if (latestVersion && isNewerVersion(currentVersion, latestVersion)) {
-      // Update verfuegbar - Banner anzeigen
-      elements.updateVersion.textContent = `v${currentVersion} → v${latestVersion}`;
-      elements.updateBanner.classList.add('visible');
-    }
-  } catch {
-    // Update-Check ist optional
-  }
-}
 
 // Initial laden
 loadAndApplySettings();
 loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
-checkForUpdates();
 
 // Periodisches Update (alle Sekunde fuer Timer, alle 5 Sekunden fuer Liste)
 updateInterval = setInterval(fetchCurrentState, 1000);

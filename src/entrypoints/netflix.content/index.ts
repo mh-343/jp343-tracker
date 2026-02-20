@@ -388,7 +388,7 @@ export default defineContentScript({
         '[data-uia="ads-info-container"]',
         '[data-uia="ads-info-text"]',
         '.watch-video--adsInfo-container',
-        // GEFUNDEN VIA DEBUG: Netflix Pause-Ad (Werbung bei Pause)
+        // Netflix Pause-Ad (Werbung bei Pause)
         '[data-uia="pause-ad"]',
         '[data-uia="video-ad"]',
         '[data-uia*="-ad"]',  // Alle data-uia die mit "-ad" enden

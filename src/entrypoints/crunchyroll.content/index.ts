@@ -944,7 +944,7 @@ export default defineContentScript({
         clearMetadataCache();
       });
 
-      // DEBUG: Auch loadedmetadata Event loggen
+      // loadedmetadata Event loggen
       video.addEventListener('loadedmetadata', () => {
         debugLog('VIDEO_META', '=== VIDEO LOADEDMETADATA ===', {
           duration: video.duration,
@@ -954,7 +954,7 @@ export default defineContentScript({
         });
       });
 
-      // DEBUG: Seeking Events
+      // Seeking Events
       video.addEventListener('seeking', () => {
         debugLog('VIDEO_SEEK', 'Seeking', { currentTime: video.currentTime });
       });
