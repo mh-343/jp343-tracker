@@ -28,3 +28,7 @@ npm-debug.log*
 
 # Release ZIPs (uploaded to GitHub Releases separately)
 releases/
+*.zip
+
+# Claude Code
+.claude/

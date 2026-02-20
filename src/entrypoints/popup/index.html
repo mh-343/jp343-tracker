@@ -680,54 +680,6 @@
       color: var(--accent);
     }
 
-    /* Update Banner */
-    .update-banner {
-      display: none;
-      padding: 10px 16px;
-      background: linear-gradient(135deg, rgba(135, 90, 255, 0.1), rgba(0, 229, 255, 0.1));
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .update-banner.visible {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .update-info {
-      flex: 1;
-    }
-
-    .update-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--accent);
-    }
-
-    .update-version {
-      font-size: 11px;
-      color: var(--text-secondary);
-    }
-
-    .btn-update {
-      padding: 6px 12px;
-      font-size: 11px;
-      background: var(--magenta);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      text-decoration: none;
-      white-space: nowrap;
-      font-weight: 600;
-      transition: all 0.2s;
-    }
-
-    .btn-update:hover {
-      box-shadow: 0 2px 10px rgba(233, 30, 139, 0.4);
-    }
-
     /* Toggle Switch (Yomitan-style) */
     .toggle-container {
       display: flex;
@@ -1018,14 +970,6 @@
     <div class="toggle-container">
       <button class="toggle-switch enabled" id="toggleEnabled" title="Enable/Disable tracking"></button>
     </div>
-  </div>
-
-  <div class="update-banner" id="updateBanner">
-    <div class="update-info">
-      <div class="update-title">Update available</div>
-      <div class="update-version" id="updateVersion">v1.0.0 → v1.0.1</div>
-    </div>
-    <a href="https://jp343.com/extension" target="_blank" class="btn-update" id="btnUpdate">Update</a>
   </div>
 
   <div class="session-card" id="sessionCard">
