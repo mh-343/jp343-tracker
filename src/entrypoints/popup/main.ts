@@ -901,7 +901,7 @@ elements.btnStop.addEventListener('click', async () => {
 // Sync Button Handler
 elements.btnSync.addEventListener('click', async () => {
   // JP343 Tab oeffnen
-  await browser.tabs.create({ url: 'https://jp343.com' });
+  await browser.tabs.create({ url: 'https://jp343.com/my-hub/' });
   window.close();
 });
 
