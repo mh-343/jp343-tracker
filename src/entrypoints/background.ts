@@ -147,6 +147,55 @@ export default defineBackground(() => {
     }
   }
 
+  function recalculateStreak(dailyMinutes: Record<string, number>): number {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let streak = 0;
+    const checkDate = new Date(today);
+
+    for (let i = 0; i < 365; i++) {
+      const dateStr = checkDate.toISOString().split('T')[0];
+      if ((dailyMinutes[dateStr] || 0) > 0) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else if (i === 0) {
+        checkDate.setDate(checkDate.getDate() - 1);
+        continue;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  }
+
+  async function subtractFromStats(entry: PendingEntry): Promise<void> {
+    try {
+      const stats = await loadStats();
+      const entryDate = new Date(entry.date).toISOString().split('T')[0];
+
+      // Minuten abziehen (nie unter 0)
+      stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
+      if (stats.dailyMinutes[entryDate]) {
+        stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
+        if (stats.dailyMinutes[entryDate] <= 0) {
+          delete stats.dailyMinutes[entryDate];
+        }
+      }
+
+      stats.currentStreak = recalculateStreak(stats.dailyMinutes);
+
+      // lastActiveDate aktualisieren
+      const dates = Object.keys(stats.dailyMinutes).sort();
+      stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
+
+      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+      log('[JP343] Stats nach Loeschung: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+    } catch (error) {
+      log('[JP343] Fehler beim Subtrahieren der Stats:', error);
+    }
+  }
+
   // STATUS INDICATOR: Visuelles Feedback auf Extension-Icon
 
   const badgeApi = browser.action ?? browser.browserAction;
@@ -432,10 +481,14 @@ export default defineBackground(() => {
         if ('entryId' in message && typeof message.entryId === 'string') {
           return withStorageLock(async () => {
             const pending = await loadPendingEntries();
+            const deletedEntry = pending.find(e => e.id === message.entryId);
             const filtered = pending.filter(e => e.id !== message.entryId);
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
             const unsyncedCount = filtered.filter(e => !e.synced).length;
             updateBadge(unsyncedCount);
+            if (deletedEntry && !deletedEntry.synced) {
+              await subtractFromStats(deletedEntry);
+            }
             return { success: true, data: { remaining: filtered.length } };
           });
         }
