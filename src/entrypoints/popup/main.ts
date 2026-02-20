@@ -930,14 +930,66 @@ function formatStatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+function renderWeekBars(dailyMinutes: Record<string, number>): void {
+  const container = document.getElementById('weekBars');
+  if (!container) return;
+
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const todayStr = now.toISOString().split('T')[0];
+
+  const days: { date: string; label: string }[] = [];
+  const dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + mondayOffset + i);
+    days.push({ date: d.toISOString().split('T')[0], label: dayLabels[i] });
+  }
+
+  const maxVal = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
+
+  // DOM-Aufbau ohne innerHTML
+  container.replaceChildren();
+  for (const { date, label } of days) {
+    const minutes = dailyMinutes[date] || 0;
+    const isToday = date === todayStr;
+    const heightPx = minutes > 0 ? Math.max(2, Math.round((minutes / maxVal) * 24)) : 2;
+
+    const item = document.createElement('div');
+    item.className = 'week-bar-item';
+
+    const track = document.createElement('div');
+    track.className = 'week-bar-track';
+
+    const fill = document.createElement('div');
+    fill.className = minutes === 0 ? 'week-bar-fill empty' : isToday ? 'week-bar-fill today' : 'week-bar-fill';
+    fill.style.height = heightPx + 'px';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'week-bar-label';
+    labelEl.textContent = label;
+
+    track.appendChild(fill);
+    item.appendChild(track);
+    item.appendChild(labelEl);
+    container.appendChild(item);
+  }
+
+  container.style.display = 'flex';
+}
+
 async function fetchAndRenderStats(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_STATS' });
     if (response?.success && response.data) {
-      const { weekMinutes, todayMinutes, streak } = response.data;
+      const { weekMinutes, todayMinutes, streak, rawDailyMinutes } = response.data;
       elements.statWeek.textContent = formatStatDuration(weekMinutes || 0);
       elements.statToday.textContent = formatStatDuration(todayMinutes || 0);
       elements.statStreak.textContent = `${streak || 0}d`;
+      if (rawDailyMinutes) {
+        renderWeekBars(rawDailyMinutes);
+      }
     }
   } catch (error) {
     log('[JP343 Popup] Stats fetch failed:', error);
