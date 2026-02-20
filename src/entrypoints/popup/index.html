@@ -747,6 +747,7 @@
       border-top: 1px solid var(--border-subtle);
       border-bottom: 1px solid var(--border-subtle);
       background: var(--bg-secondary);
+      position: relative;
     }
 
     .stat-item {
@@ -773,6 +774,25 @@
 
     .stat-streak {
       color: var(--cyan);
+    }
+
+    .stats-reset {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.2);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: color 0.2s;
+      display: flex;
+      align-items: center;
+    }
+    .stats-reset:hover {
+      color: rgba(255, 255, 255, 0.5);
     }
 
     /* Channel Section */
@@ -1072,11 +1092,15 @@
       <span class="stat-value" id="statToday">—</span>
     </div>
     <div class="stat-item">
-      <span class="stat-item-streak">
-        <span class="stat-label">Streak</span>
-        <span class="stat-value stat-streak" id="statStreak">—</span>
-      </span>
+      <span class="stat-label">Streak</span>
+      <span class="stat-value stat-streak" id="statStreak">—</span>
     </div>
+    <button class="stats-reset" id="btnResetStats" title="Reset extension stats">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="1 4 1 10 7 10"></polyline>
+        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+      </svg>
+    </button>
   </div>
 
   <div class="channel-section" id="channelSection" style="display: none;">

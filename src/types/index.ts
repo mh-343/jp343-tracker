@@ -157,7 +157,8 @@ export type ExtensionMessage =
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
   | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number }
   | { type: 'GET_ACTIVE_TAB_INFO' }
-  | { type: 'GET_STATS' };
+  | { type: 'GET_STATS' }
+  | { type: 'RESET_STATS' };
 
 // Response-Typen
 export type ExtensionResponse =

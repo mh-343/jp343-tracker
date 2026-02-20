@@ -827,6 +827,12 @@ export default defineBackground(() => {
         };
       }
 
+      case 'RESET_STATS': {
+        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
+        log('[JP343] Stats zurueckgesetzt');
+        return { success: true };
+      }
+
       default:
         return { success: false, error: 'Unknown message type' };
     }
