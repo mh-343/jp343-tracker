@@ -105,6 +105,9 @@ export interface ExtensionStorage {
 
   // Settings
   jp343_extension_settings: ExtensionSettings;
+
+  // Lokale Stats (unabhaengig vom Sync)
+  jp343_extension_stats: ExtensionStats;
 }
 
 export interface ExtensionSettings {
@@ -153,7 +156,8 @@ export type ExtensionMessage =
   | { type: 'UPDATE_SESSION_TITLE'; title: string }
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
   | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number }
-  | { type: 'GET_ACTIVE_TAB_INFO' };
+  | { type: 'GET_ACTIVE_TAB_INFO' }
+  | { type: 'GET_STATS' };
 
 // Response-Typen
 export type ExtensionResponse =
@@ -168,6 +172,21 @@ export interface ActiveTabInfo {
   domain: string;
   isStreamingSite: boolean;  // true wenn YouTube/Netflix/Crunchyroll
 }
+
+// Extension-lokale Stats (unabhaengig vom Sync-Status)
+export interface ExtensionStats {
+  totalMinutes: number;                    // Gesamtminuten je getrackt
+  dailyMinutes: Record<string, number>;    // '2026-02-20' → 130
+  lastActiveDate: string;                  // '2026-02-20'
+  currentStreak: number;                   // Tage in Folge mit Tracking
+}
+
+export const DEFAULT_STATS: ExtensionStats = {
+  totalMinutes: 0,
+  dailyMinutes: {},
+  lastActiveDate: '',
+  currentStreak: 0
+};
 
 // Default Settings
 export const DEFAULT_SETTINGS: ExtensionSettings = {

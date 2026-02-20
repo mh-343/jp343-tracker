@@ -10,10 +10,11 @@ import type {
   TrackingSession,
   JP343UserState,
   ExtensionSettings,
+  ExtensionStats,
   BlockedChannel,
   VideoState
 } from '../types';
-import { DEFAULT_SETTINGS } from '../types';
+import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../types';
 
 export default defineBackground(() => {
   const DEBUG_MODE = import.meta.env.DEV;
@@ -26,7 +27,8 @@ export default defineBackground(() => {
     PENDING: 'jp343_extension_pending',
     SESSION: 'jp343_extension_session',
     USER: 'jp343_extension_user',
-    SETTINGS: 'jp343_extension_settings'
+    SETTINGS: 'jp343_extension_settings',
+    STATS: 'jp343_extension_stats'
   };
 
   // Storage Mutex: Verhindert Race Conditions bei gleichzeitigen Load-Modify-Save Operationen
@@ -83,6 +85,8 @@ export default defineBackground(() => {
         log('[JP343] Entry gespeichert. Pending:', pending.length);
         // Badge aktualisieren
         updateBadge(pending.length);
+        // Stats aktualisieren
+        await updateStats(entry);
       } catch (error) {
         log('[JP343] Fehler beim Speichern des Entries:', error);
       }
@@ -95,6 +99,61 @@ export default defineBackground(() => {
       await browser.storage.local.set({ [STORAGE_KEYS.SESSION]: session });
     } catch (error) {
       log('[JP343] Fehler beim Speichern des Session-States:', error);
+    }
+  }
+
+  // ==========================================================================
+  // EXTENSION STATS: Lokale Stats unabhaengig vom Sync-Status
+  // ==========================================================================
+
+  async function loadStats(): Promise<ExtensionStats> {
+    try {
+      const result = await browser.storage.local.get(STORAGE_KEYS.STATS);
+      return result[STORAGE_KEYS.STATS] || { ...DEFAULT_STATS };
+    } catch {
+      return { ...DEFAULT_STATS };
+    }
+  }
+
+  // Stats aktualisieren wenn neuer PendingEntry gespeichert wird
+  async function updateStats(entry: PendingEntry): Promise<void> {
+    try {
+      const stats = await loadStats();
+      const entryDate = new Date(entry.date).toISOString().split('T')[0]; // '2026-02-20'
+      const today = new Date().toISOString().split('T')[0];
+
+      // Minuten addieren
+      stats.totalMinutes += entry.duration_min;
+      stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
+
+      // Streak berechnen
+      if (stats.lastActiveDate !== today) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+        if (stats.lastActiveDate === yesterdayStr) {
+          stats.currentStreak += 1;
+        } else if (stats.lastActiveDate !== today) {
+          stats.currentStreak = 1; // Reset
+        }
+        stats.lastActiveDate = today;
+      }
+
+      // Alte Eintraege bereinigen (> 90 Tage)
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      for (const dateKey of Object.keys(stats.dailyMinutes)) {
+        if (dateKey < cutoffStr) {
+          delete stats.dailyMinutes[dateKey];
+        }
+      }
+
+      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+      log('[JP343] Stats aktualisiert: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+    } catch (error) {
+      log('[JP343] Fehler beim Aktualisieren der Stats:', error);
     }
   }
 
@@ -661,6 +720,50 @@ export default defineBackground(() => {
 
         log('[JP343] Manual Tracking gestartet:', message.title);
         return { success: true, data: { session } };
+      }
+
+      case 'GET_STATS': {
+        const stats = await loadStats();
+
+        // Wochen-Summe berechnen (aktuelle Kalenderwoche Mo-So)
+        const now = new Date();
+        const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + mondayOffset);
+        monday.setHours(0, 0, 0, 0);
+        const mondayStr = monday.toISOString().split('T')[0];
+
+        let weekMinutes = 0;
+        const todayStr = now.toISOString().split('T')[0];
+        const todayMinutes = stats.dailyMinutes[todayStr] || 0;
+
+        for (const [dateKey, minutes] of Object.entries(stats.dailyMinutes)) {
+          if (dateKey >= mondayStr) {
+            weekMinutes += minutes;
+          }
+        }
+
+        // Streak validieren (falls letzter Tag > gestern, reset)
+        let streak = stats.currentStreak;
+        if (stats.lastActiveDate) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+          if (stats.lastActiveDate !== todayStr && stats.lastActiveDate !== yesterdayStr) {
+            streak = 0;
+          }
+        }
+
+        return {
+          success: true,
+          data: {
+            totalMinutes: stats.totalMinutes,
+            weekMinutes,
+            todayMinutes,
+            streak
+          }
+        };
       }
 
       default:

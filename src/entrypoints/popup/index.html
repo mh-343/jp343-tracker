@@ -739,6 +739,42 @@
       pointer-events: none;
     }
 
+    /* Stats Bar */
+    .stats-bar {
+      display: flex;
+      justify-content: space-around;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-secondary);
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      color: rgba(255, 255, 255, 0.45);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+
+    .stat-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-streak {
+      color: var(--cyan);
+    }
+
     /* Channel Section */
     .channel-section {
       padding: 12px 16px;
@@ -1022,6 +1058,24 @@
         <button class="btn btn-secondary" id="btnPause">Pause</button>
         <button class="btn btn-danger" id="btnStop">Stop & Save</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-item">
+      <span class="stat-label">This Week</span>
+      <span class="stat-value" id="statWeek">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Today</span>
+      <span class="stat-value" id="statToday">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-item-streak">
+        <span class="stat-label">Streak</span>
+        <span class="stat-value stat-streak" id="statStreak">—</span>
+      </span>
     </div>
   </div>
 
