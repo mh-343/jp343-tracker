@@ -44,7 +44,8 @@ const elements = {
   // Stats Bar
   statWeek: document.getElementById('statWeek') as HTMLElement,
   statToday: document.getElementById('statToday') as HTMLElement,
-  statStreak: document.getElementById('statStreak') as HTMLElement
+  statStreak: document.getElementById('statStreak') as HTMLElement,
+  btnResetStats: document.getElementById('btnResetStats') as HTMLButtonElement
 };
 
 function formatDuration(minutes: number): string {
@@ -942,6 +943,19 @@ async function fetchAndRenderStats(): Promise<void> {
     log('[JP343 Popup] Stats fetch failed:', error);
   }
 }
+
+// Stats Reset Handler
+elements.btnResetStats.addEventListener('click', async () => {
+  if (!confirm('Reset extension stats? This only affects the stats shown here, not your synced data on JP343.')) {
+    return;
+  }
+  try {
+    await browser.runtime.sendMessage({ type: 'RESET_STATS' });
+    await fetchAndRenderStats();
+  } catch (error) {
+    log('[JP343 Popup] Stats reset failed:', error);
+  }
+});
 
 // Initial laden
 loadAndApplySettings();
