@@ -822,7 +822,8 @@ export default defineBackground(() => {
             totalMinutes: stats.totalMinutes,
             weekMinutes,
             todayMinutes,
-            streak
+            streak,
+            rawDailyMinutes: stats.dailyMinutes
           }
         };
       }
