@@ -40,7 +40,11 @@ const elements = {
   manualTitle: document.getElementById('manualTitle') as HTMLInputElement,
   btnStartManual: document.getElementById('btnStartManual') as HTMLButtonElement,
   // Toast
-  toast: document.getElementById('toast') as HTMLElement
+  toast: document.getElementById('toast') as HTMLElement,
+  // Stats Bar
+  statWeek: document.getElementById('statWeek') as HTMLElement,
+  statToday: document.getElementById('statToday') as HTMLElement,
+  statStreak: document.getElementById('statStreak') as HTMLElement
 };
 
 function formatDuration(minutes: number): string {
@@ -915,14 +919,40 @@ elements.btnClear.addEventListener('click', async () => {
   }
 });
 
+// STATS BAR
+
+function formatStatDuration(minutes: number): string {
+  const rounded = Math.round(minutes);
+  if (rounded < 60) return `${rounded}m`;
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+async function fetchAndRenderStats(): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_STATS' });
+    if (response?.success && response.data) {
+      const { weekMinutes, todayMinutes, streak } = response.data;
+      elements.statWeek.textContent = formatStatDuration(weekMinutes || 0);
+      elements.statToday.textContent = formatStatDuration(todayMinutes || 0);
+      elements.statStreak.textContent = `${streak || 0}d`;
+    }
+  } catch (error) {
+    log('[JP343 Popup] Stats fetch failed:', error);
+  }
+}
+
 // Initial laden
 loadAndApplySettings();
 loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
+fetchAndRenderStats();
 
 updateInterval = setInterval(fetchCurrentState, 1000);
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
+const statsInterval = setInterval(fetchAndRenderStats, 60000);
 
 // Cleanup beim Schliessen (Fix 15)
 window.addEventListener('unload', () => {
@@ -930,4 +960,5 @@ window.addEventListener('unload', () => {
     clearInterval(updateInterval);
   }
   clearInterval(pendingInterval);
+  clearInterval(statsInterval);
 });
