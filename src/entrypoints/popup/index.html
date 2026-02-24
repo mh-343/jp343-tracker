@@ -897,29 +897,60 @@
       color: white;
     }
 
-    /* Blocked Channels List */
-    .blocked-section {
-      padding: 12px 16px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-subtle);
-    }
-
-    .blocked-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 8px;
-    }
-
-    .blocked-title {
+    /* Blocked Channels List (collapsible) */
+    .blocked-count-badge {
       font-size: 11px;
-      text-transform: uppercase;
+      color: var(--magenta);
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .channel-list-toggle {
+      background: none;
+      border: none;
       color: var(--text-secondary);
-      letter-spacing: 0.5px;
+      cursor: pointer;
+      font-size: 10px;
+      padding: 2px 4px;
+      transition: color 0.2s, transform 0.2s;
+    }
+
+    .channel-list-toggle:hover {
+      color: var(--text-primary);
+    }
+
+    .channel-list-toggle.expanded {
+      transform: rotate(180deg);
+    }
+
+    .blocked-list-container {
+      margin-top: 8px;
+    }
+
+    .blocked-list-search {
+      margin-bottom: 6px;
+    }
+
+    .blocked-search-input {
+      width: 100%;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .blocked-search-input:focus {
+      border-color: var(--neon);
+      box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.15);
     }
 
     .blocked-list {
-      max-height: 100px;
+      max-height: 200px;
       overflow-y: auto;
     }
 
@@ -1077,6 +1108,7 @@
       </div>
     </div>
     <div class="toggle-container">
+      <span class="toggle-label on" id="toggleLabel">ON</span>
       <button class="toggle-switch enabled" id="toggleEnabled" title="Enable/Disable tracking"></button>
     </div>
   </div>
@@ -1162,14 +1194,15 @@
     <div class="channel-info">
       <span class="channel-name">Channel: <strong id="currentChannelName">-</strong></span>
       <button class="btn-block" id="btnBlockChannel">Block</button>
+      <span class="blocked-count-badge" id="blockedCountBadge" style="display: none;">(<span id="blockedCountNumber">0</span>)</span>
+      <button class="channel-list-toggle" id="btnToggleBlockedList" style="display: none;">&#9660;</button>
     </div>
-  </div>
-
-  <div class="blocked-section" id="blockedSection" style="display: none;">
-    <div class="blocked-header">
-      <span class="blocked-title">Blocked channels</span>
+    <div class="blocked-list-container" id="blockedListContainer" style="display: none;">
+      <div class="blocked-list-search" id="blockedListSearch" style="display: none;">
+        <input type="text" class="blocked-search-input" id="blockedSearchInput" placeholder="Filter channels..." />
+      </div>
+      <div class="blocked-list" id="blockedList"></div>
     </div>
-    <div class="blocked-list" id="blockedList"></div>
   </div>
 
   <div class="pending-section" id="pendingSection" style="display: none;">

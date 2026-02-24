@@ -29,11 +29,17 @@ const elements = {
   btnSync: document.getElementById('btnSync') as HTMLButtonElement,
   btnClear: document.getElementById('btnClear') as HTMLButtonElement,
   toggleEnabled: document.getElementById('toggleEnabled') as HTMLButtonElement,
+  toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
   channelSection: document.getElementById('channelSection') as HTMLElement,
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
-  blockedSection: document.getElementById('blockedSection') as HTMLElement,
+  blockedCountBadge: document.getElementById('blockedCountBadge') as HTMLElement,
+  blockedCountNumber: document.getElementById('blockedCountNumber') as HTMLElement,
+  btnToggleBlockedList: document.getElementById('btnToggleBlockedList') as HTMLButtonElement,
+  blockedListContainer: document.getElementById('blockedListContainer') as HTMLElement,
+  blockedListSearch: document.getElementById('blockedListSearch') as HTMLElement,
+  blockedSearchInput: document.getElementById('blockedSearchInput') as HTMLInputElement,
   blockedList: document.getElementById('blockedList') as HTMLElement,
   btnEditTitle: document.getElementById('btnEditTitle') as HTMLButtonElement,
   // Manual Tracking
@@ -77,6 +83,7 @@ let blockedChannels: BlockedChannel[] = [];
 let currentChannelId: string | null = null;
 let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+let isBlockedListExpanded = false;
 
 // Toast anzeigen
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
@@ -96,6 +103,8 @@ function showToast(message: string, type: 'warning' | 'success' = 'warning', dur
 // Toggle-Anzeige aktualisieren
 function updateToggleDisplay(enabled: boolean): void {
   isEnabled = enabled;
+  elements.toggleLabel.textContent = enabled ? 'ON' : 'OFF';
+  elements.toggleLabel.classList.toggle('on', enabled);
   if (enabled) {
     elements.toggleEnabled.classList.add('enabled');
     elements.sessionCard.classList.remove('disabled');
@@ -225,6 +234,9 @@ function updateChannelDisplay(session: TrackingSession | null): void {
     currentChannelId = session.channelId;
     elements.channelSection.style.display = 'block';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
+    // Channel-Name und Block-Button anzeigen
+    (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
+    elements.btnBlockChannel.style.display = '';
 
     // Button-Status aktualisieren
     const blocked = isChannelBlocked(session.channelId);
@@ -232,19 +244,51 @@ function updateChannelDisplay(session: TrackingSession | null): void {
     elements.btnBlockChannel.classList.toggle('blocked', blocked);
   } else {
     currentChannelId = null;
-    elements.channelSection.style.display = 'none';
+    // Channel-Section auch ohne Session anzeigen, wenn blockierte Kanaele existieren
+    elements.channelSection.style.display = blockedChannels.length > 0 ? 'block' : 'none';
+    // Channel-Name und Block-Button ausblenden wenn keine Session
+    (elements.currentChannelName.parentElement as HTMLElement).style.display = 'none';
+    elements.btnBlockChannel.style.display = 'none';
+  }
+
+  // Badge + Chevron Sichtbarkeit
+  const hasBlocked = blockedChannels.length > 0;
+  elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
+  elements.blockedCountNumber.textContent = String(blockedChannels.length);
+  elements.btnToggleBlockedList.style.display = hasBlocked ? 'inline-block' : 'none';
+
+  // Liste zuklappen wenn leer
+  if (!hasBlocked) {
+    isBlockedListExpanded = false;
+    elements.blockedListContainer.style.display = 'none';
+    elements.btnToggleBlockedList.classList.remove('expanded');
   }
 }
 
-// Blocked-Liste rendern
-function renderBlockedList(): void {
-  if (blockedChannels.length === 0) {
-    elements.blockedSection.style.display = 'none';
-    return;
+// Blocked-Liste rendern (innerhalb der Channel-Section)
+function renderBlockedList(filterText = ''): void {
+  // Badge-Count aktualisieren
+  elements.blockedCountNumber.textContent = String(blockedChannels.length);
+  const hasBlocked = blockedChannels.length > 0;
+  elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
+  elements.btnToggleBlockedList.style.display = hasBlocked ? 'inline-block' : 'none';
+
+  // Suchfeld nur bei >= 5 Eintraegen anzeigen
+  elements.blockedListSearch.style.display = blockedChannels.length >= 5 ? 'block' : 'none';
+
+  // Liste zuklappen wenn leer
+  if (!hasBlocked) {
+    isBlockedListExpanded = false;
+    elements.blockedListContainer.style.display = 'none';
+    elements.btnToggleBlockedList.classList.remove('expanded');
   }
 
-  elements.blockedSection.style.display = 'block';
-  elements.blockedList.innerHTML = blockedChannels.map(channel => `
+  // Gefilterte Kanaele
+  const filtered = filterText
+    ? blockedChannels.filter(c => c.channelName.toLowerCase().includes(filterText.toLowerCase()))
+    : blockedChannels;
+
+  elements.blockedList.innerHTML = filtered.map(channel => `
     <div class="blocked-item" data-id="${escapeHtml(channel.channelId)}">
       <span class="blocked-item-name">${escapeHtml(channel.channelName)}</span>
       <button class="btn-unblock" data-id="${escapeHtml(channel.channelId)}">Unblock</button>
@@ -307,6 +351,26 @@ elements.btnBlockChannel.addEventListener('click', async () => {
   } else {
     await blockChannel();
   }
+});
+
+// Chevron/Badge Click → Toggle Blocked-Liste
+function toggleBlockedList(): void {
+  isBlockedListExpanded = !isBlockedListExpanded;
+  elements.blockedListContainer.style.display = isBlockedListExpanded ? 'block' : 'none';
+  elements.btnToggleBlockedList.classList.toggle('expanded', isBlockedListExpanded);
+  // Suchfeld leeren beim Zuklappen
+  if (!isBlockedListExpanded) {
+    elements.blockedSearchInput.value = '';
+    renderBlockedList();
+  }
+}
+
+elements.btnToggleBlockedList.addEventListener('click', toggleBlockedList);
+elements.blockedCountBadge.addEventListener('click', toggleBlockedList);
+
+// Search Input → Filter Blocked-Liste
+elements.blockedSearchInput.addEventListener('input', () => {
+  renderBlockedList(elements.blockedSearchInput.value);
 });
 
 // ==========================================================================
