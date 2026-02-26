@@ -202,7 +202,9 @@ export default defineContentScript({
       entry: JP343ImmersionLogEntry,
       userState: JP343UserState,
       originalVideoTitle?: string,
-      originalResourceUrl?: string
+      originalResourceUrl?: string,
+      originalThumbnail?: string,
+      channelThumbnail?: string
     ): Promise<boolean> {
       const hasAuth = userState.isLoggedIn || userState.guestToken;
       if (!hasAuth || !userState.nonce || !userState.ajaxUrl) {
@@ -225,12 +227,13 @@ export default defineContentScript({
           notes: entry.note || '',
           project_title: entry.project || '',
           project_url: entry.resourceUrl || '',
-          project_thumbnail: entry.thumbnail || '',
+          project_thumbnail: channelThumbnail || entry.thumbnail || '',
           channel_id: entry.channelId || '',
           channel_name: entry.channelName || '',
           channel_url: entry.channelUrl || '',
           video_title: videoTitle,
-          resource_url: resourceUrl
+          resource_url: resourceUrl,
+          thumbnail: originalThumbnail || entry.thumbnail || ''
         };
 
         if (userState.guestToken) {
@@ -363,6 +366,7 @@ export default defineContentScript({
           try {
             const originalVideoTitle = entry.project;
             const originalResourceUrl = entry.url;
+            const originalThumbnail = entry.thumbnail;
 
             const customTitle = titleEdits[entry.id];
             if (customTitle) {
@@ -378,12 +382,10 @@ export default defineContentScript({
 
             const jp343Entry = convertToJP343Format(entry);
 
-            if (channelThumbnails[jp343Entry.project_id]) {
-              jp343Entry.thumbnail = channelThumbnails[jp343Entry.project_id];
-            }
+            const channelThumb = channelThumbnails[jp343Entry.project_id] || undefined;
 
             if (userState.isLoggedIn || userState.guestToken) {
-              const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl);
+              const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl, originalThumbnail, channelThumb);
               if (serverSuccess) {
                 await markEntrySynced(entry.id);
                 log('[JP343 Bridge] Entry via Server gesynct (kein localStorage):', entry.project);
