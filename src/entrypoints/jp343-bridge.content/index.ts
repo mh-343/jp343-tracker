@@ -226,7 +226,9 @@ export default defineContentScript({
       entry: JP343ImmersionLogEntry,
       userState: JP343UserState,
       originalVideoTitle?: string,
-      originalResourceUrl?: string
+      originalResourceUrl?: string,
+      originalThumbnail?: string,
+      channelThumbnail?: string
     ): Promise<boolean> {
       // Eingeloggt ODER Gast mit Token: Server-Sync moeglich
       const hasAuth = userState.isLoggedIn || userState.guestToken;
@@ -253,13 +255,16 @@ export default defineContentScript({
           // Projekt-Metadaten fuer Auto-Create auf Server
           project_title: entry.project || '',
           project_url: entry.resourceUrl || '',
-          project_thumbnail: entry.thumbnail || '',
+          // project_thumbnail = Bild fuer Custom Project (Channel/Show-Poster)
+          project_thumbnail: channelThumbnail || entry.thumbnail || '',
           channel_id: entry.channelId || '',
           channel_name: entry.channelName || '',
           channel_url: entry.channelUrl || '',
           // Video-spezifische Daten fuer Session-Anzeige (ORIGINAL Video-Titel!)
           video_title: videoTitle,
-          resource_url: resourceUrl
+          resource_url: resourceUrl,
+          // Per-Session Thumbnail (Episoden-spezifisch, NICHT Channel/Show-Poster)
+          thumbnail: originalThumbnail || entry.thumbnail || ''
         };
 
         // Guest Token hinzufuegen wenn vorhanden
@@ -398,9 +403,10 @@ export default defineContentScript({
           }
 
           try {
-            // Original Video-Titel speichern BEVOR er ueberschrieben wird
+            // Original-Daten speichern BEVOR sie ueberschrieben werden
             const originalVideoTitle = entry.project;
             const originalResourceUrl = entry.url;
+            const originalThumbnail = entry.thumbnail;
 
             // Titel-Aenderung aus Dialog uebernehmen (falls vorhanden)
             const customTitle = titleEdits[entry.id];
@@ -418,14 +424,13 @@ export default defineContentScript({
 
             const jp343Entry = convertToJP343Format(entry);
 
-            // Channel-Thumbnail ueberschreibt Episoden-Thumbnail (z.B. Crunchyroll Serien-Cover)
-            if (channelThumbnails[jp343Entry.project_id]) {
-              jp343Entry.thumbnail = channelThumbnails[jp343Entry.project_id];
-            }
+            // Channel-Thumbnail fuer Projekt-Bild (wird separat als project_thumbnail gesendet)
+            // Episoden-Thumbnail (originalThumbnail) bleibt erhalten fuer per-Session Anzeige
+            const channelThumb = channelThumbnails[jp343Entry.project_id] || undefined;
 
             if (userState.isLoggedIn || userState.guestToken) {
               // Eingeloggte User / Gaeste mit Token: Server ist autoritativ — erst Server-Sync, localStorage nur als Fallback
-              const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl);
+              const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl, originalThumbnail, channelThumb);
               if (serverSuccess) {
                 // Server hat die Daten — KEIN localStorage-Inject noetig (verhindert Duplikate)
                 await markEntrySynced(entry.id);
