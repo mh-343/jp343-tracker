@@ -602,6 +602,14 @@ export default defineBackground(() => {
 
           // Badge-Anzeige aktualisieren wenn deaktiviert
           if (!message.enabled) {
+            // Laufende Session finalisieren und als Pending speichern
+            const entry = tracker.finalizeSession();
+            if (entry) {
+              await savePendingEntry(entry);
+              log('[JP343] Aktive Session finalisiert bei Deaktivierung');
+            }
+            await saveSessionState(null);
+
             badgeApi.setBadgeText({ text: 'OFF' });
             badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
             badgeApi.setTitle({ title: 'JP343 - Tracking disabled' });
@@ -624,6 +632,16 @@ export default defineBackground(() => {
             await saveSettings(settings);
             log('[JP343] Kanal blockiert:', message.channel.channelName);
           }
+
+          // Aktive Session stoppen wenn der geblockte Kanal gerade getrackt wird
+          const currentSession = tracker.getCurrentSession();
+          if (currentSession && currentSession.channelId === message.channel.channelId) {
+            log('[JP343] Aktive Session fuer geblockten Kanal gestoppt:', message.channel.channelName);
+            tracker.stopSession();
+            await saveSessionState(null);
+            scheduleStatusBadgeUpdate();
+          }
+
           return { success: true };
         }
         return { success: false, error: 'No channel provided' };
