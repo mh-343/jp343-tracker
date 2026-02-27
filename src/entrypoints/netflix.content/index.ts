@@ -738,6 +738,14 @@ export default defineContentScript({
         return cachedBrowseThumbnail;
       }
 
+      const ogImageSecure = document.querySelector('meta[property="og:image:secure_url"]') as HTMLMetaElement;
+      const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
+      const metaThumb = ogImageSecure?.content || ogImage?.content;
+      if (metaThumb && metaThumb.startsWith('https://') && !metaThumb.includes('nflx-static')) {
+        log('[JP343] Netflix: OG-Image aus Meta-Tag gefunden:', metaThumb);
+        return metaThumb;
+      }
+
       return null;
     }
 
