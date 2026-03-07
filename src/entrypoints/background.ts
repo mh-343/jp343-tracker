@@ -808,6 +808,8 @@ export default defineBackground(() => {
     }
   }
 
+  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 Stunden
+
   const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
 
@@ -833,6 +835,16 @@ export default defineBackground(() => {
     if (!isValidSavedSession(savedSession)) {
       log('[JP343] Recovery: Ungueltige Session-Daten, wird verworfen');
       await saveSessionState(null);
+      return;
+    }
+
+    const sessionAge = Date.now() - savedSession.lastUpdate;
+
+    // Session bleibt in Storage als Backup
+    if (sessionAge < MAX_RESTORE_AGE_MS) {
+      tracker.restoreSession(savedSession);
+      log('[JP343] Recovery: Session wiederhergestellt (Alter:', Math.round(sessionAge / 1000), 's)');
+      scheduleStatusBadgeUpdate();
       return;
     }
 
@@ -892,6 +904,16 @@ export default defineBackground(() => {
       if (session) {
         await saveSessionState(session);
         log('[JP343] Periodic save - Session gesichert:', session.title, Math.round(session.accumulatedMs / 1000), 's');
+
+        if (session.isPaused && (Date.now() - session.lastUpdate) > MAX_RESTORE_AGE_MS) {
+          log('[JP343] Stale Session erkannt (>4h pausiert) - finalisiere');
+          const entry = tracker.finalizeSession();
+          if (entry) {
+            await savePendingEntry(entry);
+          }
+          await saveSessionState(null);
+          scheduleStatusBadgeUpdate();
+        }
       }
 
       const pending = await loadPendingEntries();

@@ -113,6 +113,14 @@ export class TimeTracker {
     }
   }
 
+  restoreSession(saved: TrackingSession): void {
+    this.session = {
+      ...saved,
+      lastUpdate: Date.now()
+    };
+    log('[JP343] Session wiederhergestellt:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
+  }
+
   onAdStart(): void {
     if (!this.isInAd) {
       this.isInAd = true;
