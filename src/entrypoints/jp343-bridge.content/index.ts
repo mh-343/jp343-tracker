@@ -24,6 +24,13 @@ export default defineContentScript({
 
     log('[JP343 Bridge] Content Script geladen');
 
+    function cloneForPage<T>(obj: T): T {
+      if (typeof (globalThis as any).cloneInto === 'function') {
+        return (globalThis as any).cloneInto(obj, window);
+      }
+      return obj;
+    }
+
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
     log('[JP343 Bridge] Extension v' + version + ' signalisiert');
@@ -187,7 +194,7 @@ export default defineContentScript({
         localStorage.setItem(STORAGE_KEYS.IMMERSION_LOG, JSON.stringify(immersionLog));
 
         window.dispatchEvent(new CustomEvent('jp343:tracker:changed', {
-          detail: { entry, action: 'log_added', source: 'extension' }
+          detail: cloneForPage({ entry, action: 'log_added', source: 'extension' })
         }));
 
         log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
@@ -330,7 +337,7 @@ export default defineContentScript({
         log('[JP343 Bridge] ' + unsynced.length + ' unsynced Entries gefunden' + (synced.length > 0 ? ' + ' + synced.length + ' synced' : '') + ' - zeige Dialog');
 
         window.dispatchEvent(new CustomEvent('jp343:extension:pending-entries', {
-          detail: { entries: unsynced, syncedEntries: synced }
+          detail: cloneForPage({ entries: unsynced, syncedEntries: synced })
         }));
 
       } catch (error) {
