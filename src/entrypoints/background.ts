@@ -861,6 +861,8 @@ export default defineBackground(() => {
     }
   }
 
+  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 Stunden
+
   // Type-Guard fuer gespeicherte Sessions (Fix 8)
   const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
@@ -878,6 +880,7 @@ export default defineBackground(() => {
   }
 
   // Session Recovery beim Start — rettet Tracking-Daten nach Browser-Crash/Shutdown
+  // oder stellt Session wieder her wenn Service Worker nur kurz weg war
   async function recoverSession(): Promise<void> {
     try {
     const result = await browser.storage.local.get(STORAGE_KEYS.SESSION);
@@ -892,6 +895,18 @@ export default defineBackground(() => {
       return;
     }
 
+    const sessionAge = Date.now() - savedSession.lastUpdate;
+
+    // Session < 4h alt → in Tracker wiederherstellen (SW war nur kurz weg)
+    // Session bleibt in Storage als Backup
+    if (sessionAge < MAX_RESTORE_AGE_MS) {
+      tracker.restoreSession(savedSession);
+      log('[JP343] Recovery: Session wiederhergestellt (Alter:', Math.round(sessionAge / 1000), 's)');
+      scheduleStatusBadgeUpdate();
+      return;
+    }
+
+    // Session >= 4h alt → Finalisieren (genuiner Crash/Orphan)
     // Minimum 1 Minute akkumuliert — sonst verwerfen
     if (savedSession.accumulatedMs < 60000) {
       log('[JP343] Recovery: Session zu kurz (<1min), wird verworfen');
@@ -952,6 +967,17 @@ export default defineBackground(() => {
       if (session) {
         await saveSessionState(session);
         log('[JP343] Periodic save - Session gesichert:', session.title, Math.round(session.accumulatedMs / 1000), 's');
+
+        // Stale-Cleanup: Wiederhergestellte Session die zu lange pausiert ist finalisieren
+        if (session.isPaused && (Date.now() - session.lastUpdate) > MAX_RESTORE_AGE_MS) {
+          log('[JP343] Stale Session erkannt (>4h pausiert) - finalisiere');
+          const entry = tracker.finalizeSession();
+          if (entry) {
+            await savePendingEntry(entry);
+          }
+          await saveSessionState(null);
+          scheduleStatusBadgeUpdate();
+        }
       }
 
       const pending = await loadPendingEntries();

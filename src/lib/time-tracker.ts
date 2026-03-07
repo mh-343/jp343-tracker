@@ -123,6 +123,15 @@ export class TimeTracker {
     }
   }
 
+  // Session aus Storage wiederherstellen (nach Service Worker Restart)
+  restoreSession(saved: TrackingSession): void {
+    this.session = {
+      ...saved,
+      lastUpdate: Date.now()  // Reset fuer tick()-Delta
+    };
+    log('[JP343] Session wiederhergestellt:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
+  }
+
   // Werbung erkannt - pausiert Tracking
   onAdStart(): void {
     if (!this.isInAd) {
