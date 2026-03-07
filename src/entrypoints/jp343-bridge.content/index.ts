@@ -28,6 +28,16 @@ export default defineContentScript({
 
     log('[JP343 Bridge] Content Script geladen');
 
+    // Firefox Cross-Compartment Fix: cloneInto() klont Objekte in Page-Compartment
+    // damit CustomEvent.detail fuer Page-Scripts zugaenglich ist.
+    // Chrome hat kein cloneInto — dort ist es nicht noetig.
+    function cloneForPage<T>(obj: T): T {
+      if (typeof (globalThis as any).cloneInto === 'function') {
+        return (globalThis as any).cloneInto(obj, window);
+      }
+      return obj;
+    }
+
     // Signal fuer Website: Extension ist installiert
     // Die Website kann das pruefen und entsprechend reagieren (z.B. Banner ausblenden)
     const version = browser.runtime.getManifest().version;
@@ -211,7 +221,7 @@ export default defineContentScript({
         localStorage.setItem(STORAGE_KEYS.IMMERSION_LOG, JSON.stringify(immersionLog));
 
         window.dispatchEvent(new CustomEvent('jp343:tracker:changed', {
-          detail: { entry, action: 'log_added', source: 'extension' }
+          detail: cloneForPage({ entry, action: 'log_added', source: 'extension' })
         }));
 
         log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
@@ -368,7 +378,7 @@ export default defineContentScript({
         // Event an Website dispatchen, damit Sync-Dialog angezeigt wird
         // Sende sowohl unsynced als auch synced Entries (fuer Re-Sync)
         window.dispatchEvent(new CustomEvent('jp343:extension:pending-entries', {
-          detail: { entries: unsynced, syncedEntries: synced }
+          detail: cloneForPage({ entries: unsynced, syncedEntries: synced })
         }));
 
       } catch (error) {
