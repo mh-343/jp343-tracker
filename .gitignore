@@ -28,7 +28,12 @@ npm-debug.log*
 
 # Release ZIPs (uploaded to GitHub Releases separately)
 releases/
+store-assets/
 *.zip
+*.xpi
+
+# web-ext build artifacts
+web-ext-artifacts/
 
 # Claude Code
 .claude/
