@@ -11,7 +11,7 @@ export default defineConfig({
 
   manifest: {
     name: 'JP343 Streaming Tracker',
-    version: '1.6.3',
+    version: '1.6.4',
     description: 'Track your Japanese immersion time on streaming platforms',
 
     // Firefox Add-on ID (fuer AMO Store Submission)
