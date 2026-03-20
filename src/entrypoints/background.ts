@@ -395,7 +395,7 @@ export default defineBackground(() => {
     if (!settings.enabled) {
       badgeApi.setBadgeText({ text: 'OFF' });
       badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
-      badgeApi.setTitle({ title: 'JP343 - Tracking disabled' });
+      badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
       return;
     }
 
@@ -408,20 +408,20 @@ export default defineBackground(() => {
         // Gruen mit Record-Symbol
         badgeApi.setBadgeText({ text: '●' });
         badgeApi.setBadgeBackgroundColor({ color: '#22c55e' }); // Green
-        badgeApi.setTitle({ title: 'JP343 - Recording...' });
+        badgeApi.setTitle({ title: 'jp343 - Recording...' });
         break;
 
       case 'paused':
         // Orange mit Pause-Symbol
         badgeApi.setBadgeText({ text: '❚❚' });
         badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' }); // Amber
-        badgeApi.setTitle({ title: 'JP343 - Paused' });
+        badgeApi.setTitle({ title: 'jp343 - Paused' });
         break;
 
       case 'ad':
         badgeApi.setBadgeText({ text: 'AD' });
         badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
-        badgeApi.setTitle({ title: 'JP343 - Ad playing (not tracking)' });
+        badgeApi.setTitle({ title: 'jp343 - Ad playing (not tracking)' });
         break;
 
       case 'idle':
@@ -429,10 +429,10 @@ export default defineBackground(() => {
         if (unsyncedCount > 0) {
           badgeApi.setBadgeText({ text: String(unsyncedCount) });
           badgeApi.setBadgeBackgroundColor({ color: '#875aff' }); // JP343 accent
-          badgeApi.setTitle({ title: `JP343 - ${unsyncedCount} pending entries` });
+          badgeApi.setTitle({ title: `jp343 - ${unsyncedCount} pending entries` });
         } else {
           badgeApi.setBadgeText({ text: '' });
-          badgeApi.setTitle({ title: 'JP343 Streaming Tracker' });
+          badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
         }
         break;
     }
@@ -766,7 +766,7 @@ export default defineBackground(() => {
 
             badgeApi.setBadgeText({ text: 'OFF' });
             badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
-            badgeApi.setTitle({ title: 'JP343 - Tracking disabled' });
+            badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
           } else {
             scheduleStatusBadgeUpdate();
           }

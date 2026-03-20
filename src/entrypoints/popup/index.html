@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JP343 Tracker</title>
+  <title>jp343 Tracker</title>
   <style>
     :root {
       --bg-primary: #0a0a1a;
@@ -22,6 +22,24 @@
       --danger: #f44336;
       --gradient-line: linear-gradient(90deg, #00e5ff, #875aff, #e91e8b);
       --border-subtle: rgba(135, 90, 255, 0.15);
+    }
+
+    [data-theme="light"] {
+      --bg-primary: #f8f0ee;
+      --bg-secondary: #f2eae7;
+      --bg-tertiary: #ece3df;
+      --bg-card: #fffbfa;
+      --text-primary: #2e2228;
+      --text-secondary: #9a868e;
+      --accent: #6b3a7d;
+      --accent-hover: #7d4a90;
+      --neon: #1a8a8a;
+      --magenta: #a03060;
+      --success: #4a8a50;
+      --warning: #b87830;
+      --danger: #b83030;
+      --gradient-line: linear-gradient(90deg, #e8b4b8, #c4728a, #a03060);
+      --border-subtle: rgba(160, 48, 96, 0.12);
     }
 
     * {
@@ -1115,18 +1133,53 @@
     ::-webkit-scrollbar-thumb:hover {
       background: var(--magenta);
     }
+
+    /* ── Light Mode Overrides ────────────────────────── */
+    [data-theme="light"] .header-bar { background: rgba(255, 251, 250, 0.95); }
+    [data-theme="light"] .duration-display { text-shadow: none; }
+    [data-theme="light"] .btn-pause { box-shadow: 0 2px 10px rgba(107, 58, 125, 0.2); }
+    [data-theme="light"] .btn-pause:hover { box-shadow: 0 4px 16px rgba(107, 58, 125, 0.3); }
+    [data-theme="light"] .btn-stop { box-shadow: 0 2px 10px rgba(160, 48, 96, 0.2); }
+    [data-theme="light"] .btn-stop:hover { box-shadow: 0 4px 16px rgba(160, 48, 96, 0.3); }
+    [data-theme="light"] .stat-value { color: var(--neon); }
+    [data-theme="light"] .entry-group { border-color: rgba(160, 48, 96, 0.1); }
+    [data-theme="light"] .entry-thumb-placeholder { background: rgba(160, 48, 96, 0.08); color: var(--magenta); }
+    [data-theme="light"] .platform-badge { background: rgba(160, 48, 96, 0.08); color: var(--magenta); }
+    [data-theme="light"] .footer-bar { background: rgba(255, 251, 250, 0.95); }
+    [data-theme="light"] .footer-link { color: var(--text-secondary); }
+    [data-theme="light"] .entry-item:hover { background: rgba(160, 48, 96, 0.04); }
+    [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(160, 48, 96, 0.2); }
+
+    .theme-toggle-popup {
+      background: none;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-size: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      padding: 0;
+    }
+    .theme-toggle-popup:hover { border-color: var(--magenta); color: var(--magenta); }
   </style>
 </head>
 <body>
   <div class="header">
     <div style="display: flex; align-items: center; gap: 8px;">
-      <h1>JP343 Tracker</h1>
+      <h1>jp343 Tracker</h1>
       <div class="status-indicator" id="status">
         <span class="status-dot" id="statusDot"></span>
         <span id="statusText">Idle</span>
       </div>
     </div>
-    <div class="toggle-container">
+    <div class="toggle-container" style="display: flex; align-items: center; gap: 6px;">
+      <button class="theme-toggle-popup" id="themeTogglePopup" title="Toggle theme">&#9790;</button>
       <span class="toggle-label on" id="toggleLabel">ON</span>
       <button class="toggle-switch enabled" id="toggleEnabled" title="Enable/Disable tracking"></button>
     </div>
@@ -1198,12 +1251,6 @@
       <span class="stat-label">Streak</span>
       <span class="stat-value stat-streak" id="statStreak">—</span>
     </div>
-    <button class="stats-reset" id="btnResetStats" title="Reset extension stats">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="1 4 1 10 7 10"></polyline>
-        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-      </svg>
-    </button>
   </div>
 
   <!-- Mini-Wochenbalken: Mo-So, befüllt via renderWeekBars() in main.ts -->
