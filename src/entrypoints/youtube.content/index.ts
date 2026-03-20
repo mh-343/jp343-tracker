@@ -786,6 +786,16 @@ export default defineContentScript({
 
     lastVideoUrl = window.location.href;
 
+    // PAUSE_VIDEO: Video pausieren wenn "Stop & Save" geklickt wird
+    browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
+        currentVideoElement.pause();
+      }
+      if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
+        currentVideoElement.play();
+      }
+    });
+
     debugLog('INIT', 'YouTube Content Script vollstaendig initialisiert', {
       url: window.location.href,
       isWatchPage: window.location.pathname.includes('/watch')

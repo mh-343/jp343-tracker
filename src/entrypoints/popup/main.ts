@@ -22,12 +22,7 @@ const elements = {
   btnPause: document.getElementById('btnPause') as HTMLButtonElement,
   btnStop: document.getElementById('btnStop') as HTMLButtonElement,
   pendingSection: document.getElementById('pendingSection') as HTMLElement,
-  pendingCount: document.getElementById('pendingCount') as HTMLElement,
-  pendingMinutes: document.getElementById('pendingMinutes') as HTMLElement,
-  syncedCount: document.getElementById('syncedCount') as HTMLElement,
   pendingList: document.getElementById('pendingList') as HTMLElement,
-  btnSync: document.getElementById('btnSync') as HTMLButtonElement,
-  btnClear: document.getElementById('btnClear') as HTMLButtonElement,
   toggleEnabled: document.getElementById('toggleEnabled') as HTMLButtonElement,
   toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
@@ -513,22 +508,16 @@ function updateSessionDisplay(
   elements.btnPause.textContent = session.isPaused ? 'Resume' : 'Pause';
 }
 
-// Pending Entries anzeigen (nur unsynced zaehlen)
+// Session-Liste anzeigen (kein Sync-Status sichtbar)
 function updatePendingDisplay(entries: PendingEntry[]): void {
-  const unsynced = entries.filter(e => !e.synced);
-  const synced = entries.filter(e => e.synced);
+  // Eingeloggt: nur unsynced Entries zeigen (synced = auf Server, Popup braucht sie nicht)
+  // Nicht eingeloggt: alle zeigen
+  const hasAuth = entries.some(e => e.synced);
+  const visible = hasAuth
+    ? entries.filter(e => !e.synced)
+    : entries;
 
-  if (entries.length > 0) {
-    elements.pendingSection.style.display = 'block';
-    elements.pendingCount.textContent = String(unsynced.length);
-    elements.pendingMinutes.textContent = formatDuration(unsynced.reduce((sum, e) => sum + e.duration_min, 0));
-    elements.syncedCount.textContent = String(synced.length);
-
-    // Clear-Button nur zeigen wenn synced entries existieren
-    elements.btnClear.style.display = synced.length > 0 ? 'inline-block' : 'none';
-  } else {
-    elements.pendingSection.style.display = 'none';
-  }
+  elements.pendingSection.style.display = visible.length > 0 ? 'block' : 'none';
 }
 
 // Status-Badge fuer Entry
@@ -627,14 +616,11 @@ function renderPendingList(entries: PendingEntry[]): void {
     }
   });
 
-  // Entries nach Video gruppieren
+  // Entries nach Video gruppieren, neueste zuerst, max 5 Gruppen
   const grouped = groupEntriesByVideo(entries);
-
-  // Sortieren: Unsynced zuerst, dann synced. Innerhalb: neueste zuerst
-  const sorted = [...grouped].sort((a, b) => {
-    if (a.allSynced !== b.allSynced) return a.allSynced ? 1 : -1;
-    return new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime();
-  });
+  const sorted = [...grouped]
+    .sort((a, b) => new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime())
+    .slice(0, 5);
 
   elements.pendingList.innerHTML = sorted.map((group, groupIndex) => {
     const entry = group.primary;
@@ -645,7 +631,6 @@ function renderPendingList(entries: PendingEntry[]): void {
       <div class="session-detail" data-id="${escapeHtml(e.id)}">
         <span class="session-detail-date">${formatSessionDate(e.date)}</span>
         <span class="session-detail-duration">${formatDuration(e.duration_min)}</span>
-        <span class="session-detail-status ${e.synced ? 'synced' : 'pending'}">${e.synced ? '✓' : '●'}</span>
         <button class="session-detail-delete" data-id="${escapeHtml(e.id)}" title="Delete this session">×</button>
       </div>
     `).join('');
@@ -685,7 +670,6 @@ function renderPendingList(entries: PendingEntry[]): void {
             ) : ''}
           </div>
         </div>
-        ${getGroupStatusBadge(group)}
         <button class="pending-entry-delete" data-ids="${escapeHtml(group.entryIds.join(','))}" title="Delete all sessions">×</button>
       </div>
       ${hasMultipleSessions ? `
@@ -1008,26 +992,14 @@ elements.btnStop.addEventListener('click', async () => {
   }
 });
 
-// Sync Button Handler
-elements.btnSync.addEventListener('click', async () => {
-  // JP343 Tab oeffnen
-  await browser.tabs.create({ url: 'https://jp343.com/my-hub/' });
+// Dashboard Button Handler
+document.getElementById('btnDashboard')?.addEventListener('click', () => {
+  const dashboardUrl = browser.runtime.getURL('dashboard.html');
+  browser.tabs.create({ url: dashboardUrl });
   window.close();
 });
 
-// Clear Synced Button Handler
-elements.btnClear.addEventListener('click', async () => {
-  try {
-    const response = await browser.runtime.sendMessage({ type: 'CLEAR_SYNCED_ENTRIES' });
-
-    if (response.success) {
-      log('[JP343 Popup] Synced entries geloescht:', response.data?.removed);
-      await fetchPendingEntries();
-    }
-  } catch (error) {
-    log('[JP343 Popup] Fehler beim Loeschen:', error);
-  }
-});
+// (Sync Now + Clear Synced entfernt — Auto-Sync handled alles)
 
 // =============================================================================
 // STATS BAR

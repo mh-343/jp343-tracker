@@ -1169,5 +1169,15 @@ export default defineContentScript({
         pendingVideoId = videoId;
       }
     }, 3000);
+
+    // PAUSE_VIDEO: Video pausieren wenn "Stop & Save" geklickt wird
+    browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
+        currentVideoElement.pause();
+      }
+      if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
+        currentVideoElement.play();
+      }
+    });
   }
 });

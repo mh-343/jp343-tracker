@@ -12,7 +12,8 @@ import type {
   ExtensionSettings,
   ExtensionStats,
   BlockedChannel,
-  VideoState
+  VideoState,
+  DirectSyncResult
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../types';
 
@@ -91,6 +92,184 @@ export default defineBackground(() => {
         log('[JP343] Fehler beim Speichern des Entries:', error);
       }
     });
+    // Auto-Sync starten wenn eingeloggt
+    scheduleAutoSync();
+  }
+
+  // ==========================================================================
+  // AUTO-SYNC: Automatisch syncen wenn eingeloggt (5s Debounce)
+  // ==========================================================================
+
+  let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleAutoSync(): void {
+    if (autoSyncTimer) return; // Debounce — nicht mehrfach starten
+    autoSyncTimer = setTimeout(async () => {
+      autoSyncTimer = null;
+      try {
+        const userState: JP343UserState | null = (
+          await browser.storage.local.get(STORAGE_KEYS.USER)
+        )[STORAGE_KEYS.USER] ?? null;
+
+        if (userState?.isLoggedIn && userState?.nonce) {
+          log('[JP343] Auto-Sync gestartet');
+          const result = await syncEntriesDirect();
+          log('[JP343] Auto-Sync Ergebnis:', result.succeeded, 'synced,', result.failed, 'failed');
+        }
+      } catch (error) {
+        log('[JP343] Auto-Sync Fehler:', error);
+      }
+    }, 5000);
+  }
+
+  // Retry-Alarm: alle 5 Minuten fehlgeschlagene Entries erneut syncen
+  browser.alarms.create('jp343-auto-sync-retry', { periodInMinutes: 5 });
+  // Cleanup-Alarm: alle 6 Stunden synced Entries aelter als 24h entfernen
+  browser.alarms.create('jp343-cleanup-synced', { periodInMinutes: 360 });
+
+  browser.alarms.onAlarm.addListener(async (alarm) => {
+    if (alarm.name === 'jp343-auto-sync-retry') {
+      scheduleAutoSync();
+    }
+    if (alarm.name === 'jp343-cleanup-synced') {
+      await withStorageLock(async () => {
+        const pending = await loadPendingEntries();
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        const cleaned = pending.filter(e =>
+          !e.synced || !e.syncedAt || new Date(e.syncedAt).getTime() > cutoff
+        );
+        if (cleaned.length < pending.length) {
+          await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: cleaned });
+          log('[JP343] Cleanup: ' + (pending.length - cleaned.length) + ' alte synced Entries entfernt');
+        }
+      });
+    }
+  });
+
+  // ==========================================================================
+  // DIRECT SYNC: Sync ohne Bridge-Content-Script direkt aus dem Service Worker
+  // ==========================================================================
+
+  async function syncEntriesDirect(): Promise<DirectSyncResult> {
+    const userState: JP343UserState | null = (
+      await browser.storage.local.get(STORAGE_KEYS.USER)
+    )[STORAGE_KEYS.USER] ?? null;
+
+    // Kein User State gecacht — User hat jp343.com noch nicht besucht
+    if (!userState || !userState.ajaxUrl) {
+      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
+    }
+
+    // Weder eingeloggt noch Gast-Token — kein Sync moeglich
+    const hasAuth = userState.isLoggedIn || !!userState.guestToken;
+    if (!hasAuth || !userState.nonce) {
+      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !userState.nonce };
+    }
+
+    const pending = await loadPendingEntries();
+    const unsynced = pending.filter(e => !e.synced);
+    if (unsynced.length === 0) {
+      return { attempted: 0, succeeded: 0, failed: 0, noAuth: false, nonceMissing: false };
+    }
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const entry of unsynced) {
+      try {
+        const params: Record<string, string> = {
+          action: 'jp343_extension_log_time',
+          nonce: userState.nonce,
+          user_id: String(userState.userId || 0),
+          project_id: entry.project_id,
+          duration_seconds: String(Math.round(entry.duration_min * 60)),
+          source: 'extension',
+          session_id: entry.id,
+          type: 'watching',
+          notes: '',
+          project_title: entry.project,
+          project_url: entry.url,
+          project_thumbnail: entry.thumbnail || '',
+          channel_id: entry.channelId || '',
+          channel_name: entry.channelName || '',
+          channel_url: entry.channelUrl || '',
+          video_title: entry.project,
+          resource_url: entry.url,
+          thumbnail: entry.thumbnail || '',
+          platform: entry.platform,
+          date: entry.date.split('T')[0] // YYYY-MM-DD
+        };
+
+        if (userState.guestToken) {
+          params.guest_token = userState.guestToken;
+        }
+
+        const response = await fetch(userState.ajaxUrl, {
+          method: 'POST',
+          credentials: 'include',
+          body: new URLSearchParams(params)
+        });
+
+        const responseText = await response.text();
+        log('[JP343] Sync response for', entry.project, ':', response.status);
+
+        let result: any;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          log('[JP343] Sync response is not JSON');
+          failed++;
+          continue;
+        }
+
+        if (result.success) {
+          await withStorageLock(async () => {
+            const current = await loadPendingEntries();
+            const updated = current.map(e =>
+              e.id === entry.id
+                ? { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: result.data?.entry_id ?? null }
+                : e
+            );
+            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+          });
+          succeeded++;
+          log('[JP343] Direct Sync erfolgreich:', entry.project);
+        } else {
+          // Nonce abgelaufen? Restliche Entries abbrechen
+          if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce') {
+            log('[JP343] Direct Sync: Nonce abgelaufen, breche ab');
+            failed += (unsynced.length - succeeded - failed);
+            break;
+          }
+          await withStorageLock(async () => {
+            const current = await loadPendingEntries();
+            const updated = current.map(e =>
+              e.id === entry.id
+                ? { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: result.data?.message || 'Server error' }
+                : e
+            );
+            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+          });
+          failed++;
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Network error';
+        await withStorageLock(async () => {
+          const current = await loadPendingEntries();
+          const updated = current.map(e =>
+            e.id === entry.id
+              ? { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: errorMsg }
+              : e
+          );
+          await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+        });
+        failed++;
+        log('[JP343] Direct Sync Fehler:', entry.id, error);
+      }
+    }
+
+    scheduleStatusBadgeUpdate();
+    return { attempted: unsynced.length, succeeded, failed, noAuth: false, nonceMissing: false };
   }
 
   // Session-State speichern (fuer Recovery nach Browser-Neustart)
@@ -459,28 +638,48 @@ export default defineBackground(() => {
       }
 
       case 'STOP_SESSION': {
+        // Video im Tab pausieren bevor Session gestoppt wird
+        const sessionBeforeStop = tracker.getCurrentSession();
+        if (sessionBeforeStop?.tabId) {
+          try {
+            await browser.tabs.sendMessage(sessionBeforeStop.tabId, { type: 'PAUSE_VIDEO' });
+          } catch { /* Tab existiert evtl. nicht mehr */ }
+        }
         const entry = tracker.stopSession();
         if (entry) {
           await savePendingEntry(entry);
         }
         await saveSessionState(null);
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        scheduleStatusBadgeUpdate();
         return { success: true, saved: !!entry };
       }
 
       case 'PAUSE_SESSION': {
+        // Video im Tab pausieren
+        const sessionToPause = tracker.getCurrentSession();
+        if (sessionToPause?.tabId) {
+          try {
+            await browser.tabs.sendMessage(sessionToPause.tabId, { type: 'PAUSE_VIDEO' });
+          } catch { /* Tab existiert evtl. nicht mehr — manuelles Tracking hat kein Video */ }
+        }
         tracker.pauseSession();
-        const session = tracker.getCurrentSession();
-        await saveSessionState(session);
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        const pausedSession = tracker.getCurrentSession();
+        await saveSessionState(pausedSession);
+        scheduleStatusBadgeUpdate();
         return { success: true };
       }
 
       case 'RESUME_SESSION': {
         tracker.resumeSession();
-        const session = tracker.getCurrentSession();
-        await saveSessionState(session);
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        const resumedSession = tracker.getCurrentSession();
+        // Video im Tab fortsetzen
+        if (resumedSession?.tabId) {
+          try {
+            await browser.tabs.sendMessage(resumedSession.tabId, { type: 'RESUME_VIDEO' });
+          } catch { /* Tab existiert evtl. nicht mehr */ }
+        }
+        await saveSessionState(resumedSession);
+        scheduleStatusBadgeUpdate();
         return { success: true };
       }
 
@@ -496,12 +695,24 @@ export default defineBackground(() => {
       }
 
       case 'SYNC_NOW': {
-        // Manueller Sync-Trigger (vom Popup)
+        // Legacy: Popup nutzt jetzt SYNC_ENTRIES_DIRECT
         const pending = await loadPendingEntries();
         return {
           success: true,
           data: { pendingCount: pending.length }
         };
+      }
+
+      case 'SYNC_ENTRIES_DIRECT': {
+        // Direct Sync via Background Service Worker (kein Bridge noetig)
+        const result = await syncEntriesDirect();
+        return { success: true, data: result };
+      }
+
+      case 'OPEN_DASHBOARD': {
+        // Dashboard-Tab oeffnen (aus anderen Kontexten)
+        await browser.tabs.create({ url: browser.runtime.getURL('dashboard.html') });
+        return { success: true };
       }
 
       case 'GET_PENDING_ENTRIES': {
@@ -523,8 +734,8 @@ export default defineBackground(() => {
             // Badge nur fuer unsynced entries
             const unsyncedCount = filtered.filter(e => !e.synced).length;
             updateBadge(unsyncedCount);
-            // Stats nur bei unsynced Entries anpassen (synced = bereits auf Server, nur Cleanup)
-            if (deletedEntry && !deletedEntry.synced) {
+            // Stats immer anpassen — User erwartet "Löschen = Stunden weg"
+            if (deletedEntry) {
               await subtractFromStats(deletedEntry);
             }
             return { success: true, data: { remaining: filtered.length } };

@@ -58,6 +58,7 @@ export interface PendingEntry {
   syncedAt: string | null;   // Wann gesynct (ISO 8601) - fuer Anzeige/Cleanup
   syncAttempts: number;      // Anzahl Sync-Versuche
   lastSyncError: string | null; // Letzter Fehler falls Sync fehlschlug
+  serverEntryId: number | null; // DB-ID nach erfolgreichem Sync (fuer Delete)
   // Channel-Informationen (fuer Projekt-Zuordnung auf Website)
   channelId: string | null;
   channelName: string | null;
@@ -158,7 +159,18 @@ export type ExtensionMessage =
   | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number }
   | { type: 'GET_ACTIVE_TAB_INFO' }
   | { type: 'GET_STATS' }
-  | { type: 'RESET_STATS' };
+  | { type: 'RESET_STATS' }
+  | { type: 'SYNC_ENTRIES_DIRECT' }
+  | { type: 'OPEN_DASHBOARD' };
+
+// Ergebnis eines Direct Sync (ohne Bridge/Website)
+export interface DirectSyncResult {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  noAuth: boolean;       // Kein Nonce vorhanden
+  nonceMissing: boolean; // Unterscheidet "nie besucht" von "abgelaufen"
+}
 
 // Response-Typen
 export type ExtensionResponse =
