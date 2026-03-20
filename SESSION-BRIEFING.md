@@ -49,39 +49,44 @@ Kompletter Relaunch der JP343 Chrome/Firefox Extension. Vorher: "Datensammler f�
 
 ### Bugs
 - **Firefox Logout braucht manchmal 2 Klicks** — `isLoggingOut` Flag timing issue
-- **Fresh Extension Install zeigt 0m** bis Server antwortet (selten, nur nach Neuinstall)
 - **"This Month" nutzt nur lokale Daten** — Server-Endpoint `jp343_get_time_stats` gibt kein `month_seconds` zurück
-- **Achievements werden bei neuem Account sofort alle vergeben** — neuer Account mit 6min Tracking bekommt 12 Achievements (100 Hours, One Year, etc.). Achievement-Logik auf Website prüfen — werden bei Account-Erstellung/Login alle auf einmal granted statt bei echtem Erreichen?
-- ~~Skeleton-Loader entfernt~~ — Session-Loading Skeleton wieder eingebaut (nur bei eingeloggten Usern)
-- ~~Session History Dauer gerundet~~ — Server gibt jetzt `duration_seconds` zurück, Dashboard nutzt `formatDuration()`
+- **Achievements werden bei neuem Account sofort alle vergeben** — neuer Account mit 6min Tracking bekommt 12 Achievements (100 Hours, One Year, etc.). Vermutlich localStorage vom alten Account (pro Domain, nicht pro User). Achievement-Logik prüfen.
+- **Sync-Dialog auf jp343.com: Entry bleibt pending nach Sync** — ohne Account synct der Bridge-Weg, aber markiert Entry nicht als synced. Dialog erscheint bei jedem Reload erneut.
+- **wp-admin Zugang** — Non-Admins werden jetzt redirected, aber Subscriber-Rolle sollte evtl. komplett entfernt werden
 
-### UX Polish nötig
-- ~~Flash: lokale Werte blitzen kurz auf bevor Server-Daten kommen~~ — bei eingeloggten Usern wird Session-Liste nur einmal gerendert (nach Server-Fetch)
-- Blocked Channels sind nur lokal pro Browser (kein Sync)
+### UX Design-Entscheidung offen
+- **Sync-Konzept grundsätzlich klären:** Aktuell 3 Wege die sich überlappen (Auto-Sync Extension, Sync-Dialog Website, Dashboard). Optionen:
+  - (A) Auto-Sync only, kein Dialog mehr, Zuordnung nachträglich auf Projects-Page
+  - (B) Dialog bleibt aber nur für Zuordnung, Sync passiert automatisch
+  - (C) Website wird read-only, alles über Extension
+- **Auto-Create ohne Zuordnungsdialog** — Extension erstellt automatisch Custom Projects pro Kanal. Früher konnte man im Sync-Dialog wählen: neues Projekt, bestehendem zuordnen, oder überspringen. Diese Wahl fehlt jetzt bei Auto-Sync.
 
 ## Open Tasks (priorisiert)
 
 ### P1 — Store Submission
-- [ ] Firefox E2E Test abschließen
-- [ ] Chrome Web Store ZIP erstellen + einreichen
-- [ ] Firefox AMO ZIP erstellen + einreichen
-- [ ] Store Description updaten (alter Text erwähnt "pending list", "Visit JP343.com to sync")
+- [x] ~~Chrome Web Store ZIP erstellen + einreichen~~ — submitted, wartet auf Review
+- [x] ~~Firefox AMO ZIP erstellen + einreichen~~ — v2.0.0 approved und live
+- [x] ~~Store Description updaten~~
 
-### P2 — Website aufräumen
-- [ ] Timer aus Navigation entfernen
-- [ ] Projects-Page in My Hub mergen (redirect)
-- [ ] Extension-Page in Homepage mergen (redirect)
-- [ ] Navigation: Home + My Hub + Account only
+### P2 — Website (erledigt)
+- [x] ~~Timer aus Navigation entfernen~~ (Header + Bottom-Bar + JS/CSS)
+- [x] ~~Extension-Page in Homepage mergen~~ (301 Redirect)
+- [x] ~~Datenschutzerklärung aktualisiert~~ (Auto-Sync, In-Extension Login, EN + DE)
+- [x] ~~Firefox Store URL aktualisiert~~ (jp343-immersion-tracker)
+- [x] ~~wp-admin für Non-Admins gesperrt~~
+- [x] ~~Onboarding deaktiviert~~
+- **Projects-Page bleibt** (Custom Projects werden aktiv genutzt)
 
 ### P3 — Marketing
 - [ ] Reddit post r/LearnJapanese
-- [ ] Store Screenshots mit neuem Dashboard
+- [ ] Store Screenshots mit neuem Dashboard (Screenshot-HTMLs erstellt: store-screenshot-dark.html, store-screenshot-light.html)
+- [ ] Reddit Ads testen (r/LearnJapanese, ab 5 EUR/Tag)
 
 ### Polish
 - [ ] Blocked Channels sync to DB
-- [ ] Cache last server response (verhindert 0→real Flash)
 - [ ] `month_seconds` zu `jp343_get_time_stats` hinzufügen
-- [ ] Dashboard: `video_title` statt `project_name` wo verfügbar
+- [ ] Onboarding überarbeiten (aktuell deaktiviert)
+- [ ] Homepage Wording Extension-First anpassen
 
 ## Wichtige Dateipfade
 
