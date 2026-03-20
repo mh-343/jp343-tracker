@@ -7,7 +7,7 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.0.0',
+    version: '2.0.1',
     description: 'Auto-tracks YouTube, Netflix & Crunchyroll. No account needed. Built-in dashboard with heatmap, streaks, and session history.',
 
     browser_specific_settings: {
