@@ -6,9 +6,9 @@ export default defineConfig({
   outDir: 'dist',
 
   manifest: {
-    name: 'JP343 Streaming Tracker',
-    version: '1.6.4',
-    description: 'Track your Japanese immersion time on streaming platforms',
+    name: 'JP343 — Track Your Japanese Immersion',
+    version: '2.0.0',
+    description: 'Auto-tracks YouTube, Netflix & Crunchyroll. No account needed. Built-in dashboard with heatmap, streaks, and session history.',
 
     browser_specific_settings: {
       gecko: {
