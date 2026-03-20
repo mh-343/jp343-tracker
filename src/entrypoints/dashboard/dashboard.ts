@@ -159,8 +159,9 @@ function renderHeroTime(totalMinutes: number): void {
   const el = document.getElementById('heroTime');
   if (!el) return;
   el.classList.remove('skeleton');
-  const h = Math.floor(totalMinutes / 60);
-  const m = Math.round(totalMinutes % 60);
+  const totalSec = Math.round(totalMinutes * 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
   el.textContent = '';
 
   const hNum = document.createElement('span');
@@ -523,10 +524,14 @@ function renderSessions(entries: PendingEntry[]): void {
   }
 }
 
+let serverSessionsCache: any[] | null = null;
+const INITIAL_SERVER_SESSIONS = 5;
+
 function renderServerSessions(sessions: any[]): void {
   const container = document.getElementById('sessionList');
   if (!container) return;
   container.textContent = '';
+  serverSessionsCache = sessions;
 
   if (sessions.length === 0) {
     const empty = document.createElement('div');
@@ -543,50 +548,103 @@ function renderServerSessions(sessions: any[]): void {
     return;
   }
 
-  for (const session of sessions) {
-    const item = document.createElement('div');
-    item.className = 'session-item';
+  const display = sessions.slice(0, INITIAL_SERVER_SESSIONS);
+  const remaining = sessions.length - INITIAL_SERVER_SESSIONS;
 
-    // Thumbnail/Icon
-    if (session.image && isValidImageUrl(session.image)) {
-      const img = document.createElement('img');
-      img.className = 'session-thumb';
-      img.src = session.image;
-      img.alt = '';
-      img.loading = 'lazy';
-      item.appendChild(img);
-    } else {
-      const ph = document.createElement('div');
-      ph.className = 'session-thumb-placeholder';
-      ph.textContent = session.icon || '⏵';
-      item.appendChild(ph);
-    }
-
-    // Info
-    const info = document.createElement('div');
-    info.className = 'session-info';
-
-    const title = document.createElement('div');
-    title.className = 'session-title';
-    title.textContent = session.title || session.project_name || 'Session';
-    info.appendChild(title);
-
-    const meta = document.createElement('div');
-    meta.className = 'session-meta';
-    const dateEl = document.createElement('span');
-    dateEl.textContent = session.relative || formatSessionDate(session.date);
-    meta.appendChild(dateEl);
-    info.appendChild(meta);
-
-    item.appendChild(info);
-
-    const dur = document.createElement('div');
-    dur.className = 'session-duration';
-    dur.textContent = formatStatDuration(session.duration_minutes || session.minutes || 0);
-    item.appendChild(dur);
-
-    container.appendChild(item);
+  for (const session of display) {
+    container.appendChild(createServerSessionItem(session));
   }
+
+  if (remaining > 0) {
+    const showMore = document.createElement('button');
+    showMore.className = 'btn-sync-dashboard';
+    showMore.style.width = '100%';
+    showMore.style.marginTop = '12px';
+    showMore.textContent = `Show ${remaining} more`;
+    showMore.addEventListener('click', () => {
+      showMore.remove();
+      for (const session of sessions.slice(INITIAL_SERVER_SESSIONS)) {
+        container.appendChild(createServerSessionItem(session));
+      }
+    });
+    container.appendChild(showMore);
+  }
+}
+
+function createServerSessionItem(session: any): HTMLElement {
+  const item = document.createElement('div');
+  item.className = 'session-item';
+
+  // Thumbnail/Icon
+  if (session.image && isValidImageUrl(session.image)) {
+    const img = document.createElement('img');
+    img.className = 'session-thumb';
+    img.src = session.image;
+    img.alt = '';
+    img.loading = 'lazy';
+    item.appendChild(img);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'session-thumb-placeholder';
+    ph.textContent = session.icon || '⏵';
+    item.appendChild(ph);
+  }
+
+  // Info
+  const info = document.createElement('div');
+  info.className = 'session-info';
+
+  const title = document.createElement('div');
+  title.className = 'session-title';
+  title.textContent = session.title || session.project_name || 'Session';
+  info.appendChild(title);
+
+  const meta = document.createElement('div');
+  meta.className = 'session-meta';
+
+  if (session.platform && session.platform !== 'manual') {
+    const platform = document.createElement('span');
+    platform.className = 'session-platform';
+    platform.textContent = session.platform === 'extension' ? 'youtube' : session.platform;
+    meta.appendChild(platform);
+  }
+
+  const dateEl = document.createElement('span');
+  dateEl.textContent = formatSessionDate(session.date);
+  meta.appendChild(dateEl);
+  info.appendChild(meta);
+
+  item.appendChild(info);
+
+  // Dauer
+  const dur = document.createElement('div');
+  dur.className = 'session-duration';
+  dur.textContent = session.duration_seconds
+    ? formatDuration(session.duration_seconds / 60)
+    : formatDuration(session.duration_minutes || session.minutes || 0);
+  item.appendChild(dur);
+
+  // Delete Button
+  const delBtn = document.createElement('button');
+  delBtn.className = 'btn-delete-entry';
+  delBtn.textContent = '×';
+  delBtn.title = 'Delete';
+  delBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const data = await loadData();
+    if (data.userState?.nonce && session.id) {
+      try {
+        await ajaxPost('jp343_delete_time_entry', {
+          nonce: data.userState.nonce,
+          entry_id: String(session.id)
+        });
+        item.remove();
+      } catch { /* Loeschen fehlgeschlagen */ }
+    }
+  });
+  item.appendChild(delBtn);
+
+  return item;
 }
 
 // Sync CTA
@@ -672,7 +730,7 @@ function applyServerStats(serverData: Record<string, any>): void {
 
 function renderFooter(): void {
   const el = document.getElementById('dashboardFooter');
-  if (el) el.textContent = `JP343 Extension v${browser.runtime.getManifest().version}`;
+  if (el) el.textContent = `jp343 Extension v${browser.runtime.getManifest().version}`;
 }
 
 // Helpers
@@ -685,6 +743,17 @@ function setText(id: string, text: string): void {
   }
 }
 
+function showSessionsLoading(): void {
+  const container = document.getElementById('sessionList');
+  if (!container) return;
+  container.textContent = '';
+  const placeholder = document.createElement('div');
+  placeholder.className = 'session-item skeleton';
+  placeholder.style.height = '56px';
+  placeholder.style.borderRadius = '8px';
+  container.appendChild(placeholder);
+}
+
 // Main
 
 async function refresh(): Promise<void> {
@@ -695,9 +764,9 @@ async function refresh(): Promise<void> {
   const data = await loadData();
   const isLoggedIn = data.userState?.isLoggedIn && !!data.userState?.nonce;
 
+  // Auth-UI + Heatmap immer sofort rendern
   renderHeatmap(data.stats.dailyMinutes);
   renderWeekBars(data.stats.dailyMinutes);
-  renderSessions(data.entries);
   renderSyncCta(data.entries, data.userState);
   renderTierBadge(data.userState);
   renderAuthUI(data.userState);
@@ -706,6 +775,8 @@ async function refresh(): Promise<void> {
   renderStats(data.stats);
 
   if (isLoggedIn) {
+    showSessionsLoading();
+
     const refreshed = await tryRefreshNonce(data.userState!);
     const activeState = refreshed || data.userState!;
 
@@ -719,10 +790,16 @@ async function refresh(): Promise<void> {
       }
       if (serverSessions) {
         renderServerSessions(serverSessions);
+      } else {
+        renderSessions(data.entries);
       }
+    } else {
+      renderSessions(data.entries);
     }
     renderTierBadge(activeState);
     renderAuthUI(activeState);
+  } else {
+    renderSessions(data.entries);
   }
 
   } finally {
@@ -730,7 +807,34 @@ async function refresh(): Promise<void> {
   }
 }
 
+// Theme Toggle
+function setupThemeToggle(): void {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+
+  // Gespeicherten Theme laden
+  const saved = localStorage.getItem('jp343_theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    btn.textContent = '\u2600'; // Sonne
+  }
+
+  btn.addEventListener('click', () => {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('jp343_theme', 'dark');
+      btn.textContent = '\u263E'; // Mond
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('jp343_theme', 'light');
+      btn.textContent = '\u2600'; // Sonne
+    }
+  });
+}
+
 // Initial render + Auth-UI setup
+setupThemeToggle();
 setupAuthUI();
 refresh();
 
