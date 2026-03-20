@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JP343 Dashboard</title>
+  <style>
+    :root {
+      --bg-body: #0c0c1d;
+      --bg-card: #10102a;
+      --bg-card-hover: #151538;
+      --bg-input: #0e0e25;
+      --text: #eeeef8;
+      --text-dim: #9090b0;
+      --magenta: #e91e8b;
+      --magenta-glow: rgba(233, 30, 139, 0.35);
+      --cyan: #00e5ff;
+      --purple: #875aff;
+      --green: #4caf50;
+      --orange: #ff9800;
+      --red: #f44336;
+      --gradient: linear-gradient(90deg, #00e5ff, #875aff, #e91e8b);
+      --border: rgba(135, 90, 255, 0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-body);
+      color: var(--text);
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    .header {
+      background: rgba(12, 12, 29, 0.95);
+      border-bottom: 2px solid transparent;
+      border-image: var(--gradient) 1;
+      backdrop-filter: blur(8px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-inner {
+      max-width: 920px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+    }
+
+    .header-logo {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tier-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(135, 90, 255, 0.1);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    .tier-badge.synced {
+      color: var(--green);
+      border-color: rgba(76, 175, 80, 0.25);
+      background: rgba(76, 175, 80, 0.08);
+    }
+
+    .link-site {
+      font-size: 11px;
+      color: var(--cyan);
+      text-decoration: none;
+      opacity: 0.6;
+      transition: all 0.2s;
+    }
+
+    .link-site:hover { opacity: 1; }
+
+    /* ── Layout ──────────────────────────────────────── */
+    .wrap { max-width: 920px; margin: 0 auto; padding: 28px 24px; }
+
+    /* ── Auth: collapsible login + user bar ──────────── */
+    .auth-toggle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .btn-connect {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 22px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.25s;
+      letter-spacing: 0.3px;
+      text-decoration: none;
+    }
+
+    .btn-connect:hover {
+      border-color: var(--purple);
+      color: var(--purple);
+      background: rgba(135, 90, 255, 0.05);
+    }
+
+    .btn-signup {
+      border-style: dashed;
+    }
+
+    .btn-signup:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.05);
+    }
+
+    .login-drawer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s ease, opacity 0.25s;
+      opacity: 0;
+    }
+
+    .login-drawer.open {
+      max-height: 280px;
+      opacity: 1;
+    }
+
+    .login-card {
+      max-width: 340px;
+      margin: 0 auto 24px;
+      padding: 20px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .login-form { display: flex; flex-direction: column; gap: 10px; }
+
+    .login-input {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .login-input:focus { border-color: var(--purple); }
+    .login-input::placeholder { color: var(--text-dim); opacity: 0.5; }
+
+    .btn-login {
+      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 11px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-login:hover { opacity: 0.9; }
+    .btn-login:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .login-error { color: var(--red); font-size: 11px; text-align: center; min-height: 16px; }
+
+    .gdpr-label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+
+    .gdpr-label input[type="checkbox"] {
+      margin-top: 2px;
+      accent-color: var(--purple);
+    }
+
+    .gdpr-label a { color: var(--cyan); text-decoration: none; }
+    .gdpr-label a:hover { text-decoration: underline; }
+
+    .btn-register {
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+    }
+
+    .forgot-link {
+      display: block;
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-decoration: none;
+      margin-top: 2px;
+    }
+
+    .forgot-link:hover { color: var(--cyan); }
+
+    .user-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: var(--bg-card);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 24px;
+      font-size: 13px;
+    }
+
+    .user-name { font-weight: 700; color: var(--cyan); margin-left: 6px; }
+
+    .btn-logout {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-logout:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Hero: Total Time ───────────────────────────── */
+    .hero {
+      text-align: center;
+      padding: 32px 20px;
+      background: var(--bg-card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      margin-bottom: 16px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -60%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 400px;
+      height: 200px;
+      background: radial-gradient(ellipse, var(--magenta-glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-time {
+      position: relative;
+      font-size: 52px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.1;
+    }
+
+    .hero-time .num { color: var(--magenta); }
+    .hero-time .unit { color: var(--cyan); font-size: 28px; font-weight: 600; margin: 0 2px; opacity: 0.7; }
+
+    .hero-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+
+    /* ── Quick Stats Row ────────────────────────────── */
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+
+    .qs-card {
+      background: var(--bg-card);
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+      border: 1px solid var(--border);
+    }
+
+    .qs-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--cyan);
+    }
+
+    .qs-value.purple { color: var(--purple); }
+    .qs-value.magenta { color: var(--magenta); }
+
+    .qs-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* ── Section Cards ──────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    /* ── Heatmap ────────────────────────────────────── */
+    .heatmap {
+      display: grid;
+      grid-template-rows: repeat(7, 1fr);
+      grid-auto-flow: column;
+      gap: 3px;
+    }
+
+    .heatmap-cell {
+      width: 13px;
+      height: 13px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .heatmap-cell[data-level="1"] { background: rgba(233, 30, 139, 0.15); }
+    .heatmap-cell[data-level="2"] { background: rgba(233, 30, 139, 0.35); }
+    .heatmap-cell[data-level="3"] { background: rgba(233, 30, 139, 0.6); }
+    .heatmap-cell[data-level="4"] { background: var(--magenta); }
+
+    .heatmap-legend {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      justify-content: flex-end;
+      margin-top: 8px;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+
+    .heatmap-legend .heatmap-cell { width: 10px; height: 10px; }
+
+    /* ── Week Bars ──────────────────────────────────── */
+    .week-bars { display: flex; gap: 8px; align-items: flex-end; height: 100px; }
+
+    .week-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+    .week-bar {
+      width: 100%;
+      min-height: 2px;
+      border-radius: 4px 4px 0 0;
+      background: rgba(135, 90, 255, 0.5);
+      transition: height 0.3s;
+    }
+
+    .week-bar.today { background: var(--cyan); }
+    .week-bar-label { font-size: 10px; color: var(--text-dim); }
+    .week-bar-value { font-size: 10px; color: var(--text-dim); }
+
+    /* ── Session History ────────────────────────────── */
+    .session-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      transition: background 0.15s;
+    }
+
+    .session-item:hover { background: var(--bg-card-hover); }
+
+    .session-thumb {
+      width: 64px;
+      height: 36px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: rgba(255, 255, 255, 0.04);
+      flex-shrink: 0;
+    }
+
+    .session-thumb-placeholder {
+      width: 64px;
+      height: 36px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    .session-info { flex: 1; min-width: 0; }
+
+    .session-title {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .session-platform {
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .session-duration {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--purple);
+      white-space: nowrap;
+    }
+
+    .sync-badge {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .sync-badge.synced { background: var(--green); }
+    .sync-badge.pending { background: var(--orange); }
+    .sync-badge.error { background: var(--red); }
+
+    .btn-delete-entry {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 15px;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+
+    .session-item:hover .btn-delete-entry { opacity: 0.5; }
+    .btn-delete-entry:hover { opacity: 1 !important; color: var(--red); }
+
+    /* ── Sync CTA ──────────────────────────────────── */
+    .sync-cta {
+      text-align: center;
+      padding: 14px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    .sync-cta a { color: var(--cyan); text-decoration: none; }
+    .sync-cta a:hover { text-decoration: underline; }
+
+    .btn-sync-dashboard {
+      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.2s;
+    }
+
+    .btn-sync-dashboard:hover { opacity: 0.9; }
+    .btn-sync-dashboard:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Footer ─────────────────────────────────────── */
+    .footer {
+      text-align: center;
+      padding: 28px 24px;
+      font-size: 10px;
+      color: var(--text-dim);
+      opacity: 0.35;
+    }
+
+    /* ── Empty State ────────────────────────────────── */
+    .empty-state { text-align: center; padding: 36px 20px; color: var(--text-dim); }
+    .empty-state-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.25; }
+    .empty-state-text { font-size: 13px; }
+
+    /* ── Responsive ─────────────────────────────────── */
+    @media (max-width: 640px) {
+      .quick-stats { grid-template-columns: repeat(2, 1fr); }
+      .hero-time { font-size: 38px; }
+      .hero-time .unit { font-size: 20px; }
+      .wrap { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <span class="header-logo">JP343</span>
+      <div class="header-right">
+        <span class="tier-badge" id="tierBadge">Local Only</span>
+        <a class="link-site" href="https://jp343.com/my-hub/" target="_blank">jp343.com</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- User Bar (eingeloggt) -->
+    <div class="user-bar" id="userBar" style="display: none;">
+      <div>Logged in as<span class="user-name" id="userName"></span></div>
+      <button class="btn-logout" id="btnLogout">Logout</button>
+    </div>
+
+    <!-- Login Toggle (nicht eingeloggt) -->
+    <div class="auth-toggle" id="authToggle" style="display: none;">
+      <button class="btn-connect" id="btnToggleLogin">Login</button>
+      <a class="btn-connect btn-signup" href="https://jp343.com/login/" target="_blank" id="btnSignUp">Sign Up</a>
+    </div>
+
+    <!-- Login Drawer (aufklappbar) -->
+    <div class="login-drawer" id="loginDrawer">
+      <div class="login-card">
+        <form class="login-form" id="loginForm">
+          <input class="login-input" type="email" id="loginEmail" placeholder="Email" autocomplete="email" required>
+          <input class="login-input" type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required>
+          <button class="btn-login" type="submit" id="btnLogin">Login</button>
+          <div class="login-error" id="loginError"></div>
+          <a class="forgot-link" href="https://jp343.com/login/?action=forgot" target="_blank">Forgot password?</a>
+        </form>
+      </div>
+    </div>
+
+    <!-- Register Drawer (aufklappbar) -->
+    <div class="login-drawer" id="registerDrawer">
+      <div class="login-card">
+        <form class="login-form" id="registerForm">
+          <input class="login-input" type="email" id="regEmail" placeholder="Email" autocomplete="email" required>
+          <input class="login-input" type="password" id="regPassword" placeholder="Password (min. 8 characters)" autocomplete="new-password" required minlength="8">
+          <label class="gdpr-label">
+            <input type="checkbox" id="regGdpr" required>
+            <span>I accept the <a href="https://jp343.com/datenschutzerklaerung/" target="_blank">Privacy Policy</a></span>
+          </label>
+          <button class="btn-login btn-register" type="submit" id="btnRegister">Create Account</button>
+          <div class="login-error" id="registerError"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Hero: Total Time -->
+    <div class="hero">
+      <div class="hero-time" id="heroTime">
+        <span class="num">0</span><span class="unit">hr</span>
+        <span class="num">0</span><span class="unit">min</span>
+      </div>
+      <div class="hero-label">Total Immersion</div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="quick-stats">
+      <div class="qs-card">
+        <div class="qs-value" id="statToday">0m</div>
+        <div class="qs-label">Today</div>
+      </div>
+      <div class="qs-card">
+        <div class="qs-value purple" id="statWeek">0m</div>
+        <div class="qs-label">This Week</div>
+      </div>
+      <div class="qs-card">
+        <div class="qs-value" id="statMonth">0m</div>
+        <div class="qs-label">This Month</div>
+      </div>
+      <div class="qs-card">
+        <div class="qs-value magenta" id="statStreak">0d</div>
+        <div class="qs-label">Streak</div>
+      </div>
+    </div>
+
+    <!-- Activity Heatmap -->
+    <div class="card">
+      <div class="card-title">Activity Heatmap</div>
+      <div class="heatmap" id="heatmap"></div>
+      <div class="heatmap-legend">
+        <span>Less</span>
+        <div class="heatmap-cell" data-level="0"></div>
+        <div class="heatmap-cell" data-level="1"></div>
+        <div class="heatmap-cell" data-level="2"></div>
+        <div class="heatmap-cell" data-level="3"></div>
+        <div class="heatmap-cell" data-level="4"></div>
+        <span>More</span>
+      </div>
+    </div>
+
+    <!-- This Week -->
+    <div class="card">
+      <div class="card-title">This Week</div>
+      <div class="week-bars" id="weekBars"></div>
+    </div>
+
+    <!-- Session History -->
+    <div class="card">
+      <div class="card-title">Session History</div>
+      <div class="session-list" id="sessionList">
+        <div class="empty-state">
+          <div class="empty-state-icon">🎧</div>
+          <div class="empty-state-text">No sessions yet. Start watching to see your history here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sync CTA -->
+    <div class="card" id="syncSection">
+      <div class="sync-cta" id="syncCta"></div>
+    </div>
+  </div>
+
+  <div class="footer" id="dashboardFooter"></div>
+
+  <script type="module" src="./dashboard.ts"></script>
+</body>
+</html>

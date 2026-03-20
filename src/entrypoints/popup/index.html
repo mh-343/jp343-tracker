@@ -661,22 +661,42 @@
 
     /* Footer */
     .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       padding: 10px 16px;
-      text-align: center;
       font-size: 11px;
       color: var(--text-secondary);
       border-top: 2px solid transparent;
       border-image: var(--gradient-line) 1;
     }
 
-    .footer a {
-      color: var(--neon);
-      text-decoration: none;
-      font-weight: 500;
-      transition: color 0.2s;
+    .btn-dashboard {
+      background: linear-gradient(135deg, var(--accent), #4dd4e8);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
     }
 
-    .footer a:hover {
+    .btn-dashboard:hover {
+      opacity: 0.9;
+    }
+
+    .footer-link-secondary {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      opacity: 0.5;
+      transition: opacity 0.2s, color 0.2s;
+    }
+
+    .footer-link-secondary:hover {
+      opacity: 1;
       color: var(--accent);
     }
 
@@ -1205,21 +1225,12 @@
   </div>
 
   <div class="pending-section" id="pendingSection" style="display: none;">
-    <div class="pending-header">
-      <span class="pending-count">
-        <strong id="pendingCount">0</strong> pending (<strong id="pendingMinutes">0m</strong>) · <span id="syncedCount">0</span> synced
-      </span>
-      <div class="pending-header-buttons">
-        <button class="btn btn-secondary btn-clear" id="btnClear" style="display: none;">Clear Synced</button>
-        <button class="btn btn-primary btn-sync" id="btnSync">Sync Now</button>
-      </div>
-    </div>
     <div class="pending-list" id="pendingList"></div>
-    <div class="sync-hint">Visit JP343 to sync your data</div>
   </div>
 
   <div class="footer">
-    <a href="https://jp343.com/my-hub/" target="_blank">Full Dashboard →</a>
+    <button class="btn-dashboard" id="btnDashboard">Full Dashboard →</button>
+    <a class="footer-link-secondary" href="https://jp343.com/my-hub/" target="_blank">jp343.com</a>
   </div>
 
   <!-- Toast Notification -->
