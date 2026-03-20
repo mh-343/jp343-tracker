@@ -5,18 +5,22 @@
 
 // Dauer in Minuten als "2h 30m" / "45m" formatieren (fuer Stats-Anzeige)
 export function formatStatDuration(minutes: number): string {
-  const rounded = Math.round(minutes);
-  if (rounded < 60) return `${rounded}m`;
-  const h = Math.floor(rounded / 60);
-  const m = rounded % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const totalSec = Math.round(minutes * 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m === 0) return `${s}s`;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-// Dauer in Minuten als "5m 30s" / "12s" formatieren (fuer Session-Details)
+// Dauer in Minuten als "1h 30m 15s" / "5m 30s" / "12s" formatieren (fuer Session-Details)
 export function formatDuration(minutes: number): string {
   const totalSec = Math.round(minutes * 60);
-  const m = Math.floor(totalSec / 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
+  if (h > 0) return s > 0 ? `${h}h ${m}m ${s}s` : m > 0 ? `${h}h ${m}m` : `${h}h`;
   if (m === 0) return `${s}s`;
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }

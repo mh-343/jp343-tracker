@@ -10,7 +10,7 @@ export default defineConfig({
   outDir: 'dist',
 
   manifest: {
-    name: 'JP343 — Track Your Japanese Immersion',
+    name: 'jp343 Track Your Japanese Immersion',
     version: '2.0.0',
     description: 'Auto-tracks YouTube, Netflix & Crunchyroll. No account needed. Built-in dashboard with heatmap, streaks, and session history.',
 

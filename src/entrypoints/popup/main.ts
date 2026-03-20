@@ -47,8 +47,7 @@ const elements = {
   // Stats Bar
   statWeek: document.getElementById('statWeek') as HTMLElement,
   statToday: document.getElementById('statToday') as HTMLElement,
-  statStreak: document.getElementById('statStreak') as HTMLElement,
-  btnResetStats: document.getElementById('btnResetStats') as HTMLButtonElement
+  statStreak: document.getElementById('statStreak') as HTMLElement
 };
 
 // Duration mit Sekunden-Praezision formatieren
@@ -508,16 +507,9 @@ function updateSessionDisplay(
   elements.btnPause.textContent = session.isPaused ? 'Resume' : 'Pause';
 }
 
-// Session-Liste anzeigen (kein Sync-Status sichtbar)
+// Session-Liste anzeigen (immer sichtbar wenn Entries vorhanden)
 function updatePendingDisplay(entries: PendingEntry[]): void {
-  // Eingeloggt: nur unsynced Entries zeigen (synced = auf Server, Popup braucht sie nicht)
-  // Nicht eingeloggt: alle zeigen
-  const hasAuth = entries.some(e => e.synced);
-  const visible = hasAuth
-    ? entries.filter(e => !e.synced)
-    : entries;
-
-  elements.pendingSection.style.display = visible.length > 0 ? 'block' : 'none';
+  elements.pendingSection.style.display = entries.length > 0 ? 'block' : 'none';
 }
 
 // Status-Badge fuer Entry
@@ -1083,18 +1075,29 @@ async function fetchAndRenderStats(): Promise<void> {
   }
 }
 
-// Stats Reset Handler
-elements.btnResetStats.addEventListener('click', async () => {
-  if (!confirm('Reset extension stats? This only affects the stats shown here, not your synced data on JP343.')) {
-    return;
+
+// Theme Toggle
+(function setupPopupTheme() {
+  const btn = document.getElementById('themeTogglePopup');
+  if (!btn) return;
+  const saved = localStorage.getItem('jp343_theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+    btn.textContent = '\u2600';
   }
-  try {
-    await browser.runtime.sendMessage({ type: 'RESET_STATS' });
-    await fetchAndRenderStats();
-  } catch (error) {
-    log('[JP343 Popup] Stats reset failed:', error);
-  }
-});
+  btn.addEventListener('click', () => {
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('jp343_theme', 'dark');
+      btn.textContent = '\u263E';
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      localStorage.setItem('jp343_theme', 'light');
+      btn.textContent = '\u2600';
+    }
+  });
+})();
 
 // Initial laden
 loadAndApplySettings();
