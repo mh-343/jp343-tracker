@@ -540,6 +540,24 @@
     .empty-state-icon { font-size: 40px; margin-bottom: 10px; opacity: 0.25; }
     .empty-state-text { font-size: 13px; }
 
+    /* ── Skeleton Loading ───────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 6px;
+      color: transparent !important;
+      min-width: 40px;
+      display: inline-block;
+    }
+
+    .skeleton * { visibility: hidden; }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
     /* ── Responsive ─────────────────────────────────── */
     @media (max-width: 640px) {
       .quick-stats { grid-template-columns: repeat(2, 1fr); }

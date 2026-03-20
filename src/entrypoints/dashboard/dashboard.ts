@@ -1,7 +1,7 @@
 
 import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } from '../../types';
 import { DEFAULT_STATS } from '../../types';
-import { formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
+import { formatStatDuration, formatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 
 const STORAGE_KEYS = {
   PENDING: 'jp343_extension_pending',
@@ -124,11 +124,14 @@ async function doLogin(email: string, password: string): Promise<{ success: bool
   }
 }
 
+let isLoggingOut = false;
+let isRefreshing = false;
+
 async function doLogout(): Promise<void> {
-  await browser.storage.local.set({
-    [STORAGE_KEYS.USER]: { isLoggedIn: false, userId: null, nonce: null, ajaxUrl: null, guestToken: null }
-  });
+  isLoggingOut = true;
+  await browser.storage.local.remove([STORAGE_KEYS.USER, 'jp343_extension_display_name']);
   refresh();
+  setTimeout(() => { isLoggingOut = false; }, 2000);
 }
 
 async function fetchServerStats(userState: JP343UserState): Promise<Record<string, any> | null> {
@@ -140,9 +143,22 @@ async function fetchServerStats(userState: JP343UserState): Promise<Record<strin
   return null;
 }
 
+async function fetchServerSessions(userState: JP343UserState, limit = 20): Promise<any[] | null> {
+  if (!userState.nonce) return null;
+  try {
+    const result = await ajaxPost('jp343_get_recent_sessions', {
+      nonce: userState.nonce,
+      limit: String(limit)
+    });
+    if (result.success && result.data?.sessions) return result.data.sessions;
+  } catch {}
+  return null;
+}
+
 function renderHeroTime(totalMinutes: number): void {
   const el = document.getElementById('heroTime');
   if (!el) return;
+  el.classList.remove('skeleton');
   const h = Math.floor(totalMinutes / 60);
   const m = Math.round(totalMinutes % 60);
   el.textContent = '';
@@ -462,7 +478,7 @@ function renderSessions(entries: PendingEntry[]): void {
     // Dauer
     const dur = document.createElement('div');
     dur.className = 'session-duration';
-    dur.textContent = formatStatDuration(entry.duration_min);
+    dur.textContent = formatDuration(entry.duration_min);
     item.appendChild(dur);
 
     // Delete Button
@@ -504,6 +520,72 @@ function renderSessions(entries: PendingEntry[]): void {
       refresh();
     });
     container.appendChild(loadMore);
+  }
+}
+
+function renderServerSessions(sessions: any[]): void {
+  const container = document.getElementById('sessionList');
+  if (!container) return;
+  container.textContent = '';
+
+  if (sessions.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const icon = document.createElement('div');
+    icon.className = 'empty-state-icon';
+    icon.textContent = '🎧';
+    const text = document.createElement('div');
+    text.className = 'empty-state-text';
+    text.textContent = 'No sessions yet. Start watching to see your history here.';
+    empty.appendChild(icon);
+    empty.appendChild(text);
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const session of sessions) {
+    const item = document.createElement('div');
+    item.className = 'session-item';
+
+    // Thumbnail/Icon
+    if (session.image && isValidImageUrl(session.image)) {
+      const img = document.createElement('img');
+      img.className = 'session-thumb';
+      img.src = session.image;
+      img.alt = '';
+      img.loading = 'lazy';
+      item.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'session-thumb-placeholder';
+      ph.textContent = session.icon || '⏵';
+      item.appendChild(ph);
+    }
+
+    // Info
+    const info = document.createElement('div');
+    info.className = 'session-info';
+
+    const title = document.createElement('div');
+    title.className = 'session-title';
+    title.textContent = session.title || session.project_name || 'Session';
+    info.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'session-meta';
+    const dateEl = document.createElement('span');
+    dateEl.textContent = session.relative || formatSessionDate(session.date);
+    meta.appendChild(dateEl);
+    info.appendChild(meta);
+
+    item.appendChild(info);
+
+    const dur = document.createElement('div');
+    dur.className = 'session-duration';
+    dur.textContent = formatStatDuration(session.duration_minutes || session.minutes || 0);
+    item.appendChild(dur);
+
+    container.appendChild(item);
   }
 }
 
@@ -597,12 +679,19 @@ function renderFooter(): void {
 
 function setText(id: string, text: string): void {
   const el = document.getElementById(id);
-  if (el) el.textContent = text;
+  if (el) {
+    el.classList.remove('skeleton');
+    el.textContent = text;
+  }
 }
 
 // Main
 
 async function refresh(): Promise<void> {
+  if (isRefreshing) return;
+  isRefreshing = true;
+
+  try {
   const data = await loadData();
   const isLoggedIn = data.userState?.isLoggedIn && !!data.userState?.nonce;
 
@@ -614,24 +703,30 @@ async function refresh(): Promise<void> {
   renderAuthUI(data.userState);
   renderFooter();
 
+  renderStats(data.stats);
+
   if (isLoggedIn) {
     const refreshed = await tryRefreshNonce(data.userState!);
     const activeState = refreshed || data.userState!;
 
     if (activeState.nonce) {
-      const serverStats = await fetchServerStats(activeState);
+      const [serverStats, serverSessions] = await Promise.all([
+        fetchServerStats(activeState),
+        fetchServerSessions(activeState)
+      ]);
       if (serverStats) {
         applyServerStats(serverStats);
-      } else {
-        renderStats(data.stats);
       }
-    } else {
-      renderStats(data.stats);
+      if (serverSessions) {
+        renderServerSessions(serverSessions);
+      }
     }
     renderTierBadge(activeState);
     renderAuthUI(activeState);
-  } else {
-    renderStats(data.stats);
+  }
+
+  } finally {
+    isRefreshing = false;
   }
 }
 
@@ -641,6 +736,7 @@ refresh();
 
 // Live-Update bei Storage-Aenderungen
 browser.storage.onChanged.addListener((changes, area) => {
+  if (isLoggingOut) return;
   if (area === 'local' && (
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
