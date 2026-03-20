@@ -65,25 +65,6 @@ export interface PendingEntry {
   channelUrl: string | null;
 }
 
-// JP343-kompatibles Immersion Log Format
-export interface JP343ImmersionLogEntry {
-  id: string;
-  date: string;
-  duration_min: number;
-  project: string;
-  project_id: string;
-  source: 'extension';
-  note: string;
-  resourceUrl: string;
-  thumbnail: string | null;
-  type: 'watching' | 'reading' | 'listening' | 'other';
-  sessionId: string | null;
-  // Channel-Informationen (fuer Website-seitige Zuordnung)
-  channelId: string | null;
-  channelName: string | null;
-  channelUrl: string | null;
-}
-
 // JP343 User State (vom Content Script auf JP343-Seite)
 export interface JP343UserState {
   isLoggedIn: boolean;
@@ -137,18 +118,14 @@ export type ExtensionMessage =
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
   | { type: 'JP343_SITE_LOADED'; userState: JP343UserState }
-  | { type: 'JP343_INJECT_ENTRY'; entry: JP343ImmersionLogEntry }
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
   | { type: 'GET_PENDING_ENTRIES' }
   | { type: 'DELETE_PENDING_ENTRY'; entryId: string }
-  | { type: 'MARK_ENTRY_SYNCED'; entryId: string }
-  | { type: 'MARK_ENTRY_FAILED'; entryId: string; error: string }
   | { type: 'CLEAR_SYNCED_ENTRIES' }
   | { type: 'STOP_SESSION' }
   | { type: 'PAUSE_SESSION' }
   | { type: 'RESUME_SESSION' }
-  | { type: 'SYNC_NOW' }
   | { type: 'GET_SETTINGS' }
   | { type: 'SET_ENABLED'; enabled: boolean }
   | { type: 'BLOCK_CHANNEL'; channel: BlockedChannel }

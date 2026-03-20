@@ -1,15 +1,10 @@
 // =============================================================================
 // JP343 Extension - Bridge Content Script
-// Laeuft auf JP343-Seite und synchronisiert Daten SICHER
-// Entries werden NIE geloescht - nur als synced markiert!
+// Laeuft auf JP343-Seite und meldet User-State an Background
+// Auto-Sync im Background uebernimmt den Rest
 // =============================================================================
 
-import type {
-  PendingEntry,
-  JP343ImmersionLogEntry,
-  JP343UserState,
-  Platform
-} from '../../types';
+import type { JP343UserState } from '../../types';
 
 export default defineContentScript({
   matches: [
@@ -28,18 +23,7 @@ export default defineContentScript({
 
     log('[JP343 Bridge] Content Script geladen');
 
-    // Firefox Cross-Compartment Fix: cloneInto() klont Objekte in Page-Compartment
-    // damit CustomEvent.detail fuer Page-Scripts zugaenglich ist.
-    // Chrome hat kein cloneInto — dort ist es nicht noetig.
-    function cloneForPage<T>(obj: T): T {
-      if (typeof (globalThis as any).cloneInto === 'function') {
-        return (globalThis as any).cloneInto(obj, window);
-      }
-      return obj;
-    }
-
     // Signal fuer Website: Extension ist installiert
-    // Die Website kann das pruefen und entsprechend reagieren (z.B. Banner ausblenden)
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
     log('[JP343 Bridge] Extension v' + version + ' signalisiert');
@@ -57,80 +41,8 @@ export default defineContentScript({
     // Sofort beim Laden injizieren um User State zu extrahieren
     injectUserStateScript();
 
-    const STORAGE_KEYS = {
-      IMMERSION_LOG: 'jp343_immersion_log'
-    };
-
-    // Flag um zu erkennen ob Extension Context noch gueltig ist
-    let extensionContextValid = true;
-    let syncIntervalId: ReturnType<typeof setInterval> | null = null;
-
-    // Cleanup-Registry (Fix 4+5)
-    const intervalIds: ReturnType<typeof setInterval>[] = [];
-    function cleanup(): void {
-      intervalIds.forEach(clearInterval);
-      intervalIds.length = 0;
-      if (syncIntervalId) {
-        clearInterval(syncIntervalId);
-        syncIntervalId = null;
-      }
-    }
-    window.addEventListener('pagehide', cleanup);
-
-    // Pruefen ob Extension Context noch gueltig ist
-    function isExtensionContextValid(): boolean {
-      try {
-        // Wenn browser.runtime.id undefined ist, ist der Context ungueltig
-        return extensionContextValid && !!browser.runtime?.id;
-      } catch {
-        return false;
-      }
-    }
-
-    // Extension Context als ungueltig markieren und Interval stoppen
-    function invalidateExtensionContext(): void {
-      if (extensionContextValid) {
-        log('[JP343 Bridge] Extension Context ungueltig - stoppe Sync');
-        extensionContextValid = false;
-        if (syncIntervalId) {
-          clearInterval(syncIntervalId);
-          syncIntervalId = null;
-        }
-      }
-    }
-
-    // Warten bis JP343_USER verfuegbar ist (via data-Attribut)
-    function waitForJP343User(maxWait = 5000): Promise<JP343UserState> {
-      return new Promise((resolve) => {
-        const startTime = Date.now();
-
-        // Erst Script injizieren falls noch nicht geschehen
-        if (!document.documentElement.hasAttribute('data-jp343-user')) {
-          injectUserStateScript();
-        }
-
-        const check = () => {
-          const userState = getUserState();
-
-          // Wenn User State vorhanden oder Timeout
-          if (userState.ajaxUrl || Date.now() - startTime > maxWait) {
-            log('[JP343 Bridge] User State:', userState.isLoggedIn ? 'eingeloggt' : userState.guestToken ? 'Gast mit Token' : 'Gast');
-            resolve(userState);
-            return;
-          }
-
-          // Nochmal versuchen (Script braucht evtl. einen Moment)
-          setTimeout(check, 100);
-        };
-
-        // Kurze Verzoegerung damit Script ausgefuehrt werden kann
-        setTimeout(check, 50);
-      });
-    }
-
     // JP343_USER aus data-Attribut lesen (wurde von injiziertem Script gesetzt)
     function getUserState(): JP343UserState {
-      // Aus data-Attribut lesen (das vom injizierten Script gesetzt wurde)
       const dataAttr = document.documentElement.getAttribute('data-jp343-user');
       if (dataAttr) {
         try {
@@ -167,7 +79,6 @@ export default defineContentScript({
         }
       }
 
-      // Fallback: nicht eingeloggt
       return {
         isLoggedIn: false,
         userId: null,
@@ -177,155 +88,7 @@ export default defineContentScript({
       };
     }
 
-    function getActivityType(platform: Platform): 'watching' | 'reading' | 'listening' | 'other' {
-      const watchingPlatforms: Platform[] = ['youtube', 'netflix', 'crunchyroll'];
-      return watchingPlatforms.includes(platform) ? 'watching' : 'other';
-    }
-
-    function convertToJP343Format(entry: PendingEntry): JP343ImmersionLogEntry {
-      return {
-        id: entry.id,
-        date: entry.date,
-        duration_min: entry.duration_min,
-        project: entry.project,
-        project_id: entry.project_id,
-        source: 'extension',
-        note: `Tracked via extension on ${entry.platform}`,
-        resourceUrl: entry.url,
-        thumbnail: entry.thumbnail,
-        type: getActivityType(entry.platform),
-        sessionId: entry.id,
-        // Channel-Informationen (fuer Website-seitige Zuordnung)
-        channelId: entry.channelId,
-        channelName: entry.channelName,
-        channelUrl: entry.channelUrl
-      };
-    }
-
-    function entryExists(immersionLog: JP343ImmersionLogEntry[], entryId: string): boolean {
-      return immersionLog.some(e => e.id === entryId || e.sessionId === entryId);
-    }
-
-    function injectEntry(entry: JP343ImmersionLogEntry): boolean {
-      try {
-        const logData = localStorage.getItem(STORAGE_KEYS.IMMERSION_LOG);
-        const immersionLog: JP343ImmersionLogEntry[] = logData ? JSON.parse(logData) : [];
-
-        if (entryExists(immersionLog, entry.id)) {
-          log('[JP343 Bridge] Entry existiert bereits:', entry.id);
-          // Entry existiert schon - das ist OK, als synced markieren
-          return true;
-        }
-
-        immersionLog.push(entry);
-        localStorage.setItem(STORAGE_KEYS.IMMERSION_LOG, JSON.stringify(immersionLog));
-
-        window.dispatchEvent(new CustomEvent('jp343:tracker:changed', {
-          detail: cloneForPage({ entry, action: 'log_added', source: 'extension' })
-        }));
-
-        log('[JP343 Bridge] Entry injiziert:', entry.project, entry.duration_min, 'min');
-        return true;
-      } catch (error) {
-        log('[JP343 Bridge] Fehler beim Injizieren:', error);
-        return false;
-      }
-    }
-
-    async function syncEntryToServer(
-      entry: JP343ImmersionLogEntry,
-      userState: JP343UserState,
-      originalVideoTitle?: string,
-      originalResourceUrl?: string,
-      originalThumbnail?: string,
-      channelThumbnail?: string
-    ): Promise<boolean> {
-      // Eingeloggt ODER Gast mit Token: Server-Sync moeglich
-      const hasAuth = userState.isLoggedIn || userState.guestToken;
-      if (!hasAuth || !userState.nonce || !userState.ajaxUrl) {
-        return false;
-      }
-
-      // Video-Titel: Original-Titel hat Prioritaet (vor Projekt-Zuweisung)
-      const videoTitle = originalVideoTitle || entry.project || '';
-      // Resource-URL: Original-URL hat Prioritaet
-      const resourceUrl = originalResourceUrl || entry.resourceUrl || '';
-
-      try {
-        const params: Record<string, string> = {
-          action: 'jp343_log_time',
-          nonce: userState.nonce,
-          project_id: entry.project_id,
-          duration_seconds: String(Math.round(entry.duration_min * 60)),
-          source: 'extension',
-          session_id: entry.id,
-          // Felder die bisher fehlten
-          type: entry.type || 'other',
-          notes: entry.note || '',
-          // Projekt-Metadaten fuer Auto-Create auf Server
-          project_title: entry.project || '',
-          project_url: entry.resourceUrl || '',
-          // project_thumbnail = Bild fuer Custom Project (Channel/Show-Poster)
-          project_thumbnail: channelThumbnail || entry.thumbnail || '',
-          channel_id: entry.channelId || '',
-          channel_name: entry.channelName || '',
-          channel_url: entry.channelUrl || '',
-          // Video-spezifische Daten fuer Session-Anzeige (ORIGINAL Video-Titel!)
-          video_title: videoTitle,
-          resource_url: resourceUrl,
-          // Per-Session Thumbnail (Episoden-spezifisch, NICHT Channel/Show-Poster)
-          thumbnail: originalThumbnail || entry.thumbnail || ''
-        };
-
-        // Guest Token hinzufuegen wenn vorhanden
-        if (userState.guestToken) {
-          params.guest_token = userState.guestToken;
-        }
-
-        const response = await fetch(userState.ajaxUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams(params)
-        });
-
-        const result = await response.json();
-        if (result.success) {
-          log('[JP343 Bridge] Entry zu Server gesynct', result.data?.debug || '');
-          return true;
-        }
-        log('[JP343 Bridge] Server antwortete mit Fehler:', result);
-        return false;
-      } catch (error) {
-        log('[JP343 Bridge] Server sync Fehler:', error);
-        return false;
-      }
-    }
-
-    // Entry als synced markieren (NICHT loeschen!)
-    async function markEntrySynced(entryId: string): Promise<void> {
-      try {
-        await browser.runtime.sendMessage({
-          type: 'MARK_ENTRY_SYNCED',
-          entryId
-        });
-      } catch (error) {
-        log('[JP343 Bridge] Fehler beim Markieren als synced:', error);
-      }
-    }
-
-    // Entry als fehlgeschlagen markieren
-    async function markEntryFailed(entryId: string, error: string): Promise<void> {
-      try {
-        await browser.runtime.sendMessage({
-          type: 'MARK_ENTRY_FAILED',
-          entryId,
-          error
-        });
-      } catch (err) {
-        log('[JP343 Bridge] Fehler beim Markieren als failed:', err);
-      }
-    }
-
+    // User State an Background melden (fuer Auto-Sync Auth)
     async function reportUserState(): Promise<void> {
       const userState = getUserState();
       try {
@@ -333,202 +96,43 @@ export default defineContentScript({
           type: 'JP343_SITE_LOADED',
           userState
         });
+        log('[JP343 Bridge] User State gemeldet:', userState.isLoggedIn ? 'eingeloggt' : 'nicht eingeloggt');
       } catch (_error) {
         // Extension context ungueltig
       }
     }
 
-    browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-      if (message.type === 'JP343_INJECT_ENTRY' && message.entry) {
-        const success = injectEntry(message.entry);
-        sendResponse({ success });
-      }
+    // Warten bis JP343_USER verfuegbar ist (Script braucht evtl. einen Moment)
+    function waitForUserStateAndReport(maxWait = 5000): void {
+      const startTime = Date.now();
 
+      const check = () => {
+        const userState = getUserState();
+
+        if (userState.ajaxUrl || Date.now() - startTime > maxWait) {
+          reportUserState();
+          return;
+        }
+
+        // Script braucht evtl. noch einen Moment
+        if (!document.documentElement.hasAttribute('data-jp343-user')) {
+          injectUserStateScript();
+        }
+        setTimeout(check, 100);
+      };
+
+      setTimeout(check, 50);
+    }
+
+    // Message Handler fuer Background-Anfragen
+    browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === 'JP343_GET_USER_STATE') {
         sendResponse(getUserState());
       }
-
       return true;
     });
 
-    // =========================================================================
-    // EVENT-BASED SYNC FLOW (statt Auto-Sync)
-    // =========================================================================
-
-    // Prueft auf pending Entries und dispatcht Event fuer Sync-Dialog
-    async function checkPendingEntries(): Promise<void> {
-      if (!isExtensionContextValid()) {
-        invalidateExtensionContext();
-        return;
-      }
-
-      try {
-        const result = await browser.storage.local.get('jp343_extension_pending');
-        const pending: PendingEntry[] = result.jp343_extension_pending || [];
-        const unsynced = pending.filter(e => !e.synced);
-        const synced = pending.filter(e => e.synced);
-
-        if (unsynced.length === 0) {
-          log('[JP343 Bridge] Keine unsynced Entries' + (synced.length > 0 ? ' (' + synced.length + ' synced vorhanden)' : ''));
-          return;
-        }
-
-        log('[JP343 Bridge] ' + unsynced.length + ' unsynced Entries gefunden' + (synced.length > 0 ? ' + ' + synced.length + ' synced' : '') + ' - zeige Dialog');
-
-        // Event an Website dispatchen, damit Sync-Dialog angezeigt wird
-        // Sende sowohl unsynced als auch synced Entries (fuer Re-Sync)
-        window.dispatchEvent(new CustomEvent('jp343:extension:pending-entries', {
-          detail: cloneForPage({ entries: unsynced, syncedEntries: synced })
-        }));
-
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
-          invalidateExtensionContext();
-          return;
-        }
-        log('[JP343 Bridge] Fehler beim Pruefen der pending Entries:', error);
-      }
-    }
-
-    // Sync mit optionalen Projekt-Zuweisungen und Titel-Edits vom Dialog
-    async function syncConfirmedEntries(
-      entries: PendingEntry[],
-      projectAssignments: Record<string, { projectId: string; projectName: string }>,
-      titleEdits: Record<string, string>,
-      channelThumbnails: Record<string, string> = {}
-    ): Promise<void> {
-      if (!isExtensionContextValid()) {
-        invalidateExtensionContext();
-        return;
-      }
-
-      try {
-        const userState = await waitForJP343User();
-        log('[JP343 Bridge] Starte Sync von ' + entries.length + ' Entries');
-
-        for (const entry of entries) {
-          if (!isExtensionContextValid()) {
-            invalidateExtensionContext();
-            return;
-          }
-
-          try {
-            // Original-Daten speichern BEVOR sie ueberschrieben werden
-            const originalVideoTitle = entry.project;
-            const originalResourceUrl = entry.url;
-            const originalThumbnail = entry.thumbnail;
-
-            // Titel-Aenderung aus Dialog uebernehmen (falls vorhanden)
-            const customTitle = titleEdits[entry.id];
-            if (customTitle) {
-              entry.project = customTitle;
-              log('[JP343 Bridge] Titel geaendert zu:', customTitle);
-            }
-
-            // Projekt-Zuweisung aus Dialog uebernehmen (falls vorhanden)
-            const assignment = projectAssignments[entry.id];
-            if (assignment && assignment.projectId !== '__keep__') {
-              entry.project_id = assignment.projectId;
-              entry.project = assignment.projectName;
-            }
-
-            const jp343Entry = convertToJP343Format(entry);
-
-            // Channel-Thumbnail fuer Projekt-Bild (wird separat als project_thumbnail gesendet)
-            // Episoden-Thumbnail (originalThumbnail) bleibt erhalten fuer per-Session Anzeige
-            const channelThumb = channelThumbnails[jp343Entry.project_id] || undefined;
-
-            if (userState.isLoggedIn || userState.guestToken) {
-              // Eingeloggte User / Gaeste mit Token: Server ist autoritativ — erst Server-Sync, localStorage nur als Fallback
-              const serverSuccess = await syncEntryToServer(jp343Entry, userState, originalVideoTitle, originalResourceUrl, originalThumbnail, channelThumb);
-              if (serverSuccess) {
-                // Server hat die Daten — KEIN localStorage-Inject noetig (verhindert Duplikate)
-                await markEntrySynced(entry.id);
-                log('[JP343 Bridge] Entry via Server gesynct (kein localStorage):', entry.project);
-              } else {
-                // Server-Sync fehlgeschlagen — localStorage als Fallback
-                const localSuccess = injectEntry(jp343Entry);
-                if (!localSuccess) {
-                  await markEntryFailed(entry.id, 'Server + localStorage failed');
-                  continue;
-                }
-                await markEntryFailed(entry.id, 'Server sync failed, saved locally');
-                log('[JP343 Bridge] Server-Sync fehlgeschlagen, lokal gespeichert:', entry.project);
-              }
-            } else {
-              // Gaeste: localStorage reicht
-              const localSuccess = injectEntry(jp343Entry);
-              if (!localSuccess) {
-                await markEntryFailed(entry.id, 'localStorage injection failed');
-                continue;
-              }
-              await markEntrySynced(entry.id);
-              log('[JP343 Bridge] Entry lokal gespeichert (Gast):', entry.project);
-            }
-
-          } catch (error) {
-            if (error instanceof Error && error.message.includes('Extension context invalidated')) {
-              invalidateExtensionContext();
-              return;
-            }
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            await markEntryFailed(entry.id, errorMsg);
-            log('[JP343 Bridge] Sync fehlgeschlagen fuer:', entry.id, error);
-          }
-        }
-
-        // Sync-Complete Event an Website dispatchen
-        window.dispatchEvent(new CustomEvent('jp343:extension:sync-complete'));
-        log('[JP343 Bridge] Sync abgeschlossen');
-
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
-          invalidateExtensionContext();
-          return;
-        }
-        log('[JP343 Bridge] Sync Fehler:', error);
-      }
-    }
-
-    // Listener fuer Sync-Bestaetigung vom Dialog
-    window.addEventListener('jp343:extension:sync-confirmed', (async (e: CustomEvent) => {
-      log('[JP343 Bridge] Sync-Bestaetigung erhalten');
-      const { entries, projectAssignments, titleEdits, channelThumbnails } = e.detail || {};
-      if (!entries || !Array.isArray(entries)) return;
-
-      // Nur IDs akzeptieren die wir kennen - verwende trusted Kopien aus Storage
-      const result = await browser.storage.local.get('jp343_extension_pending');
-      const pending: PendingEntry[] = result.jp343_extension_pending || [];
-      const pendingIds = new Set(pending.map(p => p.id));
-
-      const validEntries = entries.filter((entry: PendingEntry) => pendingIds.has(entry.id));
-      if (validEntries.length > 0) {
-        syncConfirmedEntries(validEntries, projectAssignments || {}, titleEdits || {}, channelThumbnails || {});
-      }
-    }) as EventListener);
-
-    // Listener fuer Skip vom Dialog (optional Logging)
-    window.addEventListener('jp343:extension:sync-skipped', () => {
-      log('[JP343 Bridge] Sync uebersprungen');
-    });
-
-    // Initial: User State melden
-    reportUserState();
-
-    // Warten bis Seite geladen, dann pending Entries pruefen
-    setTimeout(() => {
-      if (isExtensionContextValid()) {
-        checkPendingEntries();
-      }
-    }, 2000);
-
-    // Periodisch pruefen (alle 60 Sekunden) - Dialog erscheint nur wenn nicht bereits sichtbar
-    syncIntervalId = setInterval(() => {
-      if (isExtensionContextValid()) {
-        checkPendingEntries();
-      } else {
-        invalidateExtensionContext();
-      }
-    }, 60000);
+    // User State melden (mit Warten auf Script-Injection)
+    waitForUserStateAndReport();
   }
 });

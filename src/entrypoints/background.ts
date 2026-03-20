@@ -694,15 +694,6 @@ export default defineBackground(() => {
         return { success: true };
       }
 
-      case 'SYNC_NOW': {
-        // Legacy: Popup nutzt jetzt SYNC_ENTRIES_DIRECT
-        const pending = await loadPendingEntries();
-        return {
-          success: true,
-          data: { pendingCount: pending.length }
-        };
-      }
-
       case 'SYNC_ENTRIES_DIRECT': {
         // Direct Sync via Background Service Worker (kein Bridge noetig)
         const result = await syncEntriesDirect();
@@ -739,52 +730,6 @@ export default defineBackground(() => {
               await subtractFromStats(deletedEntry);
             }
             return { success: true, data: { remaining: filtered.length } };
-          });
-        }
-        return { success: false, error: 'No entryId provided' };
-      }
-
-      case 'MARK_ENTRY_SYNCED': {
-        if ('entryId' in message && typeof message.entryId === 'string') {
-          return withStorageLock(async () => {
-            const pending = await loadPendingEntries();
-            const updated = pending.map(e => {
-              if (e.id === message.entryId) {
-                return {
-                  ...e,
-                  synced: true,
-                  syncedAt: new Date().toISOString(),
-                  lastSyncError: null
-                };
-              }
-              return e;
-            });
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-            // Badge nur fuer unsynced entries
-            const unsyncedCount = updated.filter(e => !e.synced).length;
-            updateBadge(unsyncedCount);
-            return { success: true };
-          });
-        }
-        return { success: false, error: 'No entryId provided' };
-      }
-
-      case 'MARK_ENTRY_FAILED': {
-        if ('entryId' in message && typeof message.entryId === 'string') {
-          return withStorageLock(async () => {
-            const pending = await loadPendingEntries();
-            const updated = pending.map(e => {
-              if (e.id === message.entryId) {
-                return {
-                  ...e,
-                  syncAttempts: e.syncAttempts + 1,
-                  lastSyncError: ('error' in message ? message.error : 'Unknown error') as string
-                };
-              }
-              return e;
-            });
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-            return { success: true };
           });
         }
         return { success: false, error: 'No entryId provided' };
