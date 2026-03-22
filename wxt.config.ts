@@ -11,8 +11,8 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.0.3',
-    description: 'Auto-tracks YouTube, Netflix & Crunchyroll. No account needed. Built-in dashboard with heatmap, streaks, and session history.',
+    version: '2.1.0',
+    description: 'Auto-tracks YouTube, Netflix, Crunchyroll & Prime Video. Built-in dashboard with heatmap, streaks, and history.',
 
     // Firefox Add-on ID (fuer AMO Store Submission)
     browser_specific_settings: {
@@ -36,6 +36,11 @@ export default defineConfig({
       '*://*.youtube.com/*',
       '*://*.netflix.com/*',
       '*://*.crunchyroll.com/*',
+      '*://*.primevideo.com/*',
+      '*://*.amazon.com/*',
+      '*://*.amazon.de/*',
+      '*://*.amazon.co.jp/*',
+      '*://*.amazon.co.uk/*',
       // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',

@@ -440,8 +440,8 @@ export default defineContentScript({
       }
       // Hauptindikator: .ad-showing auf #movie_player (zuverlaessigster Check)
       if (cachedPlayer?.classList.contains('ad-showing')) return true;
-      // Einziger Fallback: ein kombinierter querySelector (statt 8 einzelne)
-      return !!document.querySelector('.ytp-ad-player-overlay, .ytp-ad-skip-button-container');
+      // Fallback: GEFUNDEN VIA DOM-DUMP (2026-03)
+      return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
     // Aktuellen Video-State zusammenstellen

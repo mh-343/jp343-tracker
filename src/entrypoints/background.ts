@@ -462,15 +462,9 @@ export default defineBackground(() => {
 
       case 'idle':
       default:
-        // Idle: Zeige Pending-Count oder nichts
-        if (unsyncedCount > 0) {
-          badgeApi.setBadgeText({ text: String(unsyncedCount) });
-          badgeApi.setBadgeBackgroundColor({ color: '#875aff' }); // JP343 accent
-          badgeApi.setTitle({ title: `jp343 - ${unsyncedCount} pending entries` });
-        } else {
-          badgeApi.setBadgeText({ text: '' });
-          badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
-        }
+        // Idle: Kein Badge (Pending-Count nicht mehr anzeigen, verwirrt User ohne Account)
+        badgeApi.setBadgeText({ text: '' });
+        badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
         break;
     }
   }
@@ -890,7 +884,9 @@ export default defineBackground(() => {
         const streamingDomains = [
           /youtube\.com/,
           /netflix\.com/,
-          /crunchyroll\.com/
+          /crunchyroll\.com/,
+          /primevideo\.com/,
+          /amazon\.\w+.*\/gp\/video/
         ];
         const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
 
@@ -1020,7 +1016,7 @@ export default defineBackground(() => {
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 Stunden
 
   // Type-Guard fuer gespeicherte Sessions (Fix 8)
-  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'generic'];
+  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
 
   function isValidSavedSession(session: unknown): session is TrackingSession {
@@ -1203,6 +1199,7 @@ export default defineBackground(() => {
         youtube: /youtube\.com/,
         netflix: /netflix\.com/,
         crunchyroll: /crunchyroll\.com/,
+        primevideo: /primevideo\.com|amazon\.\w+/,
       };
       const samePlatform = platformDomains[session.platform]?.test(changeInfo.url);
       if (!samePlatform) {

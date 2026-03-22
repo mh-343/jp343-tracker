@@ -389,7 +389,7 @@ export default defineContentScript({
         '[data-uia="ads-info-text"]',
         '.watch-video--adsInfo-container',
         '[data-uia="video-ad"]',
-        // '[data-uia$="-ad"]' entfernt — matcht pause-ad und andere harmlose Elemente
+        // '[data-uia="pause-ad"]' NICHT nutzen — erscheint auch bei normaler Pause ohne Werbung
         // "Skip Ad" oder "Skip Intro" Button (Werbung)
         '[data-uia="ad-skip"]',
         '[data-uia="player-skip-ad"]',
@@ -879,10 +879,10 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),  // Echte Ad-Erkennung
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        // Netflix: Serien-Name als Channel (fuer Block-Funktion + Gruppierung)
-        // channelId = 'netflix:<Serienname>' fuer Block-Support (Filme: null, kein Block)
-        channelId: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
-        channelName: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? metadata.title : null,
+        // Netflix: Titel als Channel (fuer Block-Funktion + Gruppierung)
+        // Gilt fuer Serien UND Filme - User entscheidet was geblockt wird
+        channelId: (metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
+        channelName: (metadata.title !== 'Netflix Content') ? metadata.title : null,
         channelUrl: null
       };
     }
