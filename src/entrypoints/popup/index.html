@@ -51,6 +51,9 @@
     body {
       width: 320px;
       min-height: 200px;
+      max-height: 580px;
+      display: flex;
+      flex-direction: column;
       background: var(--bg-primary);
       color: var(--text-primary);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -677,7 +680,7 @@
       gap: 4px;
     }
 
-    /* Footer */
+    /* Footer — immer sichtbar am unteren Rand */
     .footer {
       display: flex;
       align-items: center;
@@ -687,6 +690,8 @@
       color: var(--text-secondary);
       border-top: 2px solid transparent;
       border-image: var(--gradient-line) 1;
+      margin-top: auto;
+      flex-shrink: 0;
     }
 
     .btn-dashboard {
@@ -1258,7 +1263,7 @@
 
   <div class="channel-section" id="channelSection" style="display: none;">
     <div class="channel-info">
-      <span class="channel-name">Channel: <strong id="currentChannelName">-</strong></span>
+      <span class="channel-name"><span id="channelLabel">Channel</span>: <strong id="currentChannelName">-</strong></span>
       <button class="btn-block" id="btnBlockChannel">Block</button>
       <span class="blocked-count-badge" id="blockedCountBadge" style="display: none;">(<span id="blockedCountNumber">0</span>)</span>
       <button class="channel-list-toggle" id="btnToggleBlockedList" style="display: none;">&#9660;</button>
@@ -1276,7 +1281,7 @@
   </div>
 
   <div class="footer">
-    <button class="btn-dashboard" id="btnDashboard">Full Dashboard →</button>
+    <button class="btn-dashboard" id="btnDashboard">Dashboard →</button>
     <a class="footer-link-secondary" href="https://jp343.com/my-hub/" target="_blank">jp343.com</a>
   </div>
 

@@ -118,6 +118,25 @@ export default defineContentScript({
       return true;
     });
 
+    async function provideExtensionData(): Promise<void> {
+      try {
+        const [entriesResponse, statsResponse] = await Promise.all([
+          browser.runtime.sendMessage({ type: 'GET_PENDING_ENTRIES' }),
+          browser.runtime.sendMessage({ type: 'GET_STATS' })
+        ]);
+
+        const entries = entriesResponse?.entries || [];
+        const stats = statsResponse || {};
+
+        const data = JSON.stringify({ entries, stats });
+        document.documentElement.setAttribute('data-jp343-extension-data', data);
+        log('[JP343 Bridge] Extension-Daten bereitgestellt:', entries.length, 'Entries');
+      } catch (_error) {
+      }
+    }
+
     waitForUserStateAndReport();
+
+    provideExtensionData();
   }
 });

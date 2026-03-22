@@ -25,6 +25,7 @@ const elements = {
   toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
   channelSection: document.getElementById('channelSection') as HTMLElement,
+  channelLabel: document.getElementById('channelLabel') as HTMLElement,
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
   blockedCountBadge: document.getElementById('blockedCountBadge') as HTMLElement,
@@ -213,9 +214,10 @@ function isChannelBlocked(channelId: string): boolean {
 
 // Channel-Anzeige aktualisieren
 function updateChannelDisplay(session: TrackingSession | null): void {
-  if (session && session.channelId && session.platform === 'youtube') {
+  if (session && session.channelId) {
     currentChannelId = session.channelId;
     elements.channelSection.style.display = 'block';
+    elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Series';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
     // Channel-Name und Block-Button anzeigen
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
