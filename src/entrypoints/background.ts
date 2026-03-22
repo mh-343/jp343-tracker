@@ -111,7 +111,7 @@ export default defineBackground(() => {
           await browser.storage.local.get(STORAGE_KEYS.USER)
         )[STORAGE_KEYS.USER] ?? null;
 
-        if (userState?.isLoggedIn && userState?.nonce) {
+        if (userState?.isLoggedIn && (userState?.extApiToken || userState?.nonce)) {
           log('[JP343] Auto-Sync gestartet');
           const result = await syncEntriesDirect();
           log('[JP343] Auto-Sync Ergebnis:', result.succeeded, 'synced,', result.failed, 'failed');
@@ -160,10 +160,12 @@ export default defineBackground(() => {
       return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
     }
 
-    // Weder eingeloggt noch Gast-Token — kein Sync moeglich
-    const hasAuth = userState.isLoggedIn || !!userState.guestToken;
-    if (!hasAuth || !userState.nonce) {
-      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !userState.nonce };
+    // Auth: Token (persistent) ODER Nonce (kurzlebig) ODER GuestToken
+    const hasToken = !!userState.extApiToken;
+    const hasNonce = !!userState.nonce;
+    const hasAuth = userState.isLoggedIn && (hasToken || hasNonce);
+    if (!hasAuth) {
+      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !hasToken && !hasNonce };
     }
 
     const pending = await loadPendingEntries();
@@ -179,8 +181,11 @@ export default defineBackground(() => {
       try {
         const params: Record<string, string> = {
           action: 'jp343_extension_log_time',
-          nonce: userState.nonce,
           user_id: String(userState.userId || 0),
+          // Token bevorzugen (persistent), Nonce als Fallback (kurzlebig)
+          ...(userState.extApiToken
+            ? { ext_api_token: userState.extApiToken }
+            : { nonce: userState.nonce || '' }),
           project_id: entry.project_id,
           duration_seconds: String(Math.round(entry.duration_min * 60)),
           source: 'extension',
@@ -197,7 +202,8 @@ export default defineBackground(() => {
           resource_url: entry.url,
           thumbnail: entry.thumbnail || '',
           platform: entry.platform,
-          date: entry.date.split('T')[0] // YYYY-MM-DD
+          // Volles Datetime senden: "2026-03-22 19:15:30" (Server akzeptiert beides)
+          date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19)
         };
 
         if (userState.guestToken) {
@@ -236,8 +242,8 @@ export default defineBackground(() => {
           log('[JP343] Direct Sync erfolgreich:', entry.project);
         } else {
           // Nonce abgelaufen? Restliche Entries abbrechen
-          if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce') {
-            log('[JP343] Direct Sync: Nonce abgelaufen, breche ab');
+          if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce' || result.data?.code === 'invalid_token') {
+            log('[JP343] Direct Sync: Auth abgelaufen/ungueltig, breche ab');
             failed += (unsynced.length - succeeded - failed);
             break;
           }

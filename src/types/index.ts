@@ -72,6 +72,7 @@ export interface JP343UserState {
   nonce: string | null;
   ajaxUrl: string | null;
   guestToken: string | null;
+  extApiToken: string | null;  // Persistentes API-Token (laeuft nie ab, ersetzt Nonce fuer Sync)
 }
 
 // Extension Storage Schema
