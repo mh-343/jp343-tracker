@@ -62,7 +62,8 @@ export default defineContentScript({
             userId: userData.userId || null,
             nonce: userData.nonce || null,
             ajaxUrl: validatedAjaxUrl,
-            guestToken: userData.guestToken || null
+            guestToken: userData.guestToken || null,
+            extApiToken: userData.extApiToken || null
           };
         } catch (e) {
           log('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
@@ -74,7 +75,8 @@ export default defineContentScript({
         userId: null,
         nonce: null,
         ajaxUrl: null,
-        guestToken: null
+        guestToken: null,
+        extApiToken: null
       };
     }
 

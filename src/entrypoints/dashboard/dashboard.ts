@@ -67,6 +67,7 @@ async function tryRefreshNonce(userState: JP343UserState): Promise<JP343UserStat
         nonce: result.data.nonce,
         isLoggedIn: true,
         userId: result.data.userId,
+        extApiToken: result.data.extApiToken || userState.extApiToken || null,
       };
       await browser.storage.local.set({ [STORAGE_KEYS.USER]: updated });
       return updated;
@@ -102,7 +103,8 @@ async function doLogin(email: string, password: string): Promise<{ success: bool
         userId: result.data.userId,
         nonce: result.data.nonce,
         ajaxUrl: result.data.ajaxUrl || AJAX_URL,
-        guestToken: null
+        guestToken: null,
+        extApiToken: result.data.extApiToken || null
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
@@ -135,23 +137,43 @@ async function doLogout(): Promise<void> {
 }
 
 async function fetchServerStats(userState: JP343UserState): Promise<Record<string, any> | null> {
-  if (!userState.nonce) return null;
-  try {
-    const result = await ajaxPost('jp343_get_time_stats', { nonce: userState.nonce });
-    if (result.success) return result.data;
-  } catch {}
+  if (userState.extApiToken) {
+    try {
+      const result = await ajaxPost('jp343_extension_get_time_stats', {
+        ext_api_token: userState.extApiToken
+      });
+      if (result.success) return result.data;
+    } catch {}
+  }
+  if (userState.nonce) {
+    try {
+      const result = await ajaxPost('jp343_get_time_stats', { nonce: userState.nonce });
+      if (result.success) return result.data;
+    } catch {}
+  }
   return null;
 }
 
 async function fetchServerSessions(userState: JP343UserState, limit = 20): Promise<any[] | null> {
-  if (!userState.nonce) return null;
-  try {
-    const result = await ajaxPost('jp343_get_recent_sessions', {
-      nonce: userState.nonce,
-      limit: String(limit)
-    });
-    if (result.success && result.data?.sessions) return result.data.sessions;
-  } catch {}
+  // Token-Pfad
+  if (userState.extApiToken) {
+    try {
+      const result = await ajaxPost('jp343_extension_get_recent_sessions', {
+        ext_api_token: userState.extApiToken,
+        limit: String(limit)
+      });
+      if (result.success && result.data?.sessions) return result.data.sessions;
+    } catch {}
+  }
+  if (userState.nonce) {
+    try {
+      const result = await ajaxPost('jp343_get_recent_sessions', {
+        nonce: userState.nonce,
+        limit: String(limit)
+      });
+      if (result.success && result.data?.sessions) return result.data.sessions;
+    } catch {}
+  }
   return null;
 }
 
@@ -210,7 +232,8 @@ async function doRegister(email: string, password: string): Promise<{ success: b
         userId: result.data.userId,
         nonce: result.data.nonce,
         ajaxUrl: result.data.ajaxUrl || AJAX_URL,
-        guestToken: null
+        guestToken: null,
+        extApiToken: result.data.extApiToken || null
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
@@ -492,13 +515,20 @@ function renderSessions(entries: PendingEntry[]): void {
       if (entry.synced && entry.serverEntryId) {
         // Server-seitig loeschen
         const data = await loadData();
-        if (data.userState?.nonce) {
+        if (data.userState?.extApiToken || data.userState?.nonce) {
           try {
-            await ajaxPost('jp343_delete_time_entry', {
-              nonce: data.userState.nonce,
-              entry_id: String(entry.serverEntryId)
-            });
-          } catch { /* Server-Delete fehlgeschlagen — trotzdem lokal aufraumen */ }
+            if (data.userState.extApiToken) {
+              await ajaxPost('jp343_extension_delete_time_entry', {
+                ext_api_token: data.userState.extApiToken,
+                entry_id: String(entry.serverEntryId)
+              });
+            } else {
+              await ajaxPost('jp343_delete_time_entry', {
+                nonce: data.userState.nonce!,
+                entry_id: String(entry.serverEntryId)
+              });
+            }
+          } catch { /* Server-Delete fehlgeschlagen — trotzdem lokal aufraemen */ }
         }
       }
       // Lokal loeschen
@@ -632,12 +662,19 @@ function createServerSessionItem(session: any): HTMLElement {
   delBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const data = await loadData();
-    if (data.userState?.nonce && session.id) {
+    if ((data.userState?.extApiToken || data.userState?.nonce) && session.id) {
       try {
-        await ajaxPost('jp343_delete_time_entry', {
-          nonce: data.userState.nonce,
-          entry_id: String(session.id)
-        });
+        if (data.userState.extApiToken) {
+          await ajaxPost('jp343_extension_delete_time_entry', {
+            ext_api_token: data.userState.extApiToken,
+            entry_id: String(session.id)
+          });
+        } else {
+          await ajaxPost('jp343_delete_time_entry', {
+            nonce: data.userState.nonce!,
+            entry_id: String(session.id)
+          });
+        }
         item.remove();
       } catch { /* Loeschen fehlgeschlagen */ }
     }
@@ -713,6 +750,8 @@ async function renderAuthUI(userState: JP343UserState | null): Promise<void> {
   }
 }
 
+const CACHED_SERVER_STATS_KEY = 'jp343_cached_server_stats';
+
 function applyServerStats(serverData: Record<string, any>): void {
   if (serverData.total_seconds !== undefined) {
     renderHeroTime(serverData.total_seconds / 60);
@@ -725,6 +764,14 @@ function applyServerStats(serverData: Record<string, any>): void {
   }
   if (serverData.streak !== undefined) {
     setText('statStreak', `${serverData.streak}d`);
+  }
+  browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: serverData });
+}
+
+async function applyCachedServerStats(): Promise<void> {
+  const cached = (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
+  if (cached) {
+    applyServerStats(cached);
   }
 }
 
@@ -762,7 +809,7 @@ async function refresh(): Promise<void> {
 
   try {
   const data = await loadData();
-  const isLoggedIn = data.userState?.isLoggedIn && !!data.userState?.nonce;
+  const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
   // Auth-UI + Heatmap immer sofort rendern
   renderHeatmap(data.stats.dailyMinutes);
@@ -772,15 +819,14 @@ async function refresh(): Promise<void> {
   renderAuthUI(data.userState);
   renderFooter();
 
-  renderStats(data.stats);
-
   if (isLoggedIn) {
+    await applyCachedServerStats();
     showSessionsLoading();
 
     const refreshed = await tryRefreshNonce(data.userState!);
     const activeState = refreshed || data.userState!;
 
-    if (activeState.nonce) {
+    if (activeState.nonce || activeState.extApiToken) {
       const [serverStats, serverSessions] = await Promise.all([
         fetchServerStats(activeState),
         fetchServerSessions(activeState)
@@ -799,6 +845,7 @@ async function refresh(): Promise<void> {
     renderTierBadge(activeState);
     renderAuthUI(activeState);
   } else {
+    renderStats(data.stats);
     renderSessions(data.entries);
   }
 
