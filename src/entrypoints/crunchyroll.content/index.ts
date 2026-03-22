@@ -368,44 +368,9 @@ export default defineContentScript({
     // =======================================================================
 
     function isAdPlaying(): boolean {
-      // WICHTIG: Ad-Detection NUR auf /watch/ URLs
-      if (!window.location.pathname.match(/\/watch\//)) {
-        return false;
-      }
-
-      // Crunchyroll Ad-Indikatoren (belegt via Userscripts)
-      const adIndicators = [
-        // Vilos-spezifisch (historisch bekannt)
-        '[data-testid="vilos-ad_label"]',
-        'video[title="Advertisement"]',
-        // Allgemeine Ad-Indikatoren
-        '[class*="ad-container"]',
-        '[class*="ad-overlay"]',
-        '[data-testid*="ad"]',
-        '[class*="ad-playing"]',
-        '.ad-countdown',
-        '.ad-progress-bar'
-      ];
-
-      for (const selector of adIndicators) {
-        const element = document.querySelector(selector);
-        if (element) {
-          const rect = element.getBoundingClientRect();
-          const isVisible = rect.width > 0 && rect.height > 0;
-          if (isVisible) {
-            log('[JP343] Crunchyroll Ad erkannt via:', selector);
-            return true;
-          }
-        }
-      }
-
-      // Video-Titel "Advertisement" Check
-      const video = findVideoElement();
-      if (video?.title === 'Advertisement') {
-        log('[JP343] Crunchyroll Ad erkannt via video title');
-        return true;
-      }
-
+      // Crunchyroll hat kein Free-Tier mit Ads mehr (seit 2024).
+      // Ad-Detection deaktiviert — verursachte False Positives durch
+      // [data-testid*="ad"] das z.B. "buffering-indicator" matchte.
       return false;
     }
 
@@ -853,8 +818,9 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        // Crunchyroll: Serien-Name als channelName mitsenden (wie Netflix)
-        channelId: null,
+        // Crunchyroll: Serien-Name als Channel (fuer Block-Funktion + Gruppierung)
+        // channelId = 'crunchyroll:<Serienname>' fuer Block-Support
+        channelId: metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null,
         channelName: metadata.seriesName || null,
         channelUrl: null
       };
@@ -1065,26 +1031,41 @@ export default defineContentScript({
     let lastUrl = window.location.href;
     intervalIds.push(setInterval(() => {
       if (window.location.href !== lastUrl) {
+        const oldUrl = lastUrl;
+        const newUrl = window.location.href;
+        const wasOnWatch = oldUrl.includes('/watch/');
+        const isOnWatch = newUrl.includes('/watch/');
+
         debugLog('URL_CHANGE', '=== URL WECHSEL ===', {
-          oldUrl: lastUrl,
-          newUrl: window.location.href,
+          oldUrl, newUrl, wasOnWatch, isOnWatch,
           ...collectUIState()
         });
-        log('[JP343] Crunchyroll URL-Wechsel:', lastUrl, '->', window.location.href);
-        lastUrl = window.location.href;
+        log('[JP343] Crunchyroll URL-Wechsel:', oldUrl, '->', newUrl);
+        lastUrl = newUrl;
+
+        // Weg von /watch/: Session beenden
+        if (wasOnWatch && !isOnWatch) {
+          log('[JP343] Crunchyroll: /watch/ verlassen - Session beenden');
+          sendMessage('VIDEO_ENDED');
+          resetForNewVideo();
+          return;
+        }
+
         resetForNewVideo();
 
-        // Warten bis neues Video geladen
-        setTimeout(() => {
-          const video = findVideoElement();
-          if (video && video !== currentVideoElement) {
-            debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
-            currentVideoElement = video;
-            attachVideoEvents(video);
-            lastVideoId = getVideoId();
-            lastTitle = getFormattedTitle();
-          }
-        }, 1000);
+        // Nur auf /watch/ URLs neue Videos suchen
+        if (isOnWatch) {
+          setTimeout(() => {
+            const video = findVideoElement();
+            if (video && video !== currentVideoElement) {
+              debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
+              currentVideoElement = video;
+              attachVideoEvents(video);
+              lastVideoId = getVideoId();
+              lastTitle = getFormattedTitle();
+            }
+          }, 1000);
+        }
       }
     }, 1000));
 

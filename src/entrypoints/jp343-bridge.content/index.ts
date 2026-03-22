@@ -132,7 +132,30 @@ export default defineContentScript({
       return true;
     });
 
+    // Extension-Daten (Pending Entries + Stats) fuer die Website bereitstellen
+    // Website kann diese ueber data-jp343-extension-data Attribut lesen
+    async function provideExtensionData(): Promise<void> {
+      try {
+        const [entriesResponse, statsResponse] = await Promise.all([
+          browser.runtime.sendMessage({ type: 'GET_PENDING_ENTRIES' }),
+          browser.runtime.sendMessage({ type: 'GET_STATS' })
+        ]);
+
+        const entries = entriesResponse?.entries || [];
+        const stats = statsResponse || {};
+
+        const data = JSON.stringify({ entries, stats });
+        document.documentElement.setAttribute('data-jp343-extension-data', data);
+        log('[JP343 Bridge] Extension-Daten bereitgestellt:', entries.length, 'Entries');
+      } catch (_error) {
+        // Extension context ungueltig oder kein Background
+      }
+    }
+
     // User State melden (mit Warten auf Script-Injection)
     waitForUserStateAndReport();
+
+    // Extension-Daten bereitstellen (fuer My Hub ohne Account)
+    provideExtensionData();
   }
 });

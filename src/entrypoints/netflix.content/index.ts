@@ -388,10 +388,8 @@ export default defineContentScript({
         '[data-uia="ads-info-container"]',
         '[data-uia="ads-info-text"]',
         '.watch-video--adsInfo-container',
-        // Netflix Pause-Ad (Werbung bei Pause)
-        '[data-uia="pause-ad"]',
         '[data-uia="video-ad"]',
-        '[data-uia*="-ad"]',  // Alle data-uia die mit "-ad" enden
+        // '[data-uia$="-ad"]' entfernt — matcht pause-ad und andere harmlose Elemente
         // "Skip Ad" oder "Skip Intro" Button (Werbung)
         '[data-uia="ad-skip"]',
         '[data-uia="player-skip-ad"]',
@@ -407,8 +405,7 @@ export default defineContentScript({
         // Weitere Ad-bezogene Elemente
         '.interstitial-text',
         '.interstitial-container',
-        // Playback Notification (Pause-Werbung)
-        '.playback-notification--pause',
+        // '.playback-notification--pause' entfernt — ist die normale Pause-Notification, kein Ad
         // "Ad" Text irgendwo sichtbar
         '[class*="adBreak"]',
         '[class*="ad-break"]',
@@ -449,7 +446,7 @@ export default defineContentScript({
         const text = (el as HTMLElement).innerText?.trim();
         if (!text || text.length > 30) continue; // Ad-Labels sind kurz
         // "Werbung 3", "Werbung 1 von 3", "Ad 2", "Ad 2 of 3"
-        if (/^Werbung\s+\d/i.test(text) || /^Ad\s+\d/i.test(text)) {
+        if (/^(?:Werbung|Ad|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
             log('[JP343] Netflix Ad erkannt via Text:', text);
@@ -882,8 +879,9 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),  // Echte Ad-Erkennung
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        // Netflix: Serien-Name als channelName mitsenden (Server nutzt es fuer Gruppierung)
-        channelId: null,
+        // Netflix: Serien-Name als Channel (fuer Block-Funktion + Gruppierung)
+        // channelId = 'netflix:<Serienname>' fuer Block-Support (Filme: null, kein Block)
+        channelId: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
         channelName: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? metadata.title : null,
         channelUrl: null
       };
@@ -929,6 +927,12 @@ export default defineContentScript({
       video.setAttribute('data-jp343-tracked', 'true');
 
       video.addEventListener('play', () => {
+        // Nur auf /watch/ URLs tracken (Browse-Previews ignorieren)
+        if (!window.location.pathname.includes('/watch/')) {
+          log('[JP343] Netflix: Play-Event auf Nicht-Watch-Seite ignoriert');
+          return;
+        }
+
         // DEBUG: Vollstaendiger UI-State bei Play-Event
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
 
@@ -1046,8 +1050,8 @@ export default defineContentScript({
 
       // Periodische Updates (alle 30 Sekunden)
       setInterval(() => {
-        // Keine Updates waehrend Werbung
-        if (isCurrentlyInAd) {
+        // Keine Updates waehrend Werbung oder auf Nicht-Watch-Seiten
+        if (isCurrentlyInAd || !window.location.pathname.includes('/watch/')) {
           return;
         }
 
@@ -1083,6 +1087,9 @@ export default defineContentScript({
     }
 
     const observer = new MutationObserver(() => {
+      // Nur auf /watch/ URLs Videos suchen (Browse-Previews ignorieren)
+      if (!window.location.pathname.includes('/watch/')) return;
+
       const video = findVideoElement();
 
       if (video && video !== currentVideoElement) {
@@ -1124,7 +1131,8 @@ export default defineContentScript({
     });
     observers.push(observer);
 
-    const initialVideo = findVideoElement();
+    // Initiales Video nur auf /watch/ URLs suchen
+    const initialVideo = window.location.pathname.includes('/watch/') ? findVideoElement() : null;
     if (initialVideo) {
       currentVideoElement = initialVideo;
       attachVideoEvents(initialVideo);
@@ -1154,26 +1162,41 @@ export default defineContentScript({
     let lastUrl = window.location.href;
     intervalIds.push(setInterval(() => {
       if (window.location.href !== lastUrl) {
+        const oldUrl = lastUrl;
+        const newUrl = window.location.href;
+        const wasOnWatch = oldUrl.includes('/watch/');
+        const isOnWatch = newUrl.includes('/watch/');
+
         debugLog('URL_CHANGE', '=== URL WECHSEL ===', {
-          oldUrl: lastUrl,
-          newUrl: window.location.href,
+          oldUrl, newUrl, wasOnWatch, isOnWatch,
           ...collectUIState()
         });
-        log('[JP343] Netflix URL-Wechsel:', lastUrl, '->', window.location.href);
-        lastUrl = window.location.href;
+        log('[JP343] Netflix URL-Wechsel:', oldUrl, '->', newUrl);
+        lastUrl = newUrl;
+
+        // Weg von /watch/: Session beenden
+        if (wasOnWatch && !isOnWatch) {
+          log('[JP343] Netflix: /watch/ verlassen - Session beenden');
+          sendMessage('VIDEO_ENDED');
+          resetForNewVideo();
+          return;
+        }
+
         resetForNewVideo();
 
-        // Warten bis neues Video geladen
-        setTimeout(() => {
-          const video = findVideoElement();
-          if (video && video !== currentVideoElement) {
-            debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
-            currentVideoElement = video;
-            attachVideoEvents(video);
-            lastVideoId = getVideoId();
-            lastTitle = getFormattedTitle();
-          }
-        }, 1000);
+        // Nur auf /watch/ URLs neue Videos suchen
+        if (isOnWatch) {
+          setTimeout(() => {
+            const video = findVideoElement();
+            if (video && video !== currentVideoElement) {
+              debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
+              currentVideoElement = video;
+              attachVideoEvents(video);
+              lastVideoId = getVideoId();
+              lastTitle = getFormattedTitle();
+            }
+          }, 1000);
+        }
       }
 
     }, 1000));
