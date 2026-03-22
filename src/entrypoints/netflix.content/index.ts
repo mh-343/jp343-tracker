@@ -791,8 +791,8 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),  // Echte Ad-Erkennung
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        channelId: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
-        channelName: (!metadata.isMovie && metadata.title !== 'Netflix Content') ? metadata.title : null,
+        channelId: (metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
+        channelName: (metadata.title !== 'Netflix Content') ? metadata.title : null,
         channelUrl: null
       };
     }

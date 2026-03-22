@@ -403,7 +403,7 @@ export default defineContentScript({
         cachedPlayer = document.querySelector('#movie_player');
       }
       if (cachedPlayer?.classList.contains('ad-showing')) return true;
-      return !!document.querySelector('.ytp-ad-player-overlay, .ytp-ad-skip-button-container');
+      return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
     // Aktuellen Video-State zusammenstellen

@@ -62,6 +62,7 @@ const platformIcons: Record<Platform, string> = {
   youtube: '▶',
   netflix: 'N',
   crunchyroll: 'C',
+  primevideo: 'P',
   generic: '⏵'
 };
 
@@ -161,7 +162,7 @@ function updateManualTrackDisplay(): void {
         noSessionHint.textContent = 'Start a video to auto-track';
       } else if (noSessionTitle && noSessionHint) {
         noSessionTitle.textContent = 'No active session';
-        noSessionHint.textContent = 'Visit YouTube, Netflix or Crunchyroll to start tracking';
+        noSessionHint.textContent = 'Visit YouTube, Netflix, Crunchyroll or Prime Video to start tracking';
       }
     }
   }
@@ -217,7 +218,7 @@ function updateChannelDisplay(session: TrackingSession | null): void {
   if (session && session.channelId) {
     currentChannelId = session.channelId;
     elements.channelSection.style.display = 'block';
-    elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Series';
+    elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Title';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
     // Channel-Name und Block-Button anzeigen
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
