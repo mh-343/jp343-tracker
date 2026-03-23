@@ -41,6 +41,7 @@ export default defineConfig({
       '*://*.amazon.de/*',
       '*://*.amazon.co.jp/*',
       '*://*.amazon.co.uk/*',
+      '*://*.cijapanese.com/*',
       // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',

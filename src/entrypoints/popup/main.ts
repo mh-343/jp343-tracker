@@ -659,11 +659,7 @@ function renderPendingList(entries: PendingEntry[]): void {
           <div class="pending-entry-meta">
             ${entry.platform} · <strong>${formatDuration(group.totalMinutes)}</strong>
             ${hasMultipleSessions ? `<button class="pending-entry-expand" data-group="${groupIndex}" title="Show ${group.sessionCount} sessions">(${group.sessionCount}×) ▼</button>` : ''}
-            ${entry.url && !group.allSynced ? (
-              currentSession && isSameVideo(currentSession.url, entry.url)
-                ? `<span class="pending-entry-tracking">● Tracking</span>`
-                : `<button class="pending-entry-continue" data-url="${safeUrl}" title="Continue watching">Continue ▶</button>`
-            ) : ''}
+            ${entry.url && !group.allSynced ? `<button class="pending-entry-continue" data-url="${safeUrl}" title="Continue watching">Continue ▶</button>` : ''}
           </div>
         </div>
         <button class="pending-entry-delete" data-ids="${escapeHtml(group.entryIds.join(','))}" title="Delete all sessions">×</button>
