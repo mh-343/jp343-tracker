@@ -827,7 +827,8 @@ export default defineBackground(() => {
           /netflix\.com/,
           /crunchyroll\.com/,
           /primevideo\.com/,
-          /amazon\.\w+.*\/gp\/video/
+          /amazon\.\w+.*\/gp\/video/,
+          /cijapanese\.com/
         ];
         const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
 
