@@ -828,6 +828,7 @@ export default defineBackground(() => {
           /crunchyroll\.com/,
           /primevideo\.com/,
           /amazon\.\w+.*\/gp\/video/,
+          /disneyplus\.com/,
           /cijapanese\.com/
         ];
         const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
@@ -953,7 +954,7 @@ export default defineBackground(() => {
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 Stunden
 
-  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'generic'];
+  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
 
   function isValidSavedSession(session: unknown): session is TrackingSession {
@@ -1118,6 +1119,7 @@ export default defineBackground(() => {
         netflix: /netflix\.com/,
         crunchyroll: /crunchyroll\.com/,
         primevideo: /primevideo\.com|amazon\.\w+/,
+        disneyplus: /disneyplus\.com/,
       };
       const samePlatform = platformDomains[session.platform]?.test(changeInfo.url);
       if (!samePlatform) {

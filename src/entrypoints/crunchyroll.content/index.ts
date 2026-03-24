@@ -85,6 +85,7 @@ export default defineContentScript({
             }
           }
 
+          // Episode-Titel aus DOM
           const episodeHeading = document.querySelector('h1[class*="heading"][class*="title"]')
             || document.querySelector('h1.title');
           const episodeText = episodeHeading?.textContent?.trim() || null;
@@ -98,10 +99,10 @@ export default defineContentScript({
           iframe.contentWindow.postMessage({
             type: 'JP343_VIDEO_ID',
             videoId: videoId,
-            title: document.title,  // Titel vom Haupt-Frame
-            thumbnail: thumbnail,   // Thumbnail vom Haupt-Frame
+            title: document.title,
+            thumbnail: thumbnail,
             episodeText: episodeText,
-            watchUrl: window.location.href // Watch-URL vom Haupt-Frame
+            watchUrl: window.location.href
           }, targetOrigin);
 
           messagesSent++;
@@ -336,7 +337,6 @@ export default defineContentScript({
 
 
     function isAdPlaying(): boolean {
-      // [data-testid*="ad"] das z.B. "buffering-indicator" matchte.
       return false;
     }
 

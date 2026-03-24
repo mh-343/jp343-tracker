@@ -1,7 +1,7 @@
 // JP343 Extension - Type Definitionen
 
 // Unterstuetzte Streaming-Plattformen
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'generic';
 
 // Video-Status von Content Scripts
 export interface VideoState {
@@ -175,7 +175,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo'],
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus'],
   showNotifications: true,
   blockedChannels: []
 };

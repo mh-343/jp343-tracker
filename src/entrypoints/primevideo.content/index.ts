@@ -42,6 +42,7 @@ export default defineContentScript({
         || null;
     }
 
+
     function isPlayerActive(): boolean {
       return !!(document.querySelector('.dv-player-fullscreen')
         || document.querySelector('.webPlayerSDKContainer')
@@ -143,7 +144,6 @@ export default defineContentScript({
         isCurrentlyInAd,
         lastVideoId,
         bestKnownTitle,
-        // Prime Video spezifische UI-Elemente
         adTimerVisible: !!document.querySelector('[data-testid="ad-timer"], .atvwebplayersdk-ad-timer, .adTimerText'),
         playerTitleEl: document.querySelector('[data-testid="title-text"], .atvwebplayersdk-title-text')?.textContent?.trim() || null,
         playerSubtitleEl: document.querySelector('[data-testid="subtitle-text"], .atvwebplayersdk-subtitle-text')?.textContent?.trim() || null,
@@ -201,10 +201,6 @@ export default defineContentScript({
     }
 
     // URL + VIDEO ID ERKENNUNG
-    // Prime Video URLs:
-    //   primevideo.com/detail/<ASIN>/...
-    //   primevideo.com/dp/<ASIN>/...
-    //   amazon.de/gp/video/detail/<ASIN>/...
 
     function isWatchPage(): boolean {
       const path = window.location.pathname;
@@ -258,13 +254,14 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
+      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericTitle(docTitle)) {
         const cleanTitle = docTitle
           .replace(/\s*[\|–-]\s*(?:Prime Video|Amazon Prime Video|Amazon\.?\w*).*$/i, '')
-          .replace(/^(?:Amazon\.\w+:\s*)/i, '')  // "Amazon.de: " Prefix
+          .replace(/^(?:Amazon\.\w+:\s*)/i, '')
           .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s+\d+\s+ansehen$/i, '')
-          .replace(/\s+ansehen$|\s+anschauen$/i, '')  // " ansehen" / " anschauen"
+          .replace(/\s+ansehen$|\s+anschauen$/i, '')
           .replace(/^(?:Watch|Ansehen|Regarder|Ver|Guarda)\s+/i, '')
           .trim();
         if (cleanTitle && cleanTitle.length > 0 && !isGenericTitle(cleanTitle)) {
@@ -290,14 +287,11 @@ export default defineContentScript({
     }
 
     function tryExtractPlayerTitle(metadata: PrimeVideoMetadata): void {
-      // Prime Video Player-Titel Selektoren
       const titleSelectors = [
-        // Aktueller Prime Video Player (2025+)
         '[data-testid="title-text"]',
         '[data-testid="video-title"]',
         '.atvwebplayersdk-title-text',
         '.dv-player-fullscreen .title',
-        // Aelterer Player
         '.dv-dp-node-title',
         '.av-detail-section .dv-node-dp-title',
         'h1[data-automation-id="title"]'
@@ -466,11 +460,8 @@ export default defineContentScript({
     function isAdPlaying(): boolean {
       if (!isWatchPage()) return false;
 
-      // Prime Video Ad-Indikatoren
       const adSelectors = [
-        // GEFUNDEN VIA DOM-DUMP: SDK-Klasse, sprachunabhaengig!
         '.atvwebplayersdk-ad-timer-remaining-time',
-        // Weitere bekannte Selektoren
         '[data-testid="ad-timer"]',
         '[data-testid="ad-badge"]',
         '[data-testid="ad-info"]',
