@@ -355,6 +355,43 @@ function renderStats(stats: ExtensionStats): void {
   setText('statMonth', formatStatDuration(monthMin));
   setText('statStreak', `${stats.currentStreak}d`);
   renderHeroTime(stats.totalMinutes);
+
+  // Durchschnitte berechnen
+  const activeDays = Object.values(stats.dailyMinutes).filter(m => m > 0).length;
+  if (activeDays > 0) {
+    // Daily Avg: Gesamtzeit / aktive Tage
+    const dailyAvg = stats.totalMinutes / activeDays;
+    setText('statDailyAvg', formatStatDuration(Math.round(dailyAvg)));
+
+    const activeWeeks = new Set<string>();
+    for (const date of Object.keys(stats.dailyMinutes)) {
+      if (stats.dailyMinutes[date] > 0) {
+        const d = new Date(date + 'T00:00:00');
+        const weekStart = new Date(d);
+        weekStart.setDate(d.getDate() - d.getDay());
+        activeWeeks.add(weekStart.toISOString().slice(0, 10));
+      }
+    }
+    if (activeWeeks.size > 0) {
+      setText('statWeeklyAvg', formatStatDuration(Math.round(stats.totalMinutes / activeWeeks.size)));
+    }
+
+    const activeMonths = new Set<string>();
+    for (const date of Object.keys(stats.dailyMinutes)) {
+      if (stats.dailyMinutes[date] > 0) {
+        activeMonths.add(date.slice(0, 7));
+      }
+    }
+    if (activeMonths.size > 0) {
+      setText('statMonthlyAvg', formatStatDuration(Math.round(stats.totalMinutes / activeMonths.size)));
+    }
+
+    // Best Day
+    const bestDay = Math.max(...Object.values(stats.dailyMinutes));
+    if (bestDay > 0) {
+      setText('statBestDay', formatStatDuration(Math.round(bestDay)));
+    }
+  }
 }
 
 // Activity Heatmap (90 Tage)
@@ -389,6 +426,7 @@ function renderHeatmap(dailyMinutes: Record<string, number>): void {
     const level = minutes === 0 ? 0 : minutes < 30 ? 1 : minutes < 60 ? 2 : minutes < 120 ? 3 : 4;
     cell.dataset.level = String(level);
     cell.title = `${dateStr}: ${formatStatDuration(minutes)}`;
+    cell.setAttribute('aria-label', `${dateStr}: ${formatStatDuration(minutes)}`);
     container.appendChild(cell);
   }
 }
@@ -421,6 +459,65 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
     const label = document.createElement('div');
     label.className = 'week-bar-label';
     label.textContent = day.label;
+
+    col.appendChild(value);
+    col.appendChild(bar);
+    col.appendChild(label);
+    container.appendChild(col);
+  }
+}
+
+// Monthly Overview
+
+function renderMonthBars(dailyMinutes: Record<string, number>): void {
+  const container = document.getElementById('monthBars');
+  if (!container) return;
+  container.textContent = '';
+
+  const now = new Date();
+  const months: { key: string; label: string; minutes: number; isCurrent: boolean }[] = [];
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // Letzte 6 Monate (inkl. aktueller)
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+    // Alle Tage dieses Monats summieren
+    let total = 0;
+    for (const [date, min] of Object.entries(dailyMinutes)) {
+      if (date.startsWith(prefix)) total += min;
+    }
+
+    months.push({
+      key: prefix,
+      label: monthLabels[month],
+      minutes: total,
+      isCurrent: i === 0
+    });
+  }
+
+  const maxMin = Math.max(1, ...months.map(m => m.minutes));
+
+  for (const month of months) {
+    const heightPct = Math.max(2, (month.minutes / maxMin) * 100);
+
+    const col = document.createElement('div');
+    col.className = 'month-bar-col';
+
+    const value = document.createElement('div');
+    value.className = 'month-bar-value';
+    value.textContent = month.minutes > 0 ? formatStatDuration(month.minutes) : '';
+
+    const bar = document.createElement('div');
+    bar.className = `month-bar${month.isCurrent ? ' current' : ''}`;
+    bar.style.height = `${heightPct}%`;
+
+    const label = document.createElement('div');
+    label.className = 'month-bar-label';
+    label.textContent = month.label;
 
     col.appendChild(value);
     col.appendChild(bar);
@@ -855,6 +952,7 @@ async function refresh(): Promise<void> {
   // Auth-UI + Heatmap immer sofort rendern
   renderHeatmap(data.stats.dailyMinutes);
   renderWeekBars(data.stats.dailyMinutes);
+  renderMonthBars(data.stats.dailyMinutes);
   renderSyncCta(data.entries, data.userState);
   renderTierBadge(data.userState);
   renderAuthUI(data.userState);

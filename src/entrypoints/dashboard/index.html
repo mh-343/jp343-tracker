@@ -44,6 +44,18 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
     body {
       background: var(--bg-body);
       color: var(--text);
@@ -111,7 +123,7 @@
       font-size: 11px;
       color: var(--cyan);
       text-decoration: none;
-      opacity: 0.6;
+      opacity: 0.7;
       transition: all 0.2s;
     }
 
@@ -147,9 +159,9 @@
     }
 
     .btn-connect:hover {
-      border-color: var(--purple);
-      color: var(--purple);
-      background: rgba(135, 90, 255, 0.05);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.05);
     }
 
     .btn-signup {
@@ -184,6 +196,7 @@
     }
 
     .login-form { display: flex; flex-direction: column; gap: 10px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
     .login-input {
       background: var(--bg-input);
@@ -193,15 +206,14 @@
       color: var(--text);
       font-family: inherit;
       font-size: 13px;
-      outline: none;
       transition: border-color 0.2s;
     }
 
-    .login-input:focus { border-color: var(--purple); }
+    .login-input:focus { border-color: var(--cyan); outline: none; }
     .login-input::placeholder { color: var(--text-dim); opacity: 0.5; }
 
     .btn-login {
-      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      background: linear-gradient(135deg, var(--magenta), var(--cyan));
       color: #fff;
       border: none;
       border-radius: 8px;
@@ -210,10 +222,10 @@
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: opacity 0.2s, transform 0.15s;
     }
 
-    .btn-login:hover { opacity: 0.9; }
+    .btn-login:hover { opacity: 0.92; transform: translateY(-1px); }
     .btn-login:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .login-error { color: var(--red); font-size: 11px; text-align: center; min-height: 16px; }
@@ -229,14 +241,14 @@
 
     .gdpr-label input[type="checkbox"] {
       margin-top: 2px;
-      accent-color: var(--purple);
+      accent-color: var(--magenta);
     }
 
     .gdpr-label a { color: var(--cyan); text-decoration: none; }
     .gdpr-label a:hover { text-decoration: underline; }
 
     .btn-register {
-      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      background: linear-gradient(135deg, var(--cyan), var(--magenta));
     }
 
     .forgot-link {
@@ -345,6 +357,7 @@
 
     .qs-value.purple { color: var(--purple); }
     .qs-value.magenta { color: var(--magenta); }
+    .qs-value.dim { font-size: 18px; color: var(--text-dim); }
 
     .qs-label {
       font-size: 10px;
@@ -378,11 +391,13 @@
       grid-template-rows: repeat(7, 1fr);
       grid-auto-flow: column;
       gap: 3px;
+      overflow-x: auto;
     }
 
     .heatmap-cell {
-      width: 13px;
-      height: 13px;
+      min-width: 11px;
+      width: 100%;
+      aspect-ratio: 1;
       border-radius: 3px;
       background: rgba(255, 255, 255, 0.04);
     }
@@ -413,13 +428,27 @@
       width: 100%;
       min-height: 2px;
       border-radius: 4px 4px 0 0;
-      background: rgba(135, 90, 255, 0.5);
+      background: color-mix(in srgb, var(--purple) 50%, transparent);
       transition: height 0.3s;
     }
 
     .week-bar.today { background: var(--cyan); }
     .week-bar-label { font-size: 10px; color: var(--text-dim); }
     .week-bar-value { font-size: 10px; color: var(--text-dim); }
+
+    /* ── Monthly Overview ────────────────────────────── */
+    .month-bars { display: flex; gap: 6px; align-items: flex-end; height: 100px; }
+    .month-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .month-bar {
+      width: 100%;
+      min-height: 2px;
+      border-radius: 4px 4px 0 0;
+      background: color-mix(in srgb, var(--purple) 50%, transparent);
+      transition: height 0.3s;
+    }
+    .month-bar.current { background: var(--magenta); }
+    .month-bar-label { font-size: 10px; color: var(--text-dim); }
+    .month-bar-value { font-size: 10px; color: var(--text-dim); }
 
     /* ── Session History ────────────────────────────── */
     .session-list { display: flex; flex-direction: column; gap: 6px; }
@@ -487,7 +516,7 @@
     .session-duration {
       font-size: 14px;
       font-weight: 700;
-      color: var(--purple);
+      color: var(--cyan);
       white-space: nowrap;
     }
 
@@ -515,8 +544,10 @@
       flex-shrink: 0;
     }
 
-    .session-item:hover .btn-delete-entry { opacity: 0.5; }
-    .btn-delete-entry:hover { opacity: 1 !important; color: var(--red); }
+    .session-item:hover .btn-delete-entry,
+    .btn-delete-entry:focus-visible { opacity: 0.5; }
+    .btn-delete-entry:hover,
+    .btn-delete-entry:focus-visible { opacity: 1 !important; color: var(--red); }
 
     /* ── Sync CTA ──────────────────────────────────── */
     .sync-cta {
@@ -530,7 +561,7 @@
     .sync-cta a:hover { text-decoration: underline; }
 
     .btn-sync-dashboard {
-      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      background: linear-gradient(135deg, var(--magenta), var(--cyan));
       color: #fff;
       border: none;
       border-radius: 8px;
@@ -552,7 +583,7 @@
       padding: 28px 24px;
       font-size: 10px;
       color: var(--text-dim);
-      opacity: 0.35;
+      opacity: 0.5;
     }
 
     /* ── Empty State ────────────────────────────────── */
@@ -579,12 +610,25 @@
     }
 
     /* ── Responsive ─────────────────────────────────── */
-    @media (max-width: 640px) {
-      .quick-stats { grid-template-columns: repeat(2, 1fr); }
+
+    /* Schmale Fenster (< 860px): Charts untereinander, Stats 2-spaltig */
+    @media (max-width: 860px) {
       .two-col { grid-template-columns: 1fr; }
+      .quick-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Sehr schmal (< 640px): Kompaktere Darstellung */
+    @media (max-width: 640px) {
       .hero-time { font-size: 38px; }
       .hero-time .unit { font-size: 20px; }
       .wrap { padding: 20px 16px; }
+      .qs-value { font-size: 18px; }
+      .qs-value.dim { font-size: 16px; }
+    }
+
+    /* Grosse Monitore (> 1200px): Breiteres Layout */
+    @media (min-width: 1200px) {
+      .wrap { max-width: 1060px; }
     }
 
     /* ── Light Mode Overrides ────────────────────────── */
@@ -597,7 +641,7 @@
     [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(196, 114, 138, 0.50); }
     [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(160, 48, 96, 0.55); }
     [data-theme="light"] .heatmap-cell[data-level="4"] { background: #a03060; }
-    [data-theme="light"] .week-bar { background: rgba(160, 48, 96, 0.25); }
+    [data-theme="light"] .month-bar.current { background: #a03060; }
     [data-theme="light"] .session-thumb { background: rgba(160, 48, 96, 0.06); }
     [data-theme="light"] .session-thumb-placeholder { background: rgba(160, 48, 96, 0.08); color: #a03060; }
     [data-theme="light"] .session-platform { background: rgba(160, 48, 96, 0.08); color: #a03060; }
@@ -658,7 +702,9 @@
     <div class="login-drawer" id="loginDrawer">
       <div class="login-card">
         <form class="login-form" id="loginForm">
+          <label class="sr-only" for="loginEmail">Email</label>
           <input class="login-input" type="email" id="loginEmail" placeholder="Email" autocomplete="email" required>
+          <label class="sr-only" for="loginPassword">Password</label>
           <input class="login-input" type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required>
           <button class="btn-login" type="submit" id="btnLogin">Login</button>
           <div class="login-error" id="loginError"></div>
@@ -671,7 +717,9 @@
     <div class="login-drawer" id="registerDrawer">
       <div class="login-card">
         <form class="login-form" id="registerForm">
+          <label class="sr-only" for="regEmail">Email</label>
           <input class="login-input" type="email" id="regEmail" placeholder="Email" autocomplete="email" required>
+          <label class="sr-only" for="regPassword">Password</label>
           <input class="login-input" type="password" id="regPassword" placeholder="Password (min. 8 characters)" autocomplete="new-password" required minlength="8">
           <label class="gdpr-label">
             <input type="checkbox" id="regGdpr" required>
@@ -699,7 +747,7 @@
         <div class="qs-label">Today</div>
       </div>
       <div class="qs-card">
-        <div class="qs-value purple" id="statWeek">0m</div>
+        <div class="qs-value magenta" id="statWeek">0m</div>
         <div class="qs-label">This Week</div>
       </div>
       <div class="qs-card">
@@ -712,24 +760,50 @@
       </div>
     </div>
 
-    <!-- Activity Heatmap + This Week (side by side) -->
-    <div class="two-col">
-      <div class="card">
-        <div class="card-title">Activity Heatmap</div>
-        <div class="heatmap" id="heatmap"></div>
-        <div class="heatmap-legend">
-          <span>Less</span>
-          <div class="heatmap-cell" data-level="0"></div>
-          <div class="heatmap-cell" data-level="1"></div>
-          <div class="heatmap-cell" data-level="2"></div>
-          <div class="heatmap-cell" data-level="3"></div>
-          <div class="heatmap-cell" data-level="4"></div>
-          <span>More</span>
-        </div>
+    <!-- Averages -->
+    <div class="quick-stats">
+      <div class="qs-card">
+        <div class="qs-value dim" id="statDailyAvg">--</div>
+        <div class="qs-label">Daily Avg</div>
       </div>
+      <div class="qs-card">
+        <div class="qs-value dim" id="statWeeklyAvg">--</div>
+        <div class="qs-label">Weekly Avg</div>
+      </div>
+      <div class="qs-card">
+        <div class="qs-value dim" id="statMonthlyAvg">--</div>
+        <div class="qs-label">Monthly Avg</div>
+      </div>
+      <div class="qs-card">
+        <div class="qs-value dim" id="statBestDay">--</div>
+        <div class="qs-label">Best Day</div>
+      </div>
+    </div>
+
+    <!-- Activity Heatmap -->
+    <div class="card">
+      <div class="card-title">Activity Heatmap</div>
+      <div class="heatmap" id="heatmap" role="group" aria-label="Activity heatmap, last 90 days"></div>
+      <div class="heatmap-legend">
+        <span>Less</span>
+        <div class="heatmap-cell" data-level="0"></div>
+        <div class="heatmap-cell" data-level="1"></div>
+        <div class="heatmap-cell" data-level="2"></div>
+        <div class="heatmap-cell" data-level="3"></div>
+        <div class="heatmap-cell" data-level="4"></div>
+        <span>More</span>
+      </div>
+    </div>
+
+    <!-- This Week + Monthly Overview (side by side) -->
+    <div class="two-col">
       <div class="card">
         <div class="card-title">This Week</div>
         <div class="week-bars" id="weekBars"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Monthly Overview</div>
+        <div class="month-bars" id="monthBars"></div>
       </div>
     </div>
 
