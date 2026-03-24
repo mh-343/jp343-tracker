@@ -1,6 +1,5 @@
 // =============================================================================
 // JP343 Extension - Crunchyroll Content Script
-// Erkennt Video-Playback auf Crunchyroll mit Metadata-Extraktion
 // =============================================================================
 
 import type { VideoState } from '../../types';
@@ -17,7 +16,7 @@ interface CrunchyrollMetadata {
 
 export default defineContentScript({
   matches: ['*://*.crunchyroll.com/*'],
-  allFrames: true,  // Player laeuft im iframe!
+  allFrames: true,
   runAt: 'document_idle',
 
   main() {
@@ -96,14 +95,12 @@ export default defineContentScript({
             }
           }
 
-          // Extrahiere Episode-Titel aus DOM (h1.title unterhalb des Players)
-          // Format: "E100 – Einmal Sensei, immer Sensei"
+          // Episode-Titel aus DOM
           const episodeHeading = document.querySelector('h1[class*="heading"][class*="title"]')
             || document.querySelector('h1.title');
           const episodeText = episodeHeading?.textContent?.trim() || null;
 
-          // Sende Video-ID, Titel, Thumbnail, URL und Episode-Info an iframe via postMessage
-          // Fix 3: Origin aus iframe.src extrahieren statt Wildcard
+          // Daten an iframe senden
           let targetOrigin = 'https://www.crunchyroll.com';
           try {
             const iframeUrl = new URL(iframe.src);
@@ -113,10 +110,10 @@ export default defineContentScript({
           iframe.contentWindow.postMessage({
             type: 'JP343_VIDEO_ID',
             videoId: videoId,
-            title: document.title,  // Titel vom Haupt-Frame
-            thumbnail: thumbnail,   // Thumbnail vom Haupt-Frame
-            episodeText: episodeText, // Episode-Titel aus DOM (z.B. "E100 – Einmal Sensei")
-            watchUrl: window.location.href // Watch-URL vom Haupt-Frame
+            title: document.title,
+            thumbnail: thumbnail,
+            episodeText: episodeText,
+            watchUrl: window.location.href
           }, targetOrigin);
 
           messagesSent++;
@@ -364,13 +361,10 @@ export default defineContentScript({
     }
 
     // =======================================================================
-    // CRUNCHYROLL WERBUNG ERKENNUNG (zukunftssicher)
+    // WERBUNG ERKENNUNG
     // =======================================================================
 
     function isAdPlaying(): boolean {
-      // Crunchyroll hat kein Free-Tier mit Ads mehr (seit 2024).
-      // Ad-Detection deaktiviert — verursachte False Positives durch
-      // [data-testid*="ad"] das z.B. "buffering-indicator" matchte.
       return false;
     }
 
@@ -460,8 +454,6 @@ export default defineContentScript({
         docTitle.toLowerCase().includes('crunchyroll home');
 
       if (!isGenericTitle) {
-        // Entferne Crunchyroll-Suffixe (alle Sprachen)
-        // Matches: "- Watch on Crunchyroll", "- Schau auf Crunchyroll", "- Regarder sur Crunchyroll", etc.
         const cleanTitle = docTitle
           .replace(/\s*[-–—|]\s*(?:\S+\s+){0,3}Crunchyroll\b.*$/i, '')
           .trim();
@@ -493,8 +485,7 @@ export default defineContentScript({
         }
       }
 
-      // 3. Episode-Text aus DOM (h1.title) als Fallback/Verbesserung
-      // Format: "E100 – Einmal Sensei, immer Sensei" oder "E100 - Title"
+      // 3. Episode-Text als Fallback
       if (isIframe && cachedEpisodeTextFromParent) {
         const epMatch = cachedEpisodeTextFromParent.match(/^E(\d+)\s*[-–]\s*(.+)$/i);
         if (epMatch) {
@@ -804,8 +795,6 @@ export default defineContentScript({
 
       const metadata = cachedMetadata || extractCrunchyrollMetadata();
 
-      // In iframe context, window.location.href returns the player iframe URL
-      // (static.crunchyroll.com/vilos-v2/...) — use cached parent URL instead
       const watchUrl = cachedWatchUrlFromParent || window.location.href;
 
       return {

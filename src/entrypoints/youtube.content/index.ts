@@ -61,10 +61,6 @@ export default defineContentScript({
       }
     }
 
-    // Debug-Befehle via postMessage (umgeht YouTube CSP)
-    // In der Console eingeben: window.postMessage({type:'JP343_DOWNLOAD_LOGS'})
-    // Oder: window.postMessage({type:'JP343_CLEAR_LOGS'})
-    // Oder: window.postMessage({type:'JP343_LOG_STATUS'})
     if (DEBUG_MODE) {
       window.addEventListener('message', (event) => {
         if (event.source !== window || !event.data?.type) return;
@@ -291,7 +287,6 @@ export default defineContentScript({
 
     // Video-Titel extrahieren
     function getVideoTitle(): string {
-      // Methode 1: Titel-Element im Player-Bereich
       const titleSelectors = [
         'h1.ytd-video-primary-info-renderer yt-formatted-string',
         'h1.ytd-watch-metadata yt-formatted-string',
@@ -308,12 +303,9 @@ export default defineContentScript({
         }
       }
 
-      // Methode 2: Fallback auf document.title, aber Benachrichtigungen entfernen
-      // YouTube zeigt "(3) Video Title - YouTube" wenn Benachrichtigungen da sind
+      // Fallback: document.title
       let title = document.title;
-      // Entferne "(X) " am Anfang (Benachrichtigungs-Zaehler)
       title = title.replace(/^\(\d+\)\s*/, '');
-      // Entferne " - YouTube" am Ende
       title = title.replace(/\s*-\s*YouTube$/, '');
       return title.trim() || 'YouTube Video';
     }
@@ -333,9 +325,7 @@ export default defineContentScript({
       let channelName: string | null = null;
       let channelUrl: string | null = null;
 
-      // Methode 1: Channel-Name direkt aus yt-formatted-string (YouTube 2024/2025 Layout)
       const channelNameSelectors = [
-        // Neue YouTube Layouts
         '#owner #channel-name yt-formatted-string#text a',
         '#owner #channel-name yt-formatted-string a',
         '#owner ytd-channel-name yt-formatted-string a',
@@ -409,7 +399,7 @@ export default defineContentScript({
         }
       }
 
-      // Methode 3: ytInitialPlayerResponse aus Script-Tags (Fallback)
+      // Fallback: Channel-ID aus eingebetteten Daten
       if (!channelId) {
         try {
           const scripts = document.querySelectorAll('script');
@@ -430,17 +420,13 @@ export default defineContentScript({
       return { id: channelId, name: channelName, url: channelUrl };
     }
 
-    // Werbung erkennen (optimiert: cached Player + minimale DOM-Queries)
     let cachedPlayer: HTMLElement | null = null;
 
     function isAdPlaying(): boolean {
-      // Player-Element cachen (YouTube erstellt es nur einmal)
       if (!cachedPlayer || !cachedPlayer.isConnected) {
         cachedPlayer = document.querySelector('#movie_player');
       }
-      // Hauptindikator: .ad-showing auf #movie_player (zuverlaessigster Check)
       if (cachedPlayer?.classList.contains('ad-showing')) return true;
-      // Fallback: GEFUNDEN VIA DOM-DUMP (2026-03)
       return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 

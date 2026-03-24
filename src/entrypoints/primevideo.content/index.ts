@@ -1,6 +1,5 @@
 // =============================================================================
 // JP343 Extension - Amazon Prime Video Content Script
-// Erkennt Video-Playback auf Prime Video (primevideo.com + amazon.*/gp/video)
 // =============================================================================
 
 import type { VideoState } from '../../types';
@@ -40,15 +39,14 @@ export default defineContentScript({
     let bestKnownTitle: string = '';
     let isCurrentlyInAd: boolean = false;
 
-    // Video-Element finden (NUR im aktiven Player, nicht Preview-Videos auf der Uebersichtsseite)
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('.dv-player-fullscreen video') as HTMLVideoElement)
         || (document.querySelector('[data-testid="web-player"] video') as HTMLVideoElement)
         || (document.querySelector('.webPlayerSDKContainer video') as HTMLVideoElement)
-        || null;  // KEIN Fallback auf beliebiges <video> - sonst wird Trailer/Preview getrackt
+        || null;
     }
 
-    // Pruefen ob der Fullscreen-Player aktiv ist (nicht nur die Detail-Seite)
+
     function isPlayerActive(): boolean {
       return !!(document.querySelector('.dv-player-fullscreen')
         || document.querySelector('.webPlayerSDKContainer')
@@ -153,7 +151,6 @@ export default defineContentScript({
         isCurrentlyInAd,
         lastVideoId,
         bestKnownTitle,
-        // Prime Video spezifische UI-Elemente
         adTimerVisible: !!document.querySelector('[data-testid="ad-timer"], .atvwebplayersdk-ad-timer, .adTimerText'),
         playerTitleEl: document.querySelector('[data-testid="title-text"], .atvwebplayersdk-title-text')?.textContent?.trim() || null,
         playerSubtitleEl: document.querySelector('[data-testid="subtitle-text"], .atvwebplayersdk-subtitle-text')?.textContent?.trim() || null,
@@ -214,11 +211,6 @@ export default defineContentScript({
 
     // =======================================================================
     // URL + VIDEO ID ERKENNUNG
-    // Prime Video URLs:
-    //   primevideo.com/detail/<ASIN>/...
-    //   primevideo.com/dp/<ASIN>/...
-    //   amazon.de/gp/video/detail/<ASIN>/...
-    // Player-Modus: URL enthaelt ?autoplay=1 oder der Fullscreen-Player laedt
     // =======================================================================
 
     function isWatchPage(): boolean {
@@ -277,14 +269,14 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
-      // 1. Document Title: "Titel ansehen | Prime Video" / "Watch Titel | Prime Video"
+      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericTitle(docTitle)) {
         const cleanTitle = docTitle
           .replace(/\s*[\|–-]\s*(?:Prime Video|Amazon Prime Video|Amazon\.?\w*).*$/i, '')
-          .replace(/^(?:Amazon\.\w+:\s*)/i, '')  // "Amazon.de: " Prefix
-          .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s+\d+\s+ansehen$/i, '')  // " - Staffel 1 ansehen"
-          .replace(/\s+ansehen$|\s+anschauen$/i, '')  // " ansehen" / " anschauen"
+          .replace(/^(?:Amazon\.\w+:\s*)/i, '')
+          .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s+\d+\s+ansehen$/i, '')
+          .replace(/\s+ansehen$|\s+anschauen$/i, '')
           .replace(/^(?:Watch|Ansehen|Regarder|Ver|Guarda)\s+/i, '')
           .trim();
         if (cleanTitle && cleanTitle.length > 0 && !isGenericTitle(cleanTitle)) {
@@ -311,14 +303,11 @@ export default defineContentScript({
     }
 
     function tryExtractPlayerTitle(metadata: PrimeVideoMetadata): void {
-      // Prime Video Player-Titel Selektoren
       const titleSelectors = [
-        // Aktueller Prime Video Player (2025+)
         '[data-testid="title-text"]',
         '[data-testid="video-title"]',
         '.atvwebplayersdk-title-text',
         '.dv-player-fullscreen .title',
-        // Aelterer Player
         '.dv-dp-node-title',
         '.av-detail-section .dv-node-dp-title',
         // Generischer Fallback
@@ -492,13 +481,8 @@ export default defineContentScript({
     function isAdPlaying(): boolean {
       if (!isWatchPage()) return false;
 
-      // Prime Video Ad-Indikatoren
       const adSelectors = [
-        // GEFUNDEN VIA DOM-INSPEKTION: "Zur werbefreien Version wechseln" Button
-        // Erscheint NUR waehrend Werbung - zuverlaessigster Indikator
-        // GEFUNDEN VIA DOM-DUMP: SDK-Klasse, sprachunabhaengig!
         '.atvwebplayersdk-ad-timer-remaining-time',
-        // Weitere bekannte Selektoren
         '[data-testid="ad-timer"]',
         '[data-testid="ad-badge"]',
         '[data-testid="ad-info"]',

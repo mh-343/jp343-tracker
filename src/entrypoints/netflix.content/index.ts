@@ -1,6 +1,5 @@
 // =============================================================================
 // JP343 Extension - Netflix Content Script
-// Erkennt Video-Playback auf Netflix mit verbesserter Metadata-Extraktion
 // =============================================================================
 
 import type { VideoState } from '../../types';
@@ -160,7 +159,7 @@ export default defineContentScript({
         videoIdFromUrl: window.location.pathname.match(/\/watch\/(\d+)/)?.[1] || null,
         documentTitle: document.title,
 
-        // Bekannte Netflix UI-Elemente
+        // UI-Elemente
         nextEpisodeBtn: !!document.querySelector('[data-uia="next-episode-seamless-button"]'),
         nextEpisodeDraining: !!document.querySelector('[data-uia="next-episode-seamless-button-draining"]'),
         skipPreplay: !!document.querySelector('.watch-video--skip-preplay-button'),
@@ -258,9 +257,7 @@ export default defineContentScript({
     }
 
     // =======================================================================
-    // PLAYER TITLE EXTRACTION (aus Player Controls)
-    // Netflix: <div data-uia="video-title"> <h4>Serie</h4> <span>Flg. 4</span> <span>Titel</span> </div>
-    // Nur verfuegbar wenn Controls sichtbar sind - daher cachen!
+    // PLAYER TITLE EXTRACTION
     // =======================================================================
 
     function tryExtractPlayerTitle(): void {
@@ -348,13 +345,9 @@ export default defineContentScript({
     modalObserver.observe(document.body, { childList: true, subtree: true });
     observers.push(modalObserver);
 
-    // Prüft ob ein Titel ein generischer/unbrauchbarer Titel ist
-    // Inkludiert Netflix-Kategorienamen die von Browse-Seiten stammen
     const GENERIC_TITLES = new Set([
       'netflix', 'home', 'startseite', 'browse',
-      // Netflix-Kategorien (DE)
       'filme', 'serien', 'meine liste', 'neu und beliebt', 'kategorien',
-      // Netflix-Kategorien (EN)
       'movies', 'tv shows', 'my list', 'new & popular', 'categories',
       'trending now', 'top 10'
     ]);
@@ -381,35 +374,24 @@ export default defineContentScript({
         return false;
       }
 
-      // Netflix Ads haben typischerweise spezifische UI-Elemente
       const adIndicators = [
-        // GEFUNDEN VIA DOM-INSPEKTION: Pre-Roll Ad Info-Leiste ("Werbung 12")
-        // Struktur: <div data-uia="ads-info-container"> <span data-uia="ads-info-text">Werbung</span> <span data-uia="ads-info-time">12</span> </div>
         '[data-uia="ads-info-container"]',
         '[data-uia="ads-info-text"]',
         '.watch-video--adsInfo-container',
         '[data-uia="video-ad"]',
-        // '[data-uia="pause-ad"]' NICHT nutzen — erscheint auch bei normaler Pause ohne Werbung
-        // "Skip Ad" oder "Skip Intro" Button (Werbung)
         '[data-uia="ad-skip"]',
         '[data-uia="player-skip-ad"]',
         '.skip-ad',
-        // Ad-Countdown Anzeige
         '[data-uia="ad-progress"]',
         '.ad-countdown',
         '.ad-progress-bar',
-        // Netflix Ad-Overlay Container
         '.watch-video--ad-playing',
         '.AkiraPlayer--ad-interstitial',
         '[data-uia="interstitial-container"]',
-        // Weitere Ad-bezogene Elemente
         '.interstitial-text',
         '.interstitial-container',
-        // '.playback-notification--pause' entfernt — ist die normale Pause-Notification, kein Ad
-        // "Ad" Text irgendwo sichtbar
         '[class*="adBreak"]',
         '[class*="ad-break"]',
-        // Modular Ads Container (sichtbar waehrend Pre-Roll)
         '.watch-video--modular-ads-container'
       ];
 
@@ -438,14 +420,12 @@ export default defineContentScript({
         }
       }
 
-      // Text-basierte Erkennung: "Werbung X" oder "Ad X of Y" im Player-Bereich
-      // Netflix zeigt z.B. "Werbung 3" oder "Ad 2 of 3" als Text im Player
+      // Text-basierte Erkennung (sprachunabhaengig)
       const playerArea = document.querySelector('.watch-video, .AkiraPlayer, [data-uia="watch-video"]') || document.body;
       const textElements = playerArea.querySelectorAll('span, div, p');
       for (const el of textElements) {
         const text = (el as HTMLElement).innerText?.trim();
-        if (!text || text.length > 30) continue; // Ad-Labels sind kurz
-        // "Werbung 3", "Werbung 1 von 3", "Ad 2", "Ad 2 of 3"
+        if (!text || text.length > 30) continue;
         if (/^(?:Werbung|Ad|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
@@ -564,15 +544,12 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
-      // 1. PRIMAER: Document Title - ist IMMER verfuegbar!
-      // Netflix setzt: "Serienname | Netflix" oder "Filmname | Netflix"
-      // ABER: manchmal ist es anfangs nur "Netflix"
+      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericPageTitle(docTitle)) {
-        // Entferne " | Netflix", " - Netflix", etc.
         const cleanTitle = docTitle
           .replace(/\s*[\|–-]\s*Netflix.*$/i, '')
-          .replace(/\s*-\s*Watch.*$/i, '')  // "Title - Watch on Netflix"
+          .replace(/\s*-\s*Watch.*$/i, '')
           .trim();
         if (cleanTitle && cleanTitle.length > 0 && cleanTitle.toLowerCase() !== 'netflix') {
           const parsed = parseNetflixTitle(cleanTitle);
@@ -590,10 +567,8 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
-      // 2. Player Controls Titel (gecacht von tryExtractPlayerTitle)
-      // Netflix: <div data-uia="video-title"> <h4>Serie</h4> <span>Flg. 4</span> <span>Titel</span> </div>
-      // Wird alle 2s gepollt und gecacht, da Controls nur bei Hover sichtbar
-      tryExtractPlayerTitle(); // Nochmal versuchen falls gerade sichtbar
+      // 2. Player Controls Titel
+      tryExtractPlayerTitle();
 
       if (cachedPlayerTitle) {
         metadata.title = cachedPlayerTitle.series;
