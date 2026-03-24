@@ -290,7 +290,6 @@ export default defineContentScript({
 
       let title = document.title;
       title = title.replace(/^\(\d+\)\s*/, '');
-      // Entferne " - YouTube" am Ende
       title = title.replace(/\s*-\s*YouTube$/, '');
       return title.trim() || 'YouTube Video';
     }
@@ -310,7 +309,6 @@ export default defineContentScript({
       let channelUrl: string | null = null;
 
       const channelNameSelectors = [
-        // Neue YouTube Layouts
         '#owner #channel-name yt-formatted-string#text a',
         '#owner #channel-name yt-formatted-string a',
         '#owner ytd-channel-name yt-formatted-string a',

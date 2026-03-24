@@ -63,6 +63,7 @@ const platformIcons: Record<Platform, string> = {
   netflix: 'N',
   crunchyroll: 'C',
   primevideo: 'P',
+  disneyplus: 'D',
   generic: '⏵'
 };
 

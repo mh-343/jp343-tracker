@@ -144,7 +144,7 @@ export default defineContentScript({
         videoIdFromUrl: window.location.pathname.match(/\/watch\/(\d+)/)?.[1] || null,
         documentTitle: document.title,
 
-        // Bekannte Netflix UI-Elemente
+        // UI-Elemente
         nextEpisodeBtn: !!document.querySelector('[data-uia="next-episode-seamless-button"]'),
         nextEpisodeDraining: !!document.querySelector('[data-uia="next-episode-seamless-button-draining"]'),
         skipPreplay: !!document.querySelector('.watch-video--skip-preplay-button'),
@@ -239,7 +239,7 @@ export default defineContentScript({
       debugLog('INIT', 'Debug Mutation Observer gestartet');
     }
 
-    // PLAYER TITLE EXTRACTION (aus Player Controls)
+    // PLAYER TITLE EXTRACTION
 
     function tryExtractPlayerTitle(): void {
       const titleContainer = document.querySelector('[data-uia="video-title"]');
@@ -318,9 +318,7 @@ export default defineContentScript({
 
     const GENERIC_TITLES = new Set([
       'netflix', 'home', 'startseite', 'browse',
-      // Netflix-Kategorien (DE)
       'filme', 'serien', 'meine liste', 'neu und beliebt', 'kategorien',
-      // Netflix-Kategorien (EN)
       'movies', 'tv shows', 'my list', 'new & popular', 'categories',
       'trending now', 'top 10'
     ]);
@@ -351,18 +349,14 @@ export default defineContentScript({
         '[data-uia="ad-skip"]',
         '[data-uia="player-skip-ad"]',
         '.skip-ad',
-        // Ad-Countdown Anzeige
         '[data-uia="ad-progress"]',
         '.ad-countdown',
         '.ad-progress-bar',
-        // Netflix Ad-Overlay Container
         '.watch-video--ad-playing',
         '.AkiraPlayer--ad-interstitial',
         '[data-uia="interstitial-container"]',
-        // Weitere Ad-bezogene Elemente
         '.interstitial-text',
         '.interstitial-container',
-        // "Ad" Text irgendwo sichtbar
         '[class*="adBreak"]',
         '[class*="ad-break"]',
         '.watch-video--modular-ads-container'
@@ -396,7 +390,7 @@ export default defineContentScript({
       const textElements = playerArea.querySelectorAll('span, div, p');
       for (const el of textElements) {
         const text = (el as HTMLElement).innerText?.trim();
-        if (!text || text.length > 30) continue; // Ad-Labels sind kurz
+        if (!text || text.length > 30) continue;
         if (/^(?:Werbung|Ad|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
@@ -502,12 +496,12 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
-      // 1. PRIMAER: Document Title - ist IMMER verfuegbar!
+      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericPageTitle(docTitle)) {
         const cleanTitle = docTitle
           .replace(/\s*[\|–-]\s*Netflix.*$/i, '')
-          .replace(/\s*-\s*Watch.*$/i, '')  // "Title - Watch on Netflix"
+          .replace(/\s*-\s*Watch.*$/i, '')
           .trim();
         if (cleanTitle && cleanTitle.length > 0 && cleanTitle.toLowerCase() !== 'netflix') {
           const parsed = parseNetflixTitle(cleanTitle);
@@ -522,8 +516,8 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
-      // 2. Player Controls Titel (gecacht von tryExtractPlayerTitle)
-      tryExtractPlayerTitle(); // Nochmal versuchen falls gerade sichtbar
+      // 2. Player Controls Titel
+      tryExtractPlayerTitle();
 
       if (cachedPlayerTitle) {
         metadata.title = cachedPlayerTitle.series;
