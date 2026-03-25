@@ -1,6 +1,5 @@
 import { defineConfig } from 'wxt';
 
-// Siehe: https://wxt.dev/api/config.html
 export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
@@ -8,7 +7,7 @@ export default defineConfig({
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
     version: '2.1.1',
-    description: 'Auto-tracks YouTube, Netflix, Crunchyroll & Prime Video. Built-in dashboard with heatmap, streaks, and history.',
+    description: 'Auto-tracks YouTube, Netflix, Crunchyroll, Prime Video, Disney+ & CI Japanese. Built-in dashboard with heatmap, streaks, and history.',
 
     browser_specific_settings: {
       gecko: {
@@ -24,7 +23,7 @@ export default defineConfig({
     permissions: [
       'storage',
       'tabs',
-      'alarms'        // Periodische Sync-Checks
+      'alarms'
     ],
 
     host_permissions: [
@@ -38,17 +37,14 @@ export default defineConfig({
       '*://*.amazon.co.uk/*',
       '*://*.disneyplus.com/*',
       '*://*.cijapanese.com/*',
-      // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',
-      // localhost nur im Dev-Build (Fix 12)
       ...(process.env.NODE_ENV !== 'production' ? [
         '*://localhost/*',
         '*://127.0.0.1/*'
       ] : [])
     ],
 
-    // Icon-Dateien (Anime-Maskottchen)
     icons: {
       16: 'icon/icon-16.png',
       32: 'icon/icon-32.png',
@@ -62,7 +58,6 @@ export default defineConfig({
         matches: [
           '*://jp343.com/*',
           '*://*.jp343.com/*',
-          // localhost nur im Dev-Build (Fix 12)
           ...(process.env.NODE_ENV !== 'production' ? [
             '*://localhost/*',
             '*://127.0.0.1/*'

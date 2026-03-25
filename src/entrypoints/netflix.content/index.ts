@@ -4,7 +4,7 @@ import type { VideoState } from '../../types';
 
 interface NetflixMetadata {
   title: string;
-  episodeTitle: string | null;  // Episode-Titel falls Serie
+  episodeTitle: string | null;
   seasonNumber: number | null;
   episodeNumber: number | null;
   isMovie: boolean;
@@ -20,11 +20,10 @@ export default defineContentScript({
     let lastTitle: string = '';
     let lastVideoId: string | null = null;
     let cachedMetadata: NetflixMetadata | null = null;
-    let bestKnownTitle: string = '';  // Bester Titel den wir je gesehen haben
+    let bestKnownTitle: string = '';
     let isCurrentlyInAd: boolean = false;
-    let pendingVideoId: string | null = null;  // Video-ID die auf Werbe-Ende wartet
+    let pendingVideoId: string | null = null;
 
-    // Cleanup-Registry (Fix 4+5)
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
@@ -39,12 +38,11 @@ export default defineContentScript({
 
     let cachedBrowseThumbnail: string | null = null;
 
-
-    const DEBUG_MODE = import.meta.env.DEV;  // true in Dev, false in Prod (Fix 11)
+    const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
-    log('[JP343] Netflix Content Script geladen');
+    log('[JP343] Netflix Content Script loaded');
     const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;  // Limit um Speicher zu schonen
+    const MAX_LOG_ENTRIES = 5000;
 
     function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
       if (!DEBUG_MODE) return;
@@ -52,7 +50,6 @@ export default defineContentScript({
       const fullTimestamp = new Date().toISOString();
       const logLine = `[${fullTimestamp}] [${category}] ${message}`;
 
-      // In Console ausgeben
       console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
 
       const bufferEntry = data
@@ -61,7 +58,6 @@ export default defineContentScript({
 
       LOG_BUFFER.push(bufferEntry);
 
-      // Buffer-Groesse begrenzen
       if (LOG_BUFFER.length > MAX_LOG_ENTRIES) {
         LOG_BUFFER.shift();
       }
@@ -70,7 +66,6 @@ export default defineContentScript({
     const injectPageScript = () => {
       const script = document.createElement('script');
       script.textContent = `
-        // JP343 Debug-Funktionen im Page Context
         window.JP343_downloadLogs = function() {
           window.dispatchEvent(new CustomEvent('JP343_REQUEST_LOGS'));
         };
@@ -83,14 +78,13 @@ export default defineContentScript({
           window.dispatchEvent(new CustomEvent('JP343_LOG_STATUS'));
         };
 
-        console.log('[JP343] Debug-Logging aktiv. Befehle: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
+        console.log('[JP343] Debug logging active. Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
       `;
       (document.head || document.documentElement).appendChild(script);
       script.remove();
     };
 
     if (DEBUG_MODE) {
-      // Event-Listener im Content Script Context
       window.addEventListener('JP343_REQUEST_LOGS', () => {
         const content = LOG_BUFFER.join('\n');
         const blob = new Blob([content], { type: 'text/plain' });
@@ -102,20 +96,19 @@ export default defineContentScript({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        console.log('[JP343] Log-Datei heruntergeladen mit', LOG_BUFFER.length, 'Eintraegen');
+        console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
       });
 
       window.addEventListener('JP343_CLEAR_LOGS', () => {
         LOG_BUFFER.length = 0;
-        console.log('[JP343] Log-Buffer geleert');
+        console.log('[JP343] Log buffer cleared');
       });
 
       window.addEventListener('JP343_LOG_STATUS', () => {
-        console.log('[JP343] Log-Buffer:', LOG_BUFFER.length, 'Eintraege');
-        console.log('[JP343] Befehle: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
+        console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
+        console.log('[JP343] Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
       });
 
-      // Script sofort injizieren
       if (document.head || document.documentElement) {
         injectPageScript();
       } else {
@@ -132,51 +125,37 @@ export default defineContentScript({
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video') as HTMLVideoElement | null;
       return {
-        // Video-Element State
         videoExists: !!video,
         videoPaused: video?.paused ?? null,
         videoEnded: video?.ended ?? null,
         videoDuration: video?.duration ?? null,
         videoCurrentTime: video?.currentTime ?? null,
-
-        // URL & Titel
         url: window.location.href,
         videoIdFromUrl: window.location.pathname.match(/\/watch\/(\d+)/)?.[1] || null,
         documentTitle: document.title,
-
-        // UI-Elemente
         nextEpisodeBtn: !!document.querySelector('[data-uia="next-episode-seamless-button"]'),
         nextEpisodeDraining: !!document.querySelector('[data-uia="next-episode-seamless-button-draining"]'),
         skipPreplay: !!document.querySelector('.watch-video--skip-preplay-button'),
         skipContent: !!document.querySelector('.watch-video--skip-content-button'),
         skipIntro: !!document.querySelector('[aria-label="Skip Intro"], [data-uia="player-skip-intro"]'),
         skipRecap: !!document.querySelector('[aria-label="Skip Recap"], [data-uia="player-skip-recap"]'),
-
         adDataUiaElements: Array.from(document.querySelectorAll('[data-uia*="ad"]')).map(el => ({
           tag: el.tagName,
           dataUia: el.getAttribute('data-uia'),
           classes: el.className,
           visible: (el as HTMLElement).offsetParent !== null
         })),
-
-        // Alle sichtbaren data-uia Elemente
         allVisibleDataUia: Array.from(document.querySelectorAll('[data-uia]'))
           .filter(el => (el as HTMLElement).offsetParent !== null)
-          .slice(0, 20)  // Limit auf 20
+          .slice(0, 20)
           .map(el => el.getAttribute('data-uia')),
-
-        // Body und Player Klassen
         bodyClasses: document.body.className,
         playerClasses: document.querySelector('.watch-video, .AkiraPlayer')?.className || null,
-
-        // Interstitial/Overlay Elemente
         interstitialElements: Array.from(document.querySelectorAll('[class*="interstitial"], [class*="Interstitial"]')).map(el => ({
           tag: el.tagName,
           classes: el.className,
           visible: (el as HTMLElement).offsetParent !== null
         })),
-
-        // Interne States
         isCurrentlyInAd: isCurrentlyInAd,
         pendingVideoId: pendingVideoId,
         lastVideoId: lastVideoId,
@@ -193,7 +172,6 @@ export default defineContentScript({
               const classes = node.className || '';
               const ariaLabel = node.getAttribute?.('aria-label');
 
-              // Logge interessante Elemente
               const innerText = node.innerText?.slice(0, 50) || '';
               const isInteresting =
                 dataUia ||
@@ -202,7 +180,7 @@ export default defineContentScript({
                 /^Werbung\s+\d|^Ad\s+\d/i.test(innerText);
 
               if (isInteresting) {
-                debugLog('DOM_ADD', 'Neues Element hinzugefuegt', {
+                debugLog('DOM_ADD', 'New element added', {
                   tag: node.tagName,
                   dataUia: dataUia,
                   classes: classes,
@@ -220,7 +198,7 @@ export default defineContentScript({
             if (node instanceof HTMLElement) {
               const dataUia = node.getAttribute?.('data-uia');
               if (dataUia && /ad|skip|interstitial|next-episode/i.test(dataUia)) {
-                debugLog('DOM_REMOVE', 'Element entfernt', {
+                debugLog('DOM_REMOVE', 'Element removed', {
                   tag: node.tagName,
                   dataUia: dataUia
                 });
@@ -236,10 +214,8 @@ export default defineContentScript({
       });
       observers.push(debugMutationObserver);
 
-      debugLog('INIT', 'Debug Mutation Observer gestartet');
+      debugLog('INIT', 'Debug Mutation Observer started');
     }
-
-    // PLAYER TITLE EXTRACTION
 
     function tryExtractPlayerTitle(): void {
       const titleContainer = document.querySelector('[data-uia="video-title"]');
@@ -255,19 +231,18 @@ export default defineContentScript({
 
         if (series.length > 1) {
           cachedPlayerTitle = { series, episode, episodeTitle };
-          log('[JP343] Netflix Player-Titel gecacht (Serie):', series, episode, episodeTitle);
+          log('[JP343] Netflix Player title cached (series):', series, episode, episodeTitle);
         }
       } else {
         const text = titleContainer.textContent?.trim();
         if (text && text.length > 1 && !isGenericPageTitle(text)) {
           cachedPlayerTitle = { series: text, episode: null, episodeTitle: null };
-          log('[JP343] Netflix Player-Titel gecacht (Film):', text);
+          log('[JP343] Netflix Player title cached (movie):', text);
         }
       }
     }
 
     intervalIds.push(setInterval(tryExtractPlayerTitle, 2000));
-
 
     function tryExtractBrowseThumbnail(): void {
       if (window.location.pathname.includes('/watch/')) return;
@@ -275,19 +250,18 @@ export default defineContentScript({
       const modal = document.querySelector('.previewModal--container, [data-uia="previewModal--container"]');
       if (!modal) return;
 
-      // 1. storyArt Background Image (das grosse Hintergrundbild)
       const storyArt = modal.querySelector('.storyArt img, .storyArt') as HTMLElement;
       if (storyArt) {
         if (storyArt instanceof HTMLImageElement && storyArt.src) {
           cachedBrowseThumbnail = storyArt.src;
-          log('[JP343] Netflix Browse-Thumbnail gecacht (storyArt img)');
+          log('[JP343] Netflix Browse thumbnail cached (storyArt img)');
           return;
         }
         const bg = window.getComputedStyle(storyArt).backgroundImage;
         const urlMatch = bg.match(/url\(["']?([^"')]+)["']?\)/);
         if (urlMatch?.[1]) {
           cachedBrowseThumbnail = urlMatch[1];
-          log('[JP343] Netflix Browse-Thumbnail gecacht (storyArt bg)');
+          log('[JP343] Netflix Browse thumbnail cached (storyArt bg)');
           return;
         }
       }
@@ -297,16 +271,15 @@ export default defineContentScript({
         const src = (img as HTMLImageElement).src;
         if (src && !src.includes('transparent') && !src.includes('logo')) {
           cachedBrowseThumbnail = src;
-          log('[JP343] Netflix Browse-Thumbnail gecacht (boxart)');
+          log('[JP343] Netflix Browse thumbnail cached (boxart)');
           return;
         }
       }
 
-      // 3. Billboard/Hero Image
       const heroImg = document.querySelector('.billboard-row img, [data-uia="billboard"] img') as HTMLImageElement;
       if (heroImg?.src && !heroImg.src.includes('transparent')) {
         cachedBrowseThumbnail = heroImg.src;
-        log('[JP343] Netflix Browse-Thumbnail gecacht (billboard)');
+        log('[JP343] Netflix Browse thumbnail cached (billboard)');
       }
     }
 
@@ -334,9 +307,8 @@ export default defineContentScript({
       return document.querySelector('video') as HTMLVideoElement;
     }
 
-
     function isAdPlaying(): boolean {
-      // WICHTIG: Ad-Detection NUR auf /watch/ URLs
+      // in their names that are not actual ads
       if (!window.location.pathname.includes('/watch/')) {
         return false;
       }
@@ -365,11 +337,10 @@ export default defineContentScript({
       for (const selector of adIndicators) {
         const element = document.querySelector(selector);
         if (element) {
-          // Element gefunden und sichtbar?
           const rect = element.getBoundingClientRect();
           const isVisible = rect.width > 0 && rect.height > 0;
           if (isVisible) {
-            log('[JP343] Netflix Ad erkannt via:', selector);
+            log('[JP343] Netflix Ad detected via:', selector);
             return true;
           }
         }
@@ -381,7 +352,7 @@ export default defineContentScript({
 
       for (const className of adClasses) {
         if (body.classList.contains(className) || player?.classList.contains(className)) {
-          log('[JP343] Netflix Ad erkannt via Klasse:', className);
+          log('[JP343] Netflix Ad detected via class:', className);
           return true;
         }
       }
@@ -394,7 +365,7 @@ export default defineContentScript({
         if (/^(?:Werbung|Ad|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
-            log('[JP343] Netflix Ad erkannt via Text:', text);
+            log('[JP343] Netflix Ad detected via text:', text);
             return true;
           }
         }
@@ -402,7 +373,7 @@ export default defineContentScript({
 
       const video = findVideoElement();
       if (video && video.duration > 0 && video.duration < 45 && pendingVideoId) {
-        log('[JP343] Netflix: Kurzes Video erkannt (', Math.round(video.duration), 's) - moeglicherweise Werbung');
+        log('[JP343] Netflix: Short video detected (', Math.round(video.duration), 's) - possibly an ad');
         return true;
       }
 
@@ -416,7 +387,7 @@ export default defineContentScript({
         if (!state || !state.isPlaying || isAdPlaying() || isCurrentlyInAd) return;
 
         if (isGenericPageTitle(state.title) && !cachedPlayerTitle) {
-          log('[JP343] Netflix: Titel nach Ad noch generisch - starte Retry...');
+          log('[JP343] Netflix: Title still generic after ad - starting retry...');
           let retryCount = 0;
           const titleRetry = setInterval(() => {
             retryCount++;
@@ -426,23 +397,22 @@ export default defineContentScript({
               clearInterval(titleRetry);
               lastVideoId = videoId;
               lastTitle = retryState.title;
-              log('[JP343] Netflix: Guter Titel nach Ad-Retry #' + retryCount + ':', retryState.title);
+              log('[JP343] Netflix: Good title after ad retry #' + retryCount + ':', retryState.title);
               sendMessage('VIDEO_PLAY', { state: retryState });
             } else if (retryCount >= 5) {
               clearInterval(titleRetry);
               if (retryState && retryState.isPlaying && !isCurrentlyInAd) {
                 lastVideoId = videoId;
                 lastTitle = retryState.title;
-                log('[JP343] Netflix: Starte nach Ad-Timeout mit Titel:', retryState.title);
+                log('[JP343] Netflix: Starting after ad timeout with title:', retryState.title);
                 sendMessage('VIDEO_PLAY', { state: retryState });
               }
             }
           }, 2000);
         } else {
-          // Titel ist gut - sofort starten
           lastVideoId = videoId;
           lastTitle = state.title;
-          log('[JP343] Netflix: Session nach Ad gestartet:', state.title);
+          log('[JP343] Netflix: Session started after ad:', state.title);
           sendMessage('VIDEO_PLAY', { state });
         }
       }, 500);
@@ -453,38 +423,36 @@ export default defineContentScript({
 
       if (adPlaying && !isCurrentlyInAd) {
         isCurrentlyInAd = true;
-        debugLog('AD_STATE', '=== WERBUNG BEGINNT ===', collectUIState());
-        log('[JP343] Netflix: Werbung beginnt');
+        debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
+        log('[JP343] Netflix: Ad started');
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
-        debugLog('AD_STATE', '=== WERBUNG BEENDET ===', collectUIState());
-        log('[JP343] Netflix: Werbung beendet');
+        debugLog('AD_STATE', '=== AD ENDED ===', collectUIState());
+        log('[JP343] Netflix: Ad ended');
         sendMessage('AD_END');
 
+        // Resume pending session after ad ends
         if (pendingVideoId) {
           const savedVideoId = pendingVideoId;
-          debugLog('AD_STATE', 'Starte gemerkte Session', { pendingVideoId: savedVideoId });
-          log('[JP343] Netflix: Starte gemerkte Session nach Werbe-Ende');
+          debugLog('AD_STATE', 'Starting saved session', { pendingVideoId: savedVideoId });
+          log('[JP343] Netflix: Starting saved session after ad ended');
           pendingVideoId = null;
           startSessionWithTitleRetry(savedVideoId);
         }
       }
     }
 
-    // Ad-Status alle 500ms pruefen
     intervalIds.push(setInterval(handleAdStateChange, 500));
 
     if (DEBUG_MODE) {
       intervalIds.push(setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
-          debugLog('PERIODIC', 'Periodischer State-Check', collectUIState());
+          debugLog('PERIODIC', 'Periodic state check', collectUIState());
         }
       }, 5000));
     }
-
-    // VERBESSERTE METADATA-EXTRAKTION
 
     function extractNetflixMetadata(): NetflixMetadata {
       const metadata: NetflixMetadata = {
@@ -496,7 +464,6 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
-      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericPageTitle(docTitle)) {
         const cleanTitle = docTitle
@@ -516,7 +483,6 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
-      // 2. Player Controls Titel
       tryExtractPlayerTitle();
 
       if (cachedPlayerTitle) {
@@ -538,7 +504,6 @@ export default defineContentScript({
         }
       }
 
-      // 3. Episode-Info aus separaten Elementen
       if (!metadata.episodeNumber) {
         const episodeInfoSelectors = [
           '[data-uia="video-title"] + span',
@@ -561,7 +526,6 @@ export default defineContentScript({
         }
       }
 
-      // 4. Thumbnail aus Netflix Poster/Billboard
       metadata.thumbnailUrl = extractThumbnail();
 
       return metadata;
@@ -573,6 +537,7 @@ export default defineContentScript({
         isMovie: true
       };
 
+      // "SeriesName: S1:E5 EpisodeTitle"
       const colonPattern = /^(.+?):\s*S(\d+):E(\d+)\s*(.*)$/i;
       let match = rawTitle.match(colonPattern);
       if (match) {
@@ -584,6 +549,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "SeriesName - Season 1: Episode 5"
       const longPattern = /^(.+?)\s*[-–]\s*Season\s*(\d+).*Episode\s*(\d+)(.*)$/i;
       match = rawTitle.match(longPattern);
       if (match) {
@@ -595,6 +561,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "S1 E5" or "Season 1 Episode 5" anywhere in title
       const inlinePattern = /S(\d+)\s*E(\d+)/i;
       match = rawTitle.match(inlinePattern);
       if (match) {
@@ -618,6 +585,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "SeriesName Flg. 5" (without episode title)
       const flgShortPattern = /^(.+?)\s+Flg\.\s*(\d+)$/i;
       match = rawTitle.match(flgShortPattern);
       if (match) {
@@ -637,6 +605,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "SeriesName Ep. 5 EpisodeTitle" / "Episode 5 ..."
       const epPattern = /^(.+?)\s+(?:Ep\.?|Episode)\s*(\d+)\s+(.+)$/i;
       match = rawTitle.match(epPattern);
       if (match) {
@@ -656,23 +625,24 @@ export default defineContentScript({
       const patterns = [
         /S(\d+):?E(\d+)/i,
         /Season\s*(\d+).*Episode\s*(\d+)/i,
-        /Staffel\s*(\d+).*Folge\s*(\d+)/i,  // Deutsch
-        /(\d+)x(\d+)/,  // 1x05 Format
-        /Flg\.\s*(\d+)/i,  // Netflix Deutsch Kurzform
-        /Folge\s*(\d+)/i,  // Netflix Deutsch
-        /Ep\.?\s*(\d+)/i   // Ep. / Episode
+        /Staffel\s*(\d+).*Folge\s*(\d+)/i,
+        /(\d+)x(\d+)/,
+        /Flg\.\s*(\d+)/i,
+        /Folge\s*(\d+)/i,
+        /Ep\.?\s*(\d+)/i
       ];
 
       for (const pattern of patterns) {
         const match = text.match(pattern);
         if (match) {
           if (match[2]) {
+            // Two capture groups: season + episode
             result.seasonNumber = parseInt(match[1], 10);
             result.episodeNumber = parseInt(match[2], 10);
           } else {
+            // One capture group: episode only
             result.episodeNumber = parseInt(match[1], 10);
           }
-          // Rest als Episode-Titel
           const rest = text.replace(match[0], '').replace(/^[\s:–-]+/, '').trim();
           if (rest && rest.length > 2) {
             result.episodeTitle = rest;
@@ -685,13 +655,11 @@ export default defineContentScript({
     }
 
     function extractThumbnail(): string | null {
-      // 1. Mini-Preview Thumbnail
       const miniPreview = document.querySelector('.mini-preview-player img') as HTMLImageElement;
       if (miniPreview?.src) {
         return miniPreview.src;
       }
 
-      // 2. Billboard/Poster Image
       const billboardSelectors = [
         '.billboard-row img',
         '.jawbone-title-link img',
@@ -707,7 +675,6 @@ export default defineContentScript({
         }
       }
 
-      // 3. Background Image aus Style
       const bgSelectors = [
         '.billboard-row .billboard-image',
         '.hero-image-wrapper'
@@ -725,7 +692,7 @@ export default defineContentScript({
       }
 
       if (cachedBrowseThumbnail) {
-        log('[JP343] Netflix: Verwende gecachtes Browse-Thumbnail');
+        log('[JP343] Netflix: Using cached browse thumbnail');
         return cachedBrowseThumbnail;
       }
 
@@ -733,13 +700,12 @@ export default defineContentScript({
       const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
       const metaThumb = ogImageSecure?.content || ogImage?.content;
       if (metaThumb && metaThumb.startsWith('https://') && !metaThumb.includes('nflx-static')) {
-        log('[JP343] Netflix: OG-Image aus Meta-Tag gefunden:', metaThumb);
+        log('[JP343] Netflix: OG image found from meta tag:', metaThumb);
         return metaThumb;
       }
 
       return null;
     }
-
 
     function getFormattedTitle(): string {
       const metadata = extractNetflixMetadata();
@@ -782,7 +748,7 @@ export default defineContentScript({
         title: getFormattedTitle(),
         url: window.location.href,
         platform: 'netflix',
-        isAd: isCurrentlyInAd || isAdPlaying(),  // Echte Ad-Erkennung
+        isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
         channelId: (metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
@@ -799,6 +765,7 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Message error:', error);
       }
     }
@@ -807,7 +774,7 @@ export default defineContentScript({
       cachedMetadata = null;
       cachedPlayerTitle = null;
       if (bestKnownTitle && isGenericPageTitle(bestKnownTitle)) {
-        log('[JP343] Netflix: Generischen bestKnownTitle bereinigt:', bestKnownTitle);
+        log('[JP343] Netflix: Generic bestKnownTitle cleared:', bestKnownTitle);
         bestKnownTitle = '';
       }
     }
@@ -816,7 +783,7 @@ export default defineContentScript({
       cachedMetadata = null;
       cachedPlayerTitle = null;
       if (bestKnownTitle) {
-        log('[JP343] Netflix: bestKnownTitle bei Video-Wechsel zurueckgesetzt (war:', bestKnownTitle + ')');
+        log('[JP343] Netflix: bestKnownTitle reset on video change (was:', bestKnownTitle + ')');
         bestKnownTitle = '';
       }
     }
@@ -829,14 +796,12 @@ export default defineContentScript({
 
       video.addEventListener('play', () => {
         if (!window.location.pathname.includes('/watch/')) {
-          log('[JP343] Netflix: Play-Event auf Nicht-Watch-Seite ignoriert');
+          log('[JP343] Netflix: Play event on non-watch page ignored');
           return;
         }
 
-        // DEBUG: Vollstaendiger UI-State bei Play-Event
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
 
-        // Metadata neu laden bei Play
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
           resetForNewVideo();
@@ -845,8 +810,8 @@ export default defineContentScript({
         }
 
         if (isAdPlaying() || isCurrentlyInAd) {
-          debugLog('VIDEO_PLAY', 'Play waehrend Werbung - wird ignoriert', { videoId, isCurrentlyInAd, isAdPlaying: isAdPlaying() });
-          log('[JP343] Netflix Play waehrend Werbung - wird ignoriert, Video-ID gemerkt:', videoId);
+          debugLog('VIDEO_PLAY', 'Play during ad - ignored', { videoId, isCurrentlyInAd, isAdPlaying: isAdPlaying() });
+          log('[JP343] Netflix Play during ad - ignored, Video ID saved:', videoId);
           pendingVideoId = videoId;
           if (!isCurrentlyInAd) {
             isCurrentlyInAd = true;
@@ -858,8 +823,8 @@ export default defineContentScript({
         const state = getCurrentVideoState();
         if (state) {
           if (isGenericPageTitle(state.title) && !cachedPlayerTitle && !bestKnownTitle) {
-            debugLog('VIDEO_PLAY', 'Generischer Titel erkannt - verzoegere Tracking', { title: state.title, videoId });
-            log('[JP343] Netflix: Generischer Titel "' + state.title + '" - warte auf besseren Titel...');
+            debugLog('VIDEO_PLAY', 'Generic title detected - delaying tracking', { title: state.title, videoId });
+            log('[JP343] Netflix: Generic title "' + state.title + '" - waiting for better title...');
             pendingVideoId = videoId;
             let retryCount = 0;
             const titleRetry = setInterval(() => {
@@ -871,7 +836,7 @@ export default defineContentScript({
                 lastVideoId = videoId;
                 lastTitle = retryState.title;
                 pendingVideoId = null;
-                log('[JP343] Netflix: Guter Titel gefunden nach Retry #' + retryCount + ':', retryState.title);
+                log('[JP343] Netflix: Good title found after retry #' + retryCount + ':', retryState.title);
                 sendMessage('VIDEO_PLAY', { state: retryState });
               } else if (retryCount >= 5) {
                 clearInterval(titleRetry);
@@ -879,7 +844,7 @@ export default defineContentScript({
                   lastVideoId = videoId;
                   lastTitle = retryState.title;
                   pendingVideoId = null;
-                  log('[JP343] Netflix: Starte Tracking nach Timeout mit Titel:', retryState.title);
+                  log('[JP343] Netflix: Starting tracking after timeout with title:', retryState.title);
                   sendMessage('VIDEO_PLAY', { state: retryState });
                 }
               }
@@ -888,7 +853,7 @@ export default defineContentScript({
           }
           lastVideoId = videoId;
           lastTitle = state.title;
-          debugLog('VIDEO_PLAY', 'Tracking gestartet', { videoId, title: state.title });
+          debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Netflix Play:', state.title, '(ID:', lastVideoId, ')');
           sendMessage('VIDEO_PLAY', { state });
         }
@@ -903,8 +868,8 @@ export default defineContentScript({
         debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
 
         if (isCurrentlyInAd) {
-          debugLog('VIDEO_ENDED', 'Ended waehrend Werbung - wird ignoriert', { isCurrentlyInAd });
-          log('[JP343] Netflix Video ended waehrend Werbung - wird ignoriert');
+          debugLog('VIDEO_ENDED', 'Ended during ad - ignored', { isCurrentlyInAd });
+          log('[JP343] Netflix Video ended during ad - ignored');
           return;
         }
         sendMessage('VIDEO_ENDED');
@@ -920,7 +885,6 @@ export default defineContentScript({
         });
       });
 
-      // DEBUG: Seeking Events
       video.addEventListener('seeking', () => {
         debugLog('VIDEO_SEEK', 'Seeking', { currentTime: video.currentTime });
       });
@@ -931,14 +895,14 @@ export default defineContentScript({
         if (isCurrentlyInAd || video.paused) return;
         const state = getCurrentVideoState();
         if (state && state.isPlaying && !isGenericPageTitle(state.title) && state.title !== lastTitle) {
-          log('[JP343] Netflix: Titel-Update (quick #' + quickUpdateCount + '):', state.title);
+          log('[JP343] Netflix: Title update (quick #' + quickUpdateCount + '):', state.title);
           lastTitle = state.title;
           sendMessage('VIDEO_STATE_UPDATE', { state });
         }
         if (quickUpdateCount >= 6) clearInterval(quickTitleUpdate);
       }, 5000);
 
-      // Periodische Updates (alle 30 Sekunden)
+      // Periodic state updates
       setInterval(() => {
         if (isCurrentlyInAd || !window.location.pathname.includes('/watch/')) {
           return;
@@ -949,7 +913,7 @@ export default defineContentScript({
           const currentVideoId = getVideoId();
 
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
-            log('[JP343] Netflix Video-Wechsel (ID):', lastVideoId, '->', currentVideoId);
+            log('[JP343] Netflix Video change (ID):', lastVideoId, '->', currentVideoId);
             lastVideoId = currentVideoId;
             lastTitle = state.title;
             resetForNewVideo();
@@ -969,7 +933,7 @@ export default defineContentScript({
         }
       }, 30000);
 
-      log('[JP343] Netflix Video Events gebunden');
+      log('[JP343] Netflix Video events bound');
     }
 
     const observer = new MutationObserver(() => {
@@ -983,19 +947,17 @@ export default defineContentScript({
         attachVideoEvents(video);
         const videoId = getVideoId();
 
-        // Falls neues Video bereits laeuft
         if (!video.paused && !video.ended && videoId) {
           if (isAdPlaying() || isCurrentlyInAd) {
-            debugLog('OBSERVER', 'Neues Video waehrend Werbung', { videoId });
-            log('[JP343] Netflix: Neues Video waehrend Werbung erkannt, ID gemerkt:', videoId);
+            debugLog('OBSERVER', 'New video during ad', { videoId });
+            log('[JP343] Netflix: New video during ad detected, ID saved:', videoId);
             pendingVideoId = videoId;
             if (!isCurrentlyInAd) {
               isCurrentlyInAd = true;
               sendMessage('AD_START');
             }
           } else {
-            // Kein Ad erkannt - sofort tracken
-            log('[JP343] Netflix: Neues Video laeuft bereits');
+            log('[JP343] Netflix: New video already playing');
             lastVideoId = videoId;
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
@@ -1021,12 +983,12 @@ export default defineContentScript({
 
       if (!initialVideo.paused && !initialVideo.ended && videoId) {
         if (isAdPlaying()) {
-          log('[JP343] Netflix: Video laeuft bereits waehrend Werbung');
+          log('[JP343] Netflix: Video already playing during ad');
           isCurrentlyInAd = true;
           pendingVideoId = videoId;
           sendMessage('AD_START');
         } else {
-          log('[JP343] Netflix: Video laeuft bereits, starte Tracking');
+          log('[JP343] Netflix: Video already playing, starting tracking');
           lastVideoId = videoId;
           lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
@@ -1045,16 +1007,15 @@ export default defineContentScript({
         const wasOnWatch = oldUrl.includes('/watch/');
         const isOnWatch = newUrl.includes('/watch/');
 
-        debugLog('URL_CHANGE', '=== URL WECHSEL ===', {
+        debugLog('URL_CHANGE', '=== URL CHANGED ===', {
           oldUrl, newUrl, wasOnWatch, isOnWatch,
           ...collectUIState()
         });
-        log('[JP343] Netflix URL-Wechsel:', oldUrl, '->', newUrl);
+        log('[JP343] Netflix URL change:', oldUrl, '->', newUrl);
         lastUrl = newUrl;
 
-        // Weg von /watch/: Session beenden
         if (wasOnWatch && !isOnWatch) {
-          log('[JP343] Netflix: /watch/ verlassen - Session beenden');
+          log('[JP343] Netflix: Left /watch/ - ending session');
           sendMessage('VIDEO_ENDED');
           resetForNewVideo();
           return;
@@ -1062,12 +1023,11 @@ export default defineContentScript({
 
         resetForNewVideo();
 
-        // Nur auf /watch/ URLs neue Videos suchen
         if (isOnWatch) {
           setTimeout(() => {
             const video = findVideoElement();
             if (video && video !== currentVideoElement) {
-              debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
+              debugLog('URL_CHANGE', 'New video detected after URL change', collectUIState());
               currentVideoElement = video;
               attachVideoEvents(video);
               lastVideoId = getVideoId();
@@ -1086,24 +1046,24 @@ export default defineContentScript({
         if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle)) {
           if (cleanTitle !== bestKnownTitle) {
             if (window.location.pathname.includes('/watch/')) {
-              log('[JP343] Netflix: Neuer Titel erkannt:', cleanTitle);
+              log('[JP343] Netflix: New title detected:', cleanTitle);
               bestKnownTitle = cleanTitle;
               clearMetadataCache();
             } else {
-              log('[JP343] Netflix: Titel auf Browse-Seite ignoriert:', cleanTitle);
+              log('[JP343] Netflix: Title on browse page ignored:', cleanTitle);
             }
           }
         }
       }
     });
 
-    // Beobachte <title> Element
     const titleElement = document.querySelector('title');
     if (titleElement) {
       titleObserver.observe(titleElement, { childList: true, characterData: true, subtree: true });
       observers.push(titleObserver);
     }
 
+    // Periodic title check for first 30s
     let titleCheckCount = 0;
     const titleCheckInterval = setInterval(() => {
       titleCheckCount++;
@@ -1112,7 +1072,7 @@ export default defineContentScript({
         const cleanTitle = docTitle.replace(/\s*[\|–-]\s*Netflix.*$/i, '').trim();
         if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle) && cleanTitle !== bestKnownTitle) {
           if (window.location.pathname.includes('/watch/')) {
-            log('[JP343] Netflix: Titel gefunden (Check #' + titleCheckCount + '):', cleanTitle);
+            log('[JP343] Netflix: Title found (check #' + titleCheckCount + '):', cleanTitle);
             bestKnownTitle = cleanTitle;
             clearMetadataCache();
           }
@@ -1145,17 +1105,18 @@ export default defineContentScript({
       if (video && !video.paused && !video.ended && videoId && !adPlaying && !isCurrentlyInAd) {
         const state = getCurrentVideoState();
         if (state && !isGenericPageTitle(state.title)) {
-          log('[JP343] Netflix: Starte verzoegertes Tracking');
+          log('[JP343] Netflix: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
           sendMessage('VIDEO_PLAY', { state });
         }
       } else if (video && !video.paused && (adPlaying || isCurrentlyInAd) && videoId) {
-        log('[JP343] Netflix: Video laeuft waehrend Werbung - Tracking pausiert');
+        log('[JP343] Netflix: Video playing during ad - tracking paused');
         pendingVideoId = videoId;
       }
     }, 3000);
 
+    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

@@ -1,6 +1,3 @@
-// JP343 Extension - Shared Formatting Utilities
-// Genutzt von Popup UND Dashboard
-
 export function formatStatDuration(minutes: number): string {
   const totalSec = Math.round(minutes * 60);
   const h = Math.floor(totalSec / 3600);
@@ -30,7 +27,6 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
-// ISO-Datum als relative Zeitangabe formatieren
 export function formatSessionDate(isoDate: string): string {
   try {
     const date = new Date(isoDate);
@@ -54,10 +50,9 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-// Wochentage Mo-So als ISO-Datums-Strings
 export function getWeekDates(): { date: string; label: string; isToday: boolean }[] {
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
+  const dayOfWeek = now.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   const todayStr = getLocalDateString(now);
   const labels = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];

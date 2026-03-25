@@ -1,11 +1,11 @@
-// JP343 Extension - Popup UI Logik
+// JP343 Extension - Popup UI
 
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo } from '../../types';
+import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-// DOM Elements
 const elements = {
   statusDot: document.getElementById('statusDot') as HTMLElement,
   statusText: document.getElementById('statusText') as HTMLElement,
@@ -49,15 +49,6 @@ const elements = {
   statStreak: document.getElementById('statStreak') as HTMLElement
 };
 
-function formatDuration(minutes: number): string {
-  const totalSec = Math.round(minutes * 60);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  if (m === 0) return `${s}s`;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
-}
-
-// Platform Icons
 const platformIcons: Record<Platform, string> = {
   youtube: '▶',
   netflix: 'N',
@@ -67,7 +58,6 @@ const platformIcons: Record<Platform, string> = {
   generic: '⏵'
 };
 
-// State
 let currentSession: TrackingSession | null = null;
 let isAdPlaying = false;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
@@ -79,9 +69,7 @@ let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let isBlockedListExpanded = false;
 
-// Toast anzeigen
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
-  // Vorherigen Toast abbrechen
   if (toastTimeout) {
     clearTimeout(toastTimeout);
   }
@@ -94,7 +82,6 @@ function showToast(message: string, type: 'warning' | 'success' = 'warning', dur
   }, duration);
 }
 
-// Toggle-Anzeige aktualisieren
 function updateToggleDisplay(enabled: boolean): void {
   isEnabled = enabled;
   elements.toggleLabel.textContent = enabled ? 'ON' : 'OFF';
@@ -108,7 +95,6 @@ function updateToggleDisplay(enabled: boolean): void {
   }
 }
 
-// Settings laden und Toggle aktualisieren
 async function loadAndApplySettings(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
@@ -119,11 +105,11 @@ async function loadAndApplySettings(): Promise<void> {
       renderBlockedList();
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Laden der Settings:', error);
+    log('[JP343 Popup] Failed to load settings:', error);
   }
 }
 
-// MANUAL TRACKING
+// --- MANUAL TRACKING ---
 
 async function loadActiveTabInfo(): Promise<void> {
   try {
@@ -133,11 +119,10 @@ async function loadActiveTabInfo(): Promise<void> {
       updateManualTrackDisplay();
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Laden der Tab-Info:', error);
+    log('[JP343 Popup] Failed to load tab info:', error);
   }
 }
 
-// Manual Track Anzeige aktualisieren
 function updateManualTrackDisplay(): void {
   if (!activeTabInfo) {
     elements.manualTrackMode.style.display = 'none';
@@ -163,13 +148,12 @@ function updateManualTrackDisplay(): void {
         noSessionHint.textContent = 'Start a video to auto-track';
       } else if (noSessionTitle && noSessionHint) {
         noSessionTitle.textContent = 'No active session';
-        noSessionHint.textContent = 'Visit YouTube, Netflix, Crunchyroll or Prime Video to start tracking';
+        noSessionHint.textContent = 'Visit a supported streaming site to start tracking';
       }
     }
   }
 }
 
-// Start Manual Tracking Handler
 elements.btnStartManual.addEventListener('click', async () => {
   if (!activeTabInfo) return;
 
@@ -184,48 +168,41 @@ elements.btnStartManual.addEventListener('click', async () => {
     });
 
     if (response.success) {
-      // UI aktualisieren
       await fetchCurrentState();
     } else {
-      log('[JP343 Popup] Fehler beim Starten:', response.error);
+      log('[JP343 Popup] Failed to start:', response.error);
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Error:', error);
   }
 });
 
-// Toggle Handler
 elements.toggleEnabled.addEventListener('click', async () => {
   const newState = !isEnabled;
   try {
     await browser.runtime.sendMessage({ type: 'SET_ENABLED', enabled: newState });
     updateToggleDisplay(newState);
-    // Status sofort aktualisieren
     await fetchCurrentState();
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Toggle:', error);
+    log('[JP343 Popup] Failed to toggle:', error);
   }
 });
 
-// CHANNEL BLOCKING
+// --- CHANNEL BLOCKING ---
 
-// Pruefen ob Kanal blockiert ist
 function isChannelBlocked(channelId: string): boolean {
   return blockedChannels.some(c => c.channelId === channelId);
 }
 
-// Channel-Anzeige aktualisieren
 function updateChannelDisplay(session: TrackingSession | null): void {
   if (session && session.channelId) {
     currentChannelId = session.channelId;
     elements.channelSection.style.display = 'block';
     elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Title';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
-    // Channel-Name und Block-Button anzeigen
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
     elements.btnBlockChannel.style.display = '';
 
-    // Button-Status aktualisieren
     const blocked = isChannelBlocked(session.channelId);
     elements.btnBlockChannel.textContent = blocked ? 'Blocked' : 'Block';
     elements.btnBlockChannel.classList.toggle('blocked', blocked);
@@ -236,7 +213,6 @@ function updateChannelDisplay(session: TrackingSession | null): void {
     elements.btnBlockChannel.style.display = 'none';
   }
 
-  // Badge + Chevron Sichtbarkeit
   const hasBlocked = blockedChannels.length > 0;
   elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
   elements.blockedCountNumber.textContent = String(blockedChannels.length);
@@ -250,12 +226,12 @@ function updateChannelDisplay(session: TrackingSession | null): void {
 }
 
 function renderBlockedList(filterText = ''): void {
-  // Badge-Count aktualisieren
   elements.blockedCountNumber.textContent = String(blockedChannels.length);
   const hasBlocked = blockedChannels.length > 0;
   elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
   elements.btnToggleBlockedList.style.display = hasBlocked ? 'inline-block' : 'none';
 
+  // Only show search when >= 5 entries
   elements.blockedListSearch.style.display = blockedChannels.length >= 5 ? 'block' : 'none';
 
   if (!hasBlocked) {
@@ -264,7 +240,6 @@ function renderBlockedList(filterText = ''): void {
     elements.btnToggleBlockedList.classList.remove('expanded');
   }
 
-  // Gefilterte Kanaele
   const filtered = filterText
     ? blockedChannels.filter(c => c.channelName.toLowerCase().includes(filterText.toLowerCase()))
     : blockedChannels;
@@ -276,7 +251,6 @@ function renderBlockedList(filterText = ''): void {
     </div>
   `).join('');
 
-  // Unblock-Buttons Event Listener
   elements.blockedList.querySelectorAll('.btn-unblock').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -288,7 +262,6 @@ function renderBlockedList(filterText = ''): void {
   });
 }
 
-// Kanal blockieren
 async function blockChannel(): Promise<void> {
   if (!currentSession || !currentSession.channelId) return;
 
@@ -304,26 +277,24 @@ async function blockChannel(): Promise<void> {
     blockedChannels.push(channel);
     updateChannelDisplay(currentSession);
     renderBlockedList();
-    log('[JP343 Popup] Kanal blockiert:', channel.channelName);
+    log('[JP343 Popup] Channel blocked:', channel.channelName);
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Blockieren:', error);
+    log('[JP343 Popup] Failed to block channel:', error);
   }
 }
 
-// Kanal entblockieren
 async function unblockChannel(channelId: string): Promise<void> {
   try {
     await browser.runtime.sendMessage({ type: 'UNBLOCK_CHANNEL', channelId });
     blockedChannels = blockedChannels.filter(c => c.channelId !== channelId);
     updateChannelDisplay(currentSession);
     renderBlockedList();
-    log('[JP343 Popup] Kanal entblockiert:', channelId);
+    log('[JP343 Popup] Channel unblocked:', channelId);
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Entblockieren:', error);
+    log('[JP343 Popup] Failed to unblock channel:', error);
   }
 }
 
-// Block-Button Handler
 elements.btnBlockChannel.addEventListener('click', async () => {
   if (!currentChannelId) return;
 
@@ -338,7 +309,6 @@ function toggleBlockedList(): void {
   isBlockedListExpanded = !isBlockedListExpanded;
   elements.blockedListContainer.style.display = isBlockedListExpanded ? 'block' : 'none';
   elements.btnToggleBlockedList.classList.toggle('expanded', isBlockedListExpanded);
-  // Suchfeld leeren beim Zuklappen
   if (!isBlockedListExpanded) {
     elements.blockedSearchInput.value = '';
     renderBlockedList();
@@ -348,12 +318,11 @@ function toggleBlockedList(): void {
 elements.btnToggleBlockedList.addEventListener('click', toggleBlockedList);
 elements.blockedCountBadge.addEventListener('click', toggleBlockedList);
 
-// Search Input → Filter Blocked-Liste
 elements.blockedSearchInput.addEventListener('input', () => {
   renderBlockedList(elements.blockedSearchInput.value);
 });
 
-// TITLE EDITING
+// --- TITLE EDITING ---
 
 let isEditingTitle = false;
 
@@ -371,17 +340,14 @@ function startTitleEdit(): void {
 
   const currentTitle = elements.sessionTitle.textContent || '';
 
-  // Input erstellen
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'session-title-input';
   input.value = currentTitle;
 
-  // Title und Edit-Button verstecken
   elements.sessionTitle.style.display = 'none';
   elements.btnEditTitle.style.display = 'none';
 
-  // Input einfuegen
   titleRow.insertBefore(input, elements.sessionTitle);
   input.focus();
   input.select();
@@ -389,20 +355,18 @@ function startTitleEdit(): void {
   const saveEdit = async () => {
     const newTitle = input.value.trim();
     if (newTitle && newTitle !== currentTitle) {
-      // Titel im Background aktualisieren
       try {
         await browser.runtime.sendMessage({
           type: 'UPDATE_SESSION_TITLE',
           title: newTitle
         });
         elements.sessionTitle.textContent = newTitle;
-        log('[JP343 Popup] Titel aktualisiert:', newTitle);
+        log('[JP343 Popup] Title updated:', newTitle);
       } catch (error) {
-        log('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+        log('[JP343 Popup] Failed to update title:', error);
       }
     }
 
-    // Aufräumen
     input.remove();
     elements.sessionTitle.style.display = '';
     elements.btnEditTitle.style.display = '';
@@ -422,7 +386,6 @@ function startTitleEdit(): void {
   });
 }
 
-// Status aktualisieren
 function updateStatus(session: TrackingSession | null, isAd: boolean): void {
   if (isAd) {
     elements.statusDot.className = 'status-dot ad';
@@ -439,7 +402,6 @@ function updateStatus(session: TrackingSession | null, isAd: boolean): void {
   }
 }
 
-// Session-Anzeige aktualisieren
 function updateSessionDisplay(
   session: TrackingSession | null,
   duration: string,
@@ -454,6 +416,7 @@ function updateSessionDisplay(
   elements.noSession.style.display = 'none';
   elements.activeSession.style.display = 'block';
 
+  // XSS-safe: createElement instead of innerHTML
   if (session.thumbnailUrl && isValidImageUrl(session.thumbnailUrl)) {
     elements.thumbnail.textContent = '';
     const img = document.createElement('img');
@@ -466,7 +429,6 @@ function updateSessionDisplay(
     elements.platformIcon.textContent = platformIcons[session.platform] || '⏵';
   }
 
-  // Details
   elements.sessionTitle.textContent = session.title;
   if (session.platform === 'generic' && session.url) {
     try {
@@ -479,12 +441,10 @@ function updateSessionDisplay(
     elements.sessionPlatform.textContent = session.platform + '.com';
   }
 
-  // Timer
   elements.sessionTimer.textContent = duration;
   elements.sessionTimer.className = isAd ? 'session-timer ad' : 'session-timer';
   elements.adLabel.style.display = isAd ? 'block' : 'none';
 
-  // Pause Button Text
   elements.btnPause.textContent = session.isPaused ? 'Resume' : 'Pause';
 }
 
@@ -512,14 +472,15 @@ function getGroupStatusBadge(group: GroupedEntry): string {
   return '<span class="pending-entry-status pending">●</span>';
 }
 
+// Grouped entry for popup display
 interface GroupedEntry {
-  primary: PendingEntry;      // Erster/neuester Entry als Referenz
-  entries: PendingEntry[];    // Alle Entries in der Gruppe
-  entryIds: string[];         // Alle Entry-IDs in der Gruppe
-  totalMinutes: number;       // Aufsummierte Zeit
-  sessionCount: number;       // Anzahl Sessions
-  allSynced: boolean;         // Alle Entries synced?
-  hasError: boolean;          // Mindestens ein Fehler?
+  primary: PendingEntry;
+  entries: PendingEntry[];
+  entryIds: string[];
+  totalMinutes: number;
+  sessionCount: number;
+  allSynced: boolean;
+  hasError: boolean;
 }
 
 function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
@@ -570,7 +531,7 @@ function renderPendingList(entries: PendingEntry[]): void {
     return;
   }
 
-  // Expanded-State merken vor Re-Render
+  // Preserve expanded state before re-render
   const expandedGroups = new Set<string>();
   elements.pendingList.querySelectorAll('.session-details-list').forEach(el => {
     if ((el as HTMLElement).style.display !== 'none') {
@@ -636,12 +597,12 @@ function renderPendingList(entries: PendingEntry[]): void {
   `;
   }).join('');
 
+  // Delete all entries in group
   elements.pendingList.querySelectorAll('.pending-entry-delete').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const ids = (btn as HTMLElement).dataset.ids;
       if (ids) {
-        // Alle Entries der Gruppe loeschen
         for (const entryId of ids.split(',')) {
           await deleteEntry(entryId);
         }
@@ -659,7 +620,6 @@ function renderPendingList(entries: PendingEntry[]): void {
     });
   });
 
-  // Klickbare Thumbnails - Video oeffnen
   elements.pendingList.querySelectorAll('.pending-entry-thumb-wrap.clickable').forEach(thumb => {
     thumb.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -670,7 +630,6 @@ function renderPendingList(entries: PendingEntry[]): void {
     });
   });
 
-  // Klickbare Titel - Video oeffnen
   elements.pendingList.querySelectorAll('.pending-entry-title.clickable').forEach(title => {
     title.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -715,6 +674,7 @@ function renderPendingList(entries: PendingEntry[]): void {
     });
   });
 
+  // Restore expanded state after re-render
   expandedGroups.forEach(groupIndex => {
     const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group="${groupIndex}"]`) as HTMLElement;
     const expandBtn = elements.pendingList.querySelector(`.pending-entry-expand[data-group="${groupIndex}"]`) as HTMLElement;
@@ -727,7 +687,6 @@ function renderPendingList(entries: PendingEntry[]): void {
   });
 }
 
-// Pending Entry Titel bearbeiten
 function startPendingEntryTitleEdit(entryId: string): void {
   const editBtn = elements.pendingList.querySelector(`.pending-entry-edit[data-id="${entryId}"]`) as HTMLElement;
   const titleSpan = editBtn?.parentElement?.querySelector('.pending-entry-title') as HTMLElement;
@@ -738,17 +697,14 @@ function startPendingEntryTitleEdit(entryId: string): void {
 
   const currentTitle = titleSpan.textContent || '';
 
-  // Input erstellen
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'pending-entry-title-input';
   input.value = currentTitle;
 
-  // Title und Edit-Button verstecken
   titleSpan.style.display = 'none';
   if (editBtn) editBtn.style.display = 'none';
 
-  // Input einfuegen
   titleRow.insertBefore(input, titleSpan);
   input.focus();
   input.select();
@@ -756,7 +712,7 @@ function startPendingEntryTitleEdit(entryId: string): void {
   const saveEdit = async () => {
     const newTitle = input.value.trim();
     if (newTitle && newTitle !== currentTitle) {
-      // Alle Entry-IDs der Gruppe aktualisieren
+      // Update all entry IDs in the group
       const allIds = titleSpan.dataset.ids?.split(',') || [entryId];
       try {
         for (const id of allIds) {
@@ -767,13 +723,12 @@ function startPendingEntryTitleEdit(entryId: string): void {
           });
         }
         titleSpan.textContent = newTitle;
-        log('[JP343 Popup] Pending Entry Titel aktualisiert:', newTitle, `(${allIds.length} Eintraege)`);
+        log('[JP343 Popup] Pending entry title updated:', newTitle, `(${allIds.length} entries)`);
       } catch (error) {
-        log('[JP343 Popup] Fehler beim Aktualisieren des Titels:', error);
+        log('[JP343 Popup] Failed to update title:', error);
       }
     }
 
-    // Aufraeumen
     input.remove();
     titleSpan.style.display = '';
     if (editBtn) editBtn.style.display = '';
@@ -792,37 +747,10 @@ function startPendingEntryTitleEdit(entryId: string): void {
   });
 }
 
-// HTML escapen
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
-}
-
-// URL-Validierung: Nur https:// URLs erlauben (Fix 1)
-function isValidImageUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function formatSessionDate(isoDate: string): string {
-  try {
-    const date = new Date(isoDate);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch {
-    return '';
-  }
 }
 
 function isSameVideo(url1: string, url2: string): boolean {
@@ -833,7 +761,7 @@ function isSameVideo(url1: string, url2: string): boolean {
     const u1 = new URL(url1);
     const u2 = new URL(url2);
 
-    // YouTube: Video-ID vergleichen
+    // YouTube: compare video ID
     if (u1.hostname.includes('youtube') && u2.hostname.includes('youtube')) {
       const v1 = u1.searchParams.get('v');
       const v2 = u2.searchParams.get('v');
@@ -850,7 +778,6 @@ function isSameVideo(url1: string, url2: string): boolean {
   }
 }
 
-// Entry loeschen
 async function deleteEntry(entryId: string): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({
@@ -859,16 +786,14 @@ async function deleteEntry(entryId: string): Promise<void> {
     });
 
     if (response.success) {
-      // Liste aktualisieren
       await fetchPendingEntries();
       await fetchCurrentState();
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Loeschen:', error);
+    log('[JP343 Popup] Failed to delete:', error);
   }
 }
 
-// Pending Entries laden
 async function fetchPendingEntries(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_PENDING_ENTRIES' });
@@ -877,11 +802,10 @@ async function fetchPendingEntries(): Promise<void> {
       renderPendingList(response.data.entries);
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Laden der Entries:', error);
+    log('[JP343 Popup] Failed to load entries:', error);
   }
 }
 
-// Daten vom Background holen
 async function fetchCurrentState(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_CURRENT_SESSION' });
@@ -895,14 +819,13 @@ async function fetchCurrentState(): Promise<void> {
       updateStatus(session, isAd);
       updateSessionDisplay(session, duration, isAd);
       updateChannelDisplay(session);
-      updateManualTrackDisplay(); // Manual Track Anzeige aktualisieren
+      updateManualTrackDisplay();
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler beim Laden:', error);
+    log('[JP343 Popup] Failed to load:', error);
   }
 }
 
-// Pause/Resume Button Handler
 elements.btnPause.addEventListener('click', async () => {
   if (!currentSession) return;
 
@@ -912,11 +835,10 @@ elements.btnPause.addEventListener('click', async () => {
     await browser.runtime.sendMessage({ type: action });
     await fetchCurrentState();
   } catch (error) {
-    log('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Error:', error);
   }
 });
 
-// Stop Button Handler
 elements.btnStop.addEventListener('click', async () => {
   try {
     const response = await browser.runtime.sendMessage({ type: 'STOP_SESSION' });
@@ -930,53 +852,28 @@ elements.btnStop.addEventListener('click', async () => {
       }
     }
   } catch (error) {
-    log('[JP343 Popup] Fehler:', error);
+    log('[JP343 Popup] Error:', error);
   }
 });
 
-// Dashboard Button Handler
 document.getElementById('btnDashboard')?.addEventListener('click', () => {
   const dashboardUrl = browser.runtime.getURL('dashboard.html');
   browser.tabs.create({ url: dashboardUrl });
   window.close();
 });
 
-// (Sync Now + Clear Synced entfernt — Auto-Sync handled alles)
-
-// STATS BAR
-
-function formatStatDuration(minutes: number): string {
-  const rounded = Math.round(minutes);
-  if (rounded < 60) return `${rounded}m`;
-  const h = Math.floor(rounded / 60);
-  const m = rounded % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
+// --- STATS BAR ---
 
 function renderWeekBars(dailyMinutes: Record<string, number>): void {
   const container = document.getElementById('weekBars');
   if (!container) return;
 
-  const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const todayStr = now.toISOString().split('T')[0];
-
-  const days: { date: string; label: string }[] = [];
-  const dayLabels = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + mondayOffset + i);
-    days.push({ date: d.toISOString().split('T')[0], label: dayLabels[i] });
-  }
-
+  const days = getWeekDates();
   const maxVal = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
 
-  // DOM-Aufbau ohne innerHTML
   container.replaceChildren();
-  for (const { date, label } of days) {
+  for (const { date, label, isToday } of days) {
     const minutes = dailyMinutes[date] || 0;
-    const isToday = date === todayStr;
     const heightPx = minutes > 0 ? Math.max(2, Math.round((minutes / maxVal) * 24)) : 2;
 
     const item = document.createElement('div');
@@ -1043,7 +940,7 @@ async function fetchAndRenderStats(): Promise<void> {
   });
 })();
 
-// Initial laden
+// Init
 loadAndApplySettings();
 loadActiveTabInfo();
 fetchCurrentState();
@@ -1054,7 +951,6 @@ updateInterval = setInterval(fetchCurrentState, 1000);
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
 const statsInterval = setInterval(fetchAndRenderStats, 60000);
 
-// Cleanup beim Schliessen (Fix 15)
 window.addEventListener('unload', () => {
   if (updateInterval) {
     clearInterval(updateInterval);

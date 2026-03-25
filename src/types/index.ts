@@ -1,13 +1,9 @@
-// JP343 Extension - Type Definitionen
-
-// Unterstuetzte Streaming-Plattformen
 export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'generic';
 
-// Video-Status von Content Scripts
 export interface VideoState {
   isPlaying: boolean;
-  currentTime: number;       // Aktuelle Position in Sekunden
-  duration: number;          // Gesamtdauer in Sekunden
+  currentTime: number;
+  duration: number;
   title: string;
   url: string;
   platform: Platform;
@@ -19,22 +15,20 @@ export interface VideoState {
   channelUrl: string | null;
 }
 
-// Aktive Tracking-Session
 export interface TrackingSession {
-  id: string;                // Format: ext_<timestamp>_<random>
+  id: string;
   platform: Platform;
   title: string;
   url: string;
   videoId: string | null;
   tabId: number | null;
-  startTime: number;         // Unix timestamp (ms)
-  accumulatedMs: number;     // Getrackte Zeit (ohne Ads/Pausen)
-  lastUpdate: number;        // Letztes Update timestamp
-  isActive: boolean;         // Laeuft gerade?
-  isPaused: boolean;         // Manuell pausiert?
+  startTime: number;
+  accumulatedMs: number;
+  lastUpdate: number;
+  isActive: boolean;
+  isPaused: boolean;
   thumbnailUrl: string | null;
   titleManuallyEdited?: boolean;
-  // Channel-Informationen
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
@@ -42,25 +36,24 @@ export interface TrackingSession {
 
 export interface PendingEntry {
   id: string;
-  date: string;              // ISO 8601
+  date: string;
   duration_min: number;
-  project: string;           // Anzeigename
-  project_id: string;        // Technische ID
+  project: string;
+  project_id: string;
   platform: Platform;
   source: 'extension';
   url: string;
   thumbnail: string | null;
-  synced: boolean;           // Erfolgreich zu JP343 gesynct?
+  synced: boolean;
   syncedAt: string | null;
-  syncAttempts: number;      // Anzahl Sync-Versuche
-  lastSyncError: string | null; // Letzter Fehler falls Sync fehlschlug
+  syncAttempts: number;
+  lastSyncError: string | null;
   serverEntryId: number | null;
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
 }
 
-// JP343 User State (vom Content Script auf JP343-Seite)
 export interface JP343UserState {
   isLoggedIn: boolean;
   userId: number | null;
@@ -70,39 +63,28 @@ export interface JP343UserState {
   extApiToken: string | null;
 }
 
-// Extension Storage Schema
 export interface ExtensionStorage {
-  // Pending entries waiting for sync
   jp343_extension_pending: PendingEntry[];
-
-  // Current active session (if any)
   jp343_extension_session: TrackingSession | null;
-
-  // Last known JP343 user state
   jp343_extension_user: JP343UserState | null;
-
-  // Settings
   jp343_extension_settings: ExtensionSettings;
-
-  // Lokale Stats (unabhaengig vom Sync)
   jp343_extension_stats: ExtensionStats;
 }
 
 export interface ExtensionSettings {
-  enabled: boolean;           // Globaler On/Off Switch
-  autoSync: boolean;          // Auto-sync beim JP343-Besuch
-  minDurationMinutes: number; // Minimum Dauer (default: 1)
+  enabled: boolean;
+  autoSync: boolean;
+  minDurationMinutes: number;
   enabledPlatforms: Platform[];
   showNotifications: boolean;
-  blockedChannels: BlockedChannel[]; // Blockierte YouTube-Kanaele
+  blockedChannels: BlockedChannel[];
 }
 
-// Blockierter Kanal
 export interface BlockedChannel {
   channelId: string;
   channelName: string;
   channelUrl: string | null;
-  blockedAt: string;          // ISO 8601
+  blockedAt: string;
 }
 
 export type ExtensionMessage =
@@ -139,11 +121,10 @@ export interface DirectSyncResult {
   attempted: number;
   succeeded: number;
   failed: number;
-  noAuth: boolean;       // Kein Nonce vorhanden
+  noAuth: boolean;
   nonceMissing: boolean;
 }
 
-// Response-Typen
 export type ExtensionResponse =
   | { success: true; data?: unknown }
   | { success: false; error: string };
@@ -157,9 +138,9 @@ export interface ActiveTabInfo {
 }
 
 export interface ExtensionStats {
-  totalMinutes: number;                    // Gesamtminuten je getrackt
-  dailyMinutes: Record<string, number>;    // '2026-02-20' → 130
-  lastActiveDate: string;                  // '2026-02-20'
+  totalMinutes: number;
+  dailyMinutes: Record<string, number>;
+  lastActiveDate: string;
   currentStreak: number;
 }
 
@@ -170,7 +151,6 @@ export const DEFAULT_STATS: ExtensionStats = {
   currentStreak: 0
 };
 
-// Default Settings
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
@@ -179,3 +159,11 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   showNotifications: true,
   blockedChannels: []
 };
+
+export const STORAGE_KEYS = {
+  PENDING: 'jp343_extension_pending',
+  SESSION: 'jp343_extension_session',
+  USER: 'jp343_extension_user',
+  SETTINGS: 'jp343_extension_settings',
+  STATS: 'jp343_extension_stats'
+} as const;

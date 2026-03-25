@@ -1,5 +1,3 @@
-// JP343 Extension - Bridge Content Script
-
 import type { JP343UserState } from '../../types';
 
 export default defineContentScript({
@@ -17,11 +15,11 @@ export default defineContentScript({
     const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-    log('[JP343 Bridge] Content Script geladen');
+    log('[JP343 Bridge] Content script loaded');
 
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
-    log('[JP343 Bridge] Extension v' + version + ' signalisiert');
+    log('[JP343 Bridge] Extension v' + version + ' signaled');
 
     function injectUserStateScript(): void {
       const script = document.createElement('script');
@@ -38,7 +36,6 @@ export default defineContentScript({
         try {
           const userData = JSON.parse(dataAttr);
 
-          // ajaxUrl validieren: muss auf jp343.com zeigen
           let validatedAjaxUrl: string | null = null;
           if (userData.ajaxUrl) {
             try {
@@ -50,10 +47,10 @@ export default defineContentScript({
               if (isJp343 || isLocalDev) {
                 validatedAjaxUrl = userData.ajaxUrl;
               } else {
-                log('[JP343 Bridge] Ungueltige ajaxUrl ignoriert:', url.hostname);
+                log('[JP343 Bridge] Invalid ajaxUrl ignored:', url.hostname);
               }
             } catch {
-              log('[JP343 Bridge] ajaxUrl ist keine gueltige URL');
+              log('[JP343 Bridge] ajaxUrl is not a valid URL');
             }
           }
 
@@ -66,7 +63,7 @@ export default defineContentScript({
             extApiToken: userData.extApiToken || null
           };
         } catch (e) {
-          log('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
+          log('[JP343 Bridge] Failed to parse data-jp343-user:', e);
         }
       }
 
@@ -87,9 +84,9 @@ export default defineContentScript({
           type: 'JP343_SITE_LOADED',
           userState
         });
-        log('[JP343 Bridge] User State gemeldet:', userState.isLoggedIn ? 'eingeloggt' : 'nicht eingeloggt');
+        log('[JP343 Bridge] User state reported:', userState.isLoggedIn ? 'logged in' : 'not logged in');
       } catch (_error) {
-        // Extension context ungueltig
+        // Extension context invalidated
       }
     }
 
@@ -132,13 +129,13 @@ export default defineContentScript({
 
         const data = JSON.stringify({ entries, stats });
         document.documentElement.setAttribute('data-jp343-extension-data', data);
-        log('[JP343 Bridge] Extension-Daten bereitgestellt:', entries.length, 'Entries');
+        log('[JP343 Bridge] Extension data provided:', entries.length, 'entries');
       } catch (_error) {
+        // Extension context invalidated
       }
     }
 
     waitForUserStateAndReport();
-
     provideExtensionData();
   }
 });

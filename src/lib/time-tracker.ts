@@ -1,16 +1,13 @@
-// JP343 Extension - Time Tracker Logik
-
 import type { TrackingSession, VideoState, PendingEntry, Platform } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-// Generiert eindeutige Extension-IDs
 function generateId(): string {
   return `ext_${crypto.randomUUID()}`;
 }
 
-function generateProjectId(platform: Platform, title: string, videoId: string | null): string {
+export function generateProjectId(platform: Platform, title: string, videoId: string | null): string {
   const normalized = title
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '_')
@@ -35,12 +32,11 @@ export class TimeTracker {
   startSession(videoState: VideoState, tabId?: number): TrackingSession {
     const now = Date.now();
 
-    // Gleiche URL? Session fortsetzen
+    // Same URL: resume existing session
     if (this.session && this.session.url === videoState.url) {
       this.session.isActive = true;
       this.session.isPaused = false;
       this.session.lastUpdate = now;
-      // TabId aktualisieren falls neu
       if (tabId) this.session.tabId = tabId;
 
       const hadNoChId = this.session.channelId === null;
@@ -53,16 +49,16 @@ export class TimeTracker {
         this.session.channelId = videoState.channelId || null;
         this.session.channelName = videoState.channelName;
         this.session.channelUrl = videoState.channelUrl || null;
-        const reason = chIdChanged ? '(korrigiert)' : gotChId ? '(ID nachgeliefert)' : chNameCorrection ? '(Name korrigiert)' : '(initial)';
-        log('[JP343] Channel bei Session-Fortsetzung aktualisiert:', videoState.channelName, reason);
+        const reason = chIdChanged ? '(corrected)' : gotChId ? '(ID late-delivered)' : chNameCorrection ? '(name corrected)' : '(initial)';
+        log('[JP343] Channel updated on session resume:', videoState.channelName, reason);
       }
 
       if (this.session.thumbnailUrl === null && videoState.thumbnailUrl) {
         this.session.thumbnailUrl = videoState.thumbnailUrl;
-        log('[JP343] Thumbnail bei Session-Fortsetzung aktualisiert');
+        log('[JP343] Thumbnail updated on session resume');
       }
 
-      log('[JP343] Session fortgesetzt:', this.session.title);
+      log('[JP343] Session resumed:', this.session.title);
       return this.session;
     }
 
@@ -83,48 +79,46 @@ export class TimeTracker {
       isActive: true,
       isPaused: false,
       thumbnailUrl: videoState.thumbnailUrl,
-      // Channel-Informationen
       channelId: videoState.channelId || null,
       channelName: videoState.channelName || null,
       channelUrl: videoState.channelUrl || null
     };
 
-    log('[JP343] Neue Session gestartet:', this.session.title);
+    log('[JP343] New session started:', this.session.title);
     return this.session;
   }
 
-  // Pausiert die aktuelle Session
   pauseSession(): void {
     if (this.session && this.session.isActive) {
-      this.tick(); // Letzte Zeit erfassen
+      this.tick();
       this.session.isActive = false;
       this.session.isPaused = true;
-      log('[JP343] Session pausiert');
+      log('[JP343] Session paused');
     }
   }
 
-  // Setzt pausierte Session fort
   resumeSession(): void {
     if (this.session && this.session.isPaused) {
       this.session.isActive = true;
       this.session.isPaused = false;
       this.session.lastUpdate = Date.now();
-      log('[JP343] Session fortgesetzt');
+      log('[JP343] Session resumed');
     }
   }
 
+  // Restore after service worker restart
   restoreSession(saved: TrackingSession): void {
     this.session = {
       ...saved,
       lastUpdate: Date.now()
     };
-    log('[JP343] Session wiederhergestellt:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
+    log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
   }
 
   onAdStart(): void {
     if (!this.isInAd) {
       this.isInAd = true;
-      log('[JP343] Werbung erkannt - Tracking pausiert');
+      log('[JP343] Ad detected - tracking paused');
     }
   }
 
@@ -134,7 +128,7 @@ export class TimeTracker {
       if (this.session) {
         this.session.lastUpdate = Date.now();
       }
-      log('[JP343] Werbung beendet - Tracking fortgesetzt');
+      log('[JP343] Ad ended - tracking resumed');
     }
   }
 
@@ -146,7 +140,6 @@ export class TimeTracker {
     const now = Date.now();
     const delta = now - this.session.lastUpdate;
 
-    // Verhindert Spruenge bei Tab-Wechsel etc.
     if (delta > 0 && delta < 5000) {
       this.session.accumulatedMs += delta;
     }
@@ -159,11 +152,11 @@ export class TimeTracker {
       return null;
     }
 
-    // Letzte Zeit erfassen
     this.tick();
 
+    // Discard sessions shorter than 1 minute
     if (this.session.accumulatedMs < 60000) {
-      log('[JP343] Session zu kurz (<1min), wird verworfen');
+      log('[JP343] Session too short (<1min), discarded');
       this.session = null;
       return null;
     }
@@ -193,13 +186,12 @@ export class TimeTracker {
       channelUrl: this.session.channelUrl
     };
 
-    log('[JP343] Session finalisiert:', durationMinutes, 'Minuten');
+    log('[JP343] Session finalized:', durationMinutes, 'minutes');
 
     this.session = null;
     return entry;
   }
 
-  // Stoppt Session explizit (z.B. via Popup)
   stopSession(): PendingEntry | null {
     return this.finalizeSession();
   }
@@ -208,13 +200,11 @@ export class TimeTracker {
     return this.session;
   }
 
-  // Gibt formatierte aktuelle Dauer zurueck
   getCurrentDuration(): string {
     if (!this.session) {
       return '0m';
     }
 
-    // Live-Berechnung
     let totalMs = this.session.accumulatedMs;
     if (this.session.isActive && !this.isInAd) {
       totalMs += Date.now() - this.session.lastUpdate;
@@ -244,7 +234,7 @@ export class TimeTracker {
     }
     this.session.title = newTitle;
     this.session.titleManuallyEdited = true;
-    log('[JP343] Session-Titel manuell geaendert:', newTitle);
+    log('[JP343] Session title manually changed:', newTitle);
     return true;
   }
 
@@ -253,7 +243,7 @@ export class TimeTracker {
       return false;
     }
     if (this.session.titleManuallyEdited) {
-      log('[JP343] Titel-Update ignoriert (manuell bearbeitet)');
+      log('[JP343] Title update ignored (manually edited)');
       return false;
     }
     this.session.title = newTitle;
@@ -270,6 +260,7 @@ export class TimeTracker {
     const hadNoChannelId = this.session.channelId === null;
     const channelIdChanged = channelId && !hadNoChannelId && this.session.channelId !== channelId;
     const gotNewChannelId = channelId && hadNoChannelId;
+    // when user switches series and DOM was stale
     const nameOnlyCorrection = !channelId && hadNoChannelId
       && channelName && this.session.channelName
       && channelName !== this.session.channelName;
@@ -280,14 +271,14 @@ export class TimeTracker {
       || gotNewChannelId
       || nameOnlyCorrection
     )) {
-      const reason = channelIdChanged ? '(ID korrigiert)'
-        : gotNewChannelId ? '(ID nachgeliefert)'
-        : nameOnlyCorrection ? '(Name korrigiert)'
+      const reason = channelIdChanged ? '(ID corrected)'
+        : gotNewChannelId ? '(ID late-delivered)'
+        : nameOnlyCorrection ? '(name corrected)'
         : '(initial)';
       this.session.channelId = channelId;
       this.session.channelName = channelName;
       this.session.channelUrl = channelUrl;
-      log('[JP343] Channel-Info aktualisiert:', channelName, reason);
+      log('[JP343] Channel info updated:', channelName, reason);
       return true;
     }
     return false;
@@ -304,13 +295,12 @@ export class TimeTracker {
 
     if (this.session.thumbnailUrl === null && thumbnailUrl) {
       this.session.thumbnailUrl = thumbnailUrl;
-      log('[JP343] Thumbnail nachtraeglich gesetzt');
+      log('[JP343] Thumbnail set retroactively');
       return true;
     }
     return false;
   }
 
-  // Cleanup
   destroy(): void {
     if (this.tickInterval) {
       clearInterval(this.tickInterval);

@@ -1,6 +1,4 @@
-// JP343 Extension - Background Service Worker
-
-import { tracker } from '../lib/time-tracker';
+import { tracker, generateProjectId } from '../lib/time-tracker';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -12,22 +10,14 @@ import type {
   VideoState,
   DirectSyncResult
 } from '../types';
-import { DEFAULT_SETTINGS, DEFAULT_STATS } from '../types';
+import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
 
 export default defineBackground(() => {
   const DEBUG_MODE = import.meta.env.DEV;
   const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-  log('[JP343] Background Service Worker gestartet');
+  log('[JP343] Background Service Worker started');
 
-  // Storage Keys
-  const STORAGE_KEYS = {
-    PENDING: 'jp343_extension_pending',
-    SESSION: 'jp343_extension_session',
-    USER: 'jp343_extension_user',
-    SETTINGS: 'jp343_extension_settings',
-    STATS: 'jp343_extension_stats'
-  };
 
   let storageLock = Promise.resolve();
   function withStorageLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -45,7 +35,7 @@ export default defineBackground(() => {
       cachedSettings = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
       return { ...cachedSettings };
     } catch (error) {
-      log('[JP343] Fehler beim Laden der Settings:', error);
+      log('[JP343] Failed to load settings:', error);
       return { ...DEFAULT_SETTINGS };
     }
   }
@@ -55,40 +45,35 @@ export default defineBackground(() => {
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
     } catch (error) {
-      log('[JP343] Fehler beim Speichern der Settings:', error);
+      log('[JP343] Failed to save settings:', error);
     }
   }
 
-  // Pending Entries laden
   async function loadPendingEntries(): Promise<PendingEntry[]> {
     try {
       const result = await browser.storage.local.get(STORAGE_KEYS.PENDING);
       return result[STORAGE_KEYS.PENDING] || [];
     } catch (error) {
-      log('[JP343] Fehler beim Laden der Pending Entries:', error);
+      log('[JP343] Failed to load pending entries:', error);
       return [];
     }
   }
 
-  // Pending Entry speichern
   async function savePendingEntry(entry: PendingEntry): Promise<void> {
     await withStorageLock(async () => {
       try {
         const pending = await loadPendingEntries();
         pending.push(entry);
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
-        log('[JP343] Entry gespeichert. Pending:', pending.length);
-        // Badge aktualisieren
+        log('[JP343] Entry saved. Pending:', pending.length);
         updateBadge(pending.length);
-        // Stats aktualisieren
         await updateStats(entry);
       } catch (error) {
-        log('[JP343] Fehler beim Speichern des Entries:', error);
+        log('[JP343] Failed to save entry:', error);
       }
     });
     scheduleAutoSync();
   }
-
 
   let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -102,12 +87,12 @@ export default defineBackground(() => {
         )[STORAGE_KEYS.USER] ?? null;
 
         if (userState?.isLoggedIn && (userState?.extApiToken || userState?.nonce)) {
-          log('[JP343] Auto-Sync gestartet');
+          log('[JP343] Auto-sync started');
           const result = await syncEntriesDirect();
-          log('[JP343] Auto-Sync Ergebnis:', result.succeeded, 'synced,', result.failed, 'failed');
+          log('[JP343] Auto-sync result:', result.succeeded, 'synced,', result.failed, 'failed');
         }
       } catch (error) {
-        log('[JP343] Auto-Sync Fehler:', error);
+        log('[JP343] Auto-sync error:', error);
       }
     }, 5000);
   }
@@ -128,12 +113,11 @@ export default defineBackground(() => {
         );
         if (cleaned.length < pending.length) {
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: cleaned });
-          log('[JP343] Cleanup: ' + (pending.length - cleaned.length) + ' alte synced Entries entfernt');
+          log('[JP343] Cleanup: ' + (pending.length - cleaned.length) + ' old synced entries removed');
         }
       });
     }
   });
-
 
   async function syncEntriesDirect(): Promise<DirectSyncResult> {
     const userState: JP343UserState | null = (
@@ -200,7 +184,7 @@ export default defineBackground(() => {
         const responseText = await response.text();
         log('[JP343] Sync response for', entry.project, ':', response.status);
 
-        let result: any;
+        let result: { success: boolean; data?: { code?: string; message?: string; entry_id?: number } };
         try {
           result = JSON.parse(responseText);
         } catch {
@@ -220,10 +204,11 @@ export default defineBackground(() => {
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
           });
           succeeded++;
-          log('[JP343] Direct Sync erfolgreich:', entry.project);
+          log('[JP343] Direct sync succeeded:', entry.project);
         } else {
+          // Auth expired — abort remaining entries
           if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce' || result.data?.code === 'invalid_token') {
-            log('[JP343] Direct Sync: Auth abgelaufen/ungueltig, breche ab');
+            log('[JP343] Direct sync: Auth expired/invalid, aborting');
             failed += (unsynced.length - succeeded - failed);
             break;
           }
@@ -250,7 +235,7 @@ export default defineBackground(() => {
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
         });
         failed++;
-        log('[JP343] Direct Sync Fehler:', entry.id, error);
+        log('[JP343] Direct sync error:', entry.id, error);
       }
     }
 
@@ -262,11 +247,9 @@ export default defineBackground(() => {
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SESSION]: session });
     } catch (error) {
-      log('[JP343] Fehler beim Speichern des Session-States:', error);
+      log('[JP343] Failed to save session state:', error);
     }
   }
-
-  // EXTENSION STATS: Lokale Stats unabhaengig vom Sync-Status
 
   async function loadStats(): Promise<ExtensionStats> {
     try {
@@ -280,14 +263,12 @@ export default defineBackground(() => {
   async function updateStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
-      const entryDate = new Date(entry.date).toISOString().split('T')[0]; // '2026-02-20'
+      const entryDate = new Date(entry.date).toISOString().split('T')[0];
       const today = new Date().toISOString().split('T')[0];
 
-      // Minuten addieren
       stats.totalMinutes += entry.duration_min;
       stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
 
-      // Streak berechnen
       if (stats.lastActiveDate !== today) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
@@ -296,12 +277,12 @@ export default defineBackground(() => {
         if (stats.lastActiveDate === yesterdayStr) {
           stats.currentStreak += 1;
         } else if (stats.lastActiveDate !== today) {
-          stats.currentStreak = 1; // Reset
+          stats.currentStreak = 1;
         }
         stats.lastActiveDate = today;
       }
 
-      // Alte Eintraege bereinigen (> 90 Tage)
+      // Prune entries older than 90 days
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = cutoff.toISOString().split('T')[0];
@@ -312,9 +293,9 @@ export default defineBackground(() => {
       }
 
       await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
-      log('[JP343] Stats aktualisiert: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+      log('[JP343] Stats updated: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
     } catch (error) {
-      log('[JP343] Fehler beim Aktualisieren der Stats:', error);
+      log('[JP343] Failed to update stats:', error);
     }
   }
 
@@ -325,6 +306,7 @@ export default defineBackground(() => {
     let streak = 0;
     const checkDate = new Date(today);
 
+    // Walk backwards from today
     for (let i = 0; i < 365; i++) {
       const dateStr = checkDate.toISOString().split('T')[0];
       if ((dailyMinutes[dateStr] || 0) > 0) {
@@ -345,7 +327,6 @@ export default defineBackground(() => {
       const stats = await loadStats();
       const entryDate = new Date(entry.date).toISOString().split('T')[0];
 
-      // Minuten abziehen (nie unter 0)
       stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
       if (stats.dailyMinutes[entryDate]) {
         stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
@@ -356,24 +337,21 @@ export default defineBackground(() => {
 
       stats.currentStreak = recalculateStreak(stats.dailyMinutes);
 
-      // lastActiveDate aktualisieren
+
       const dates = Object.keys(stats.dailyMinutes).sort();
       stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
 
       await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
-      log('[JP343] Stats nach Loeschung: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+      log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
     } catch (error) {
-      log('[JP343] Fehler beim Subtrahieren der Stats:', error);
+      log('[JP343] Failed to subtract stats:', error);
     }
   }
-
-  // STATUS INDICATOR: Visuelles Feedback auf Extension-Icon
 
   const badgeApi = browser.action ?? browser.browserAction;
 
   type TrackingStatus = 'recording' | 'paused' | 'ad' | 'idle';
 
-  // Aktuellen Status ermitteln
   function getCurrentStatus(): TrackingStatus {
     if (tracker.isAdPlaying()) return 'ad';
     const session = tracker.getCurrentSession();
@@ -389,16 +367,15 @@ export default defineBackground(() => {
     if (badgeUpdateTimer) return;
     badgeUpdateTimer = setTimeout(async () => {
       badgeUpdateTimer = null;
-      await _doUpdateStatusBadge();
+      await updateStatusBadge();
     }, 500);
   }
 
-  async function _doUpdateStatusBadge(): Promise<void> {
-    // Pruefen ob Tracking aktiviert ist
+  async function updateStatusBadge(): Promise<void> {
     const settings = await loadSettings();
     if (!settings.enabled) {
       badgeApi.setBadgeText({ text: 'OFF' });
-      badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
+      badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
       badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
       return;
     }
@@ -409,22 +386,20 @@ export default defineBackground(() => {
 
     switch (status) {
       case 'recording':
-        // Gruen mit Record-Symbol
         badgeApi.setBadgeText({ text: '●' });
-        badgeApi.setBadgeBackgroundColor({ color: '#22c55e' }); // Green
+        badgeApi.setBadgeBackgroundColor({ color: '#22c55e' });
         badgeApi.setTitle({ title: 'jp343 - Recording...' });
         break;
 
       case 'paused':
-        // Orange mit Pause-Symbol
         badgeApi.setBadgeText({ text: '❚❚' });
-        badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' }); // Amber
+        badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' });
         badgeApi.setTitle({ title: 'jp343 - Paused' });
         break;
 
       case 'ad':
         badgeApi.setBadgeText({ text: 'AD' });
-        badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
+        badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
         badgeApi.setTitle({ title: 'jp343 - Ad playing (not tracking)' });
         break;
 
@@ -440,10 +415,8 @@ export default defineBackground(() => {
     scheduleStatusBadgeUpdate();
   }
 
-  // Initiales Badge-Update
   scheduleStatusBadgeUpdate();
 
-  // Message Handler
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
     handleMessage(message, sender).then(sendResponse);
     return true; // Async response
@@ -453,7 +426,6 @@ export default defineBackground(() => {
     message: ExtensionMessage,
     _sender: browser.Runtime.MessageSender
   ): Promise<unknown> {
-    // Message-Validierung
     if (!message || typeof message.type !== 'string') {
       return { success: false, error: 'Invalid message format' };
     }
@@ -461,18 +433,16 @@ export default defineBackground(() => {
     try {
     switch (message.type) {
       case 'VIDEO_PLAY': {
-        // Pruefen ob Tracking aktiviert ist
         const settings = await loadSettings();
         if (!settings.enabled) {
-          log('[JP343] Tracking deaktiviert - ignoriere VIDEO_PLAY');
+          log('[JP343] Tracking disabled - ignoring VIDEO_PLAY');
           return { success: true, skipped: true };
         }
 
         if ('state' in message && message.state && typeof message.state === 'object') {
-          // Pruefen ob Kanal blockiert ist
           const channelId = message.state.channelId;
           if (channelId && settings.blockedChannels.some(c => c.channelId === channelId)) {
-            log('[JP343] Kanal blockiert - ignoriere VIDEO_PLAY:', channelId);
+            log('[JP343] Channel blocked - ignoring VIDEO_PLAY:', channelId);
             return { success: true, skipped: true, blocked: true };
           }
 
@@ -481,17 +451,16 @@ export default defineBackground(() => {
             const previousEntry = tracker.finalizeSession();
             if (previousEntry) {
               await savePendingEntry(previousEntry);
-              log('[JP343] Vorherige Session gespeichert bei Video-Wechsel:', previousEntry.project, previousEntry.duration_min, 'min');
+              log('[JP343] Previous session saved on video switch:', previousEntry.project, previousEntry.duration_min, 'min');
             }
           }
 
-          // vom letzten Entry mit gleicher project_id uebernehmen
           if (!message.state.thumbnailUrl) {
             const pending = await loadPendingEntries();
             for (let i = pending.length - 1; i >= 0; i--) {
               if (pending[i].thumbnail && pending[i].url === message.state.url) {
                 message.state.thumbnailUrl = pending[i].thumbnail;
-                log('[JP343] Thumbnail von vorherigem Entry uebernommen');
+                log('[JP343] Thumbnail carried over from previous entry');
                 break;
               }
             }
@@ -500,7 +469,7 @@ export default defineBackground(() => {
           const tabId = ('tabId' in message ? message.tabId : undefined) || _sender.tab?.id;
           const session = tracker.startSession(message.state, tabId);
           await saveSessionState(session);
-          scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+          scheduleStatusBadgeUpdate();
         }
         return { success: true };
       }
@@ -509,7 +478,7 @@ export default defineBackground(() => {
         tracker.pauseSession();
         const session = tracker.getCurrentSession();
         await saveSessionState(session);
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        scheduleStatusBadgeUpdate();
         return { success: true };
       }
 
@@ -519,25 +488,25 @@ export default defineBackground(() => {
           await savePendingEntry(entry);
         }
         await saveSessionState(null);
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        scheduleStatusBadgeUpdate();
         return { success: true, saved: !!entry };
       }
 
       case 'AD_START': {
         tracker.onAdStart();
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        scheduleStatusBadgeUpdate();
         return { success: true };
       }
 
       case 'AD_END': {
         tracker.onAdEnd();
-        scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+        scheduleStatusBadgeUpdate();
         return { success: true };
       }
 
       case 'VIDEO_STATE_UPDATE': {
-        // Session laeuft weiter, nur State-Update
         if ('state' in message && message.state && typeof message.state === 'object') {
+          // Only update title if not manually edited
           if (message.state.title) {
             tracker.updateSessionTitleFromAutoFetch(message.state.title);
           }
@@ -557,7 +526,7 @@ export default defineBackground(() => {
           if (message.state.channelId) {
             const settings = await loadSettings();
             if (settings.blockedChannels.some(c => c.channelId === message.state.channelId)) {
-              log('[JP343] Kanal blockiert bei STATE_UPDATE - stoppe Session:', message.state.channelId);
+              log('[JP343] Channel blocked on STATE_UPDATE - stopping session:', message.state.channelId);
               tracker.stopSession();
               await saveSessionState(null);
               scheduleStatusBadgeUpdate();
@@ -593,7 +562,7 @@ export default defineBackground(() => {
         if (sessionBeforeStop?.tabId) {
           try {
             await browser.tabs.sendMessage(sessionBeforeStop.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* Tab existiert evtl. nicht mehr */ }
+          } catch { /* tab may no longer exist */ }
         }
         const entry = tracker.stopSession();
         if (entry) {
@@ -605,12 +574,11 @@ export default defineBackground(() => {
       }
 
       case 'PAUSE_SESSION': {
-        // Video im Tab pausieren
         const sessionToPause = tracker.getCurrentSession();
         if (sessionToPause?.tabId) {
           try {
             await browser.tabs.sendMessage(sessionToPause.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* Tab existiert evtl. nicht mehr — manuelles Tracking hat kein Video */ }
+          } catch { /* tab may no longer exist — manual tracking has no video */ }
         }
         tracker.pauseSession();
         const pausedSession = tracker.getCurrentSession();
@@ -622,11 +590,10 @@ export default defineBackground(() => {
       case 'RESUME_SESSION': {
         tracker.resumeSession();
         const resumedSession = tracker.getCurrentSession();
-        // Video im Tab fortsetzen
         if (resumedSession?.tabId) {
           try {
             await browser.tabs.sendMessage(resumedSession.tabId, { type: 'RESUME_VIDEO' });
-          } catch { /* Tab existiert evtl. nicht mehr */ }
+          } catch { /* tab may no longer exist */ }
         }
         await saveSessionState(resumedSession);
         scheduleStatusBadgeUpdate();
@@ -634,12 +601,18 @@ export default defineBackground(() => {
       }
 
       case 'JP343_SITE_LOADED': {
-        // JP343 Seite geladen - User State speichern
         if ('userState' in message) {
-          await browser.storage.local.set({
-            [STORAGE_KEYS.USER]: message.userState
-          });
-          log('[JP343] User State aktualisiert:', message.userState?.isLoggedIn);
+          const newState = message.userState;
+          const existing = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] ?? null;
+          const merged = {
+            ...newState,
+            extApiToken: newState?.extApiToken || existing?.extApiToken || null,
+          };
+          if (!merged.isLoggedIn && merged.extApiToken) {
+            merged.isLoggedIn = true;
+          }
+          await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
+          log('[JP343] User state updated:', merged.isLoggedIn);
         }
         return { success: true };
       }
@@ -705,12 +678,12 @@ export default defineBackground(() => {
             const entry = tracker.finalizeSession();
             if (entry) {
               await savePendingEntry(entry);
-              log('[JP343] Aktive Session finalisiert bei Deaktivierung');
+              log('[JP343] Active session finalized on disable');
             }
             await saveSessionState(null);
 
             badgeApi.setBadgeText({ text: 'OFF' });
-            badgeApi.setBadgeBackgroundColor({ color: '#6b7280' }); // Gray
+            badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
             badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
           } else {
             scheduleStatusBadgeUpdate();
@@ -725,16 +698,15 @@ export default defineBackground(() => {
       case 'BLOCK_CHANNEL': {
         if ('channel' in message && message.channel) {
           const settings = await loadSettings();
-          // Pruefen ob bereits blockiert
           if (!settings.blockedChannels.some(c => c.channelId === message.channel.channelId)) {
             settings.blockedChannels.push(message.channel);
             await saveSettings(settings);
-            log('[JP343] Kanal blockiert:', message.channel.channelName);
+            log('[JP343] Channel blocked:', message.channel.channelName);
           }
 
           const currentSession = tracker.getCurrentSession();
           if (currentSession && currentSession.channelId === message.channel.channelId) {
-            log('[JP343] Aktive Session fuer geblockten Kanal gestoppt:', message.channel.channelName);
+            log('[JP343] Active session stopped for blocked channel:', message.channel.channelName);
             tracker.stopSession();
             await saveSessionState(null);
             scheduleStatusBadgeUpdate();
@@ -753,7 +725,7 @@ export default defineBackground(() => {
             c => c.channelId !== message.channelId
           );
           await saveSettings(settings);
-          log('[JP343] Kanal entblockiert:', message.channelId);
+          log('[JP343] Channel unblocked:', message.channelId);
           return { success: true, removed: before > settings.blockedChannels.length };
         }
         return { success: false, error: 'No channelId provided' };
@@ -781,7 +753,7 @@ export default defineBackground(() => {
           if (updated) {
             const session = tracker.getCurrentSession();
             await saveSessionState(session);
-            log('[JP343] Session-Titel aktualisiert:', message.title);
+            log('[JP343] Session title updated:', message.title);
             return { success: true };
           }
           return { success: false, error: 'No active session' };
@@ -800,7 +772,7 @@ export default defineBackground(() => {
               return e;
             });
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-            log('[JP343] Pending Entry Titel aktualisiert:', message.title);
+            log('[JP343] Pending entry title updated:', message.title);
             return { success: true };
           });
         }
@@ -833,7 +805,6 @@ export default defineBackground(() => {
         ];
         const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
 
-        // Domain extrahieren
         let domain = '';
         try {
           domain = new URL(tab.url).hostname.replace(/^www\./, '');
@@ -852,7 +823,6 @@ export default defineBackground(() => {
       }
 
       case 'MANUAL_TRACK_START': {
-        // Manuelles Tracking starten
         const settings = await loadSettings();
         if (!settings.enabled) {
           return { success: false, error: 'Tracking disabled' };
@@ -862,12 +832,13 @@ export default defineBackground(() => {
           return { success: false, error: 'Missing required fields' };
         }
 
+        // Save previous session if one exists
         const currentSession = tracker.getCurrentSession();
         if (currentSession) {
           const previousEntry = tracker.finalizeSession();
           if (previousEntry) {
             await savePendingEntry(previousEntry);
-            log('[JP343] Vorherige Session gespeichert:', previousEntry.project);
+            log('[JP343] Previous session saved:', previousEntry.project);
           }
         }
 
@@ -890,7 +861,7 @@ export default defineBackground(() => {
         await saveSessionState(session);
         scheduleStatusBadgeUpdate();
 
-        log('[JP343] Manual Tracking gestartet:', message.title);
+        log('[JP343] Manual tracking started:', message.title);
         return { success: true, data: { session } };
       }
 
@@ -898,7 +869,7 @@ export default defineBackground(() => {
         const stats = await loadStats();
 
         const now = new Date();
-        const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
+        const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
         const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
         const monday = new Date(now);
         monday.setDate(now.getDate() + mondayOffset);
@@ -939,7 +910,7 @@ export default defineBackground(() => {
 
       case 'RESET_STATS': {
         await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
-        log('[JP343] Stats zurueckgesetzt');
+        log('[JP343] Stats reset');
         return { success: true };
       }
 
@@ -947,12 +918,12 @@ export default defineBackground(() => {
         return { success: false, error: 'Unknown message type' };
     }
     } catch (error) {
-      log('[JP343] Fehler in handleMessage:', message.type, error);
+      log('[JP343] Error in handleMessage:', message.type, error);
       return { success: false, error: 'Internal error' };
     }
   }
 
-  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 Stunden
+  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
 
   const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
@@ -977,38 +948,29 @@ export default defineBackground(() => {
     if (!savedSession) return;
 
     if (!isValidSavedSession(savedSession)) {
-      log('[JP343] Recovery: Ungueltige Session-Daten, wird verworfen');
+      log('[JP343] Recovery: Invalid session data, discarding');
       await saveSessionState(null);
       return;
     }
 
     const sessionAge = Date.now() - savedSession.lastUpdate;
 
-    // Session bleibt in Storage als Backup
     if (sessionAge < MAX_RESTORE_AGE_MS) {
       tracker.restoreSession(savedSession);
-      log('[JP343] Recovery: Session wiederhergestellt (Alter:', Math.round(sessionAge / 1000), 's)');
+      log('[JP343] Recovery: Session restored (age:', Math.round(sessionAge / 1000), 's)');
       scheduleStatusBadgeUpdate();
       return;
     }
 
     if (savedSession.accumulatedMs < 60000) {
-      log('[JP343] Recovery: Session zu kurz (<1min), wird verworfen');
+      log('[JP343] Recovery: Session too short (<1min), discarding');
       await saveSessionState(null);
       return;
     }
 
     const durationMinutes = savedSession.accumulatedMs / 60000;
 
-    // generateProjectId Logik replizieren
-    const normalized = savedSession.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '_')
-      .replace(/_+/g, '_')
-      .slice(0, 30);
-    const projectId = savedSession.videoId
-      ? `ext_${savedSession.platform}_${savedSession.videoId}`
-      : `ext_${savedSession.platform}_${normalized}`;
+    const projectId = generateProjectId(savedSession.platform, savedSession.title, savedSession.videoId);
 
     const entry: PendingEntry = {
       id: savedSession.id,
@@ -1031,9 +993,9 @@ export default defineBackground(() => {
 
     await savePendingEntry(entry);
     await saveSessionState(null);
-    log('[JP343] Recovery: Vorherige Session gerettet:', entry.project, durationMinutes, 'min');
+    log('[JP343] Recovery: Previous session recovered:', entry.project, durationMinutes, 'min');
     } catch (error) {
-      log('[JP343] Fehler bei Session Recovery:', error);
+      log('[JP343] Error during session recovery:', error);
       await saveSessionState(null);
     }
   }
@@ -1047,10 +1009,10 @@ export default defineBackground(() => {
       const session = tracker.getCurrentSession();
       if (session) {
         await saveSessionState(session);
-        log('[JP343] Periodic save - Session gesichert:', session.title, Math.round(session.accumulatedMs / 1000), 's');
+        log('[JP343] Periodic save - Session saved:', session.title, Math.round(session.accumulatedMs / 1000), 's');
 
         if (session.isPaused && (Date.now() - session.lastUpdate) > MAX_RESTORE_AGE_MS) {
-          log('[JP343] Stale Session erkannt (>4h pausiert) - finalisiere');
+          log('[JP343] Stale session detected (>4h paused) - finalizing');
           const entry = tracker.finalizeSession();
           if (entry) {
             await savePendingEntry(entry);
@@ -1065,22 +1027,19 @@ export default defineBackground(() => {
     }
   });
 
-
-  // Tab geschlossen -> Session speichern
   browser.tabs.onRemoved.addListener(async (tabId) => {
     const session = tracker.getCurrentSession();
     if (session && session.tabId === tabId) {
-      log('[JP343] Tab geschlossen - speichere Session');
+      log('[JP343] Tab closed - saving session');
       const entry = tracker.finalizeSession();
       if (entry) {
         await savePendingEntry(entry);
       }
       await saveSessionState(null);
-      scheduleStatusBadgeUpdate(); // Status-Icon aktualisieren
+      scheduleStatusBadgeUpdate();
     }
   });
 
-  // URL geaendert -> Pruefen ob Session beendet werden soll
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo, _tab) => {
     if (!changeInfo.url) return;
 
@@ -1092,7 +1051,7 @@ export default defineBackground(() => {
         const sessionDomain = new URL(session.url).hostname;
         const newDomain = new URL(changeInfo.url).hostname;
         if (sessionDomain !== newDomain) {
-          log('[JP343] Domain gewechselt - speichere manuelle Session');
+          log('[JP343] Domain changed - saving manual session');
           const entry = tracker.finalizeSession();
           if (entry) {
             await savePendingEntry(entry);
@@ -1100,12 +1059,14 @@ export default defineBackground(() => {
           await saveSessionState(null);
           scheduleStatusBadgeUpdate();
         } else {
+          // Same domain — keep session, update URL
           tracker.updateSessionUrl(changeInfo.url);
           const updatedSession = tracker.getCurrentSession();
           await saveSessionState(updatedSession);
-          log('[JP343] Navigation innerhalb Domain - Session laeuft weiter');
+          log('[JP343] Navigation within domain - session continues');
         }
       } catch {
+        // URL parsing failed — end session to be safe
         const entry = tracker.finalizeSession();
         if (entry) {
           await savePendingEntry(entry);
@@ -1123,7 +1084,7 @@ export default defineBackground(() => {
       };
       const samePlatform = platformDomains[session.platform]?.test(changeInfo.url);
       if (!samePlatform) {
-        log('[JP343] Navigation weg von Plattform - speichere Session');
+        log('[JP343] Navigated away from platform - saving session');
         const entry = tracker.finalizeSession();
         if (entry) {
           await savePendingEntry(entry);

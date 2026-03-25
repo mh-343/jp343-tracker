@@ -1,27 +1,53 @@
 
 import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } from '../../types';
-import { DEFAULT_STATS } from '../../types';
+import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { formatStatDuration, formatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
-
-const STORAGE_KEYS = {
-  PENDING: 'jp343_extension_pending',
-  STATS: 'jp343_extension_stats',
-  USER: 'jp343_extension_user',
-  SESSION: 'jp343_extension_session'
-};
 
 const AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 
+interface ServerStatsResponse {
+  total_seconds?: number;
+  week_seconds?: number;
+  today_seconds?: number;
+  streak?: number;
+  daily_avg_seconds?: number;
+  daily_minutes?: Record<string, number>;
+}
+
+interface ServerSession {
+  id: number | string;
+  project_id?: string;
+  project_name?: string;
+  title?: string;
+  icon?: string;
+  color?: string;
+  image?: string;
+  platform?: string;
+  duration_minutes?: number;
+  minutes?: number;
+  duration_seconds?: number;
+  logged_at?: string;
+  date?: string;
+  relative?: string;
+  notes?: string;
+  has_notes?: boolean;
+  resource_url?: string;
+  url?: string;
+}
+
 let sessionDisplayCount = 20;
+
+let _localDailyMinutes: Record<string, number> = {};
 
 const platformIcons: Record<string, string> = {
   youtube: '▶',
   netflix: 'N',
   crunchyroll: 'C',
+  primevideo: 'P',
+  disneyplus: 'D',
+  cijapanese: '漢',
   generic: '⏵'
 };
-
-// Daten laden
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -45,8 +71,6 @@ async function loadData(): Promise<DashboardData> {
     activeSession: result[STORAGE_KEYS.SESSION] || null
   };
 }
-
-// Auth: Login, Nonce Refresh, Logout
 
 async function ajaxPost(action: string, params: Record<string, string> = {}): Promise<any> {
   const body = new URLSearchParams({ action, ...params });
@@ -90,7 +114,7 @@ async function doLogin(email: string, password: string): Promise<{ success: bool
 
     const text = await response.text();
 
-    let result: any;
+    let result: { success: boolean; data?: Record<string, unknown> };
     try {
       result = JSON.parse(text);
     } catch {
@@ -113,12 +137,11 @@ async function doLogin(email: string, password: string): Promise<{ success: bool
 
       try {
         await browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' });
-      } catch { /* Sync-Fehler nicht Login-blockierend */ }
+      } catch { /* Sync failure must not block login */ }
 
       return { success: true, userState };
     }
 
-    // Server-Fehlermeldung extrahieren
     const msg = result.data?.message || (typeof result.data === 'string' ? result.data : null) || 'Login failed';
     return { success: false, error: msg };
   } catch (e) {
@@ -136,7 +159,7 @@ async function doLogout(): Promise<void> {
   setTimeout(() => { isLoggingOut = false; }, 2000);
 }
 
-async function fetchServerStats(userState: JP343UserState): Promise<Record<string, any> | null> {
+async function fetchServerStats(userState: JP343UserState): Promise<ServerStatsResponse | null> {
   if (userState.extApiToken) {
     try {
       const result = await ajaxPost('jp343_extension_get_time_stats', {
@@ -154,15 +177,25 @@ async function fetchServerStats(userState: JP343UserState): Promise<Record<strin
   return null;
 }
 
-async function fetchServerSessions(userState: JP343UserState, limit = 20): Promise<any[] | null> {
-  // Token-Pfad
+function normalizeServerSessions(raw: ServerSession[]): ServerSession[] {
+  return raw.map(s => ({
+    ...s,
+    title: s.title || s.project_name || 'Session',
+    date: s.date || s.logged_at || '',
+    duration_seconds: s.duration_seconds ?? (s.duration_minutes ?? s.minutes ?? 0) * 60,
+    url: s.resource_url || s.url || undefined,
+  }));
+}
+
+// Fetch sessions via token or cookies
+async function fetchServerSessions(userState: JP343UserState, limit = 20): Promise<ServerSession[] | null> {
   if (userState.extApiToken) {
     try {
       const result = await ajaxPost('jp343_extension_get_recent_sessions', {
         ext_api_token: userState.extApiToken,
         limit: String(limit)
       });
-      if (result.success && result.data?.sessions) return result.data.sessions;
+      if (result.success && result.data?.sessions) return normalizeServerSessions(result.data.sessions);
     } catch {}
   }
   if (userState.nonce) {
@@ -171,7 +204,7 @@ async function fetchServerSessions(userState: JP343UserState, limit = 20): Promi
         nonce: userState.nonce,
         limit: String(limit)
       });
-      if (result.success && result.data?.sessions) return result.data.sessions;
+      if (result.success && result.data?.sessions) return normalizeServerSessions(result.data.sessions);
     } catch {}
   }
   return null;
@@ -221,7 +254,7 @@ async function doRegister(email: string, password: string): Promise<{ success: b
 
     const text = await response.text();
 
-    let result: any;
+    let result: { success: boolean; data?: Record<string, unknown> };
     try { result = JSON.parse(text); } catch {
       return { success: false, error: `Server returned non-JSON (${response.status})` };
     }
@@ -240,6 +273,7 @@ async function doRegister(email: string, password: string): Promise<{ success: b
         jp343_extension_display_name: result.data.displayName || null
       });
 
+      // Auto-sync after registration
       try {
         await browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' });
       } catch {}
@@ -262,7 +296,6 @@ function setupAuthUI(): void {
   const loginDrawer = document.getElementById('loginDrawer');
   const registerDrawer = document.getElementById('registerDrawer');
 
-  // Toggle Login-Drawer
   toggleLoginBtn?.addEventListener('click', () => {
     registerDrawer?.classList.remove('open');
     loginDrawer?.classList.toggle('open');
@@ -280,7 +313,6 @@ function setupAuthUI(): void {
     }
   });
 
-  // Login Submit
   loginForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const emailInput = document.getElementById('loginEmail') as HTMLInputElement;
@@ -303,7 +335,6 @@ function setupAuthUI(): void {
     }
   });
 
-  // Register Submit
   registerForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const emailInput = document.getElementById('regEmail') as HTMLInputElement;
@@ -335,8 +366,6 @@ function setupAuthUI(): void {
   logoutBtn?.addEventListener('click', doLogout);
 }
 
-// Hero Stats
-
 function renderStats(stats: ExtensionStats): void {
   const todayStr = getLocalDateString();
   const todayMin = stats.dailyMinutes[todayStr] || 0;
@@ -356,10 +385,8 @@ function renderStats(stats: ExtensionStats): void {
   setText('statStreak', `${stats.currentStreak}d`);
   renderHeroTime(stats.totalMinutes);
 
-  // Durchschnitte berechnen
   const activeDays = Object.values(stats.dailyMinutes).filter(m => m > 0).length;
   if (activeDays > 0) {
-    // Daily Avg: Gesamtzeit / aktive Tage
     const dailyAvg = stats.totalMinutes / activeDays;
     setText('statDailyAvg', formatStatDuration(Math.round(dailyAvg)));
 
@@ -386,7 +413,6 @@ function renderStats(stats: ExtensionStats): void {
       setText('statMonthlyAvg', formatStatDuration(Math.round(stats.totalMinutes / activeMonths.size)));
     }
 
-    // Best Day
     const bestDay = Math.max(...Object.values(stats.dailyMinutes));
     if (bestDay > 0) {
       setText('statBestDay', formatStatDuration(Math.round(bestDay)));
@@ -394,44 +420,104 @@ function renderStats(stats: ExtensionStats): void {
   }
 }
 
-// Activity Heatmap (90 Tage)
-
 function renderHeatmap(dailyMinutes: Record<string, number>): void {
   const container = document.getElementById('heatmap');
   if (!container) return;
   container.textContent = '';
 
   const today = new Date();
-  // 91 Tage (13 Wochen): Grid rows=7 (Mo-So), auto-flow column
-  const todayDayOfWeek = (today.getDay() + 6) % 7; // 0=Mo
-  const startOffset = 90 + todayDayOfWeek;
+  const todayDayOfWeek = (today.getDay() + 6) % 7; // 0=Mon
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const WEEKS = 52;
 
-  for (let i = startOffset; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
+  // Build 52 weeks with Monday as start day
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - todayDayOfWeek - 51 * 7);
 
-    if (d > today) {
-      const filler = document.createElement('div');
-      filler.className = 'heatmap-cell';
-      filler.style.visibility = 'hidden';
-      container.appendChild(filler);
-      continue;
+  const allWeeks: { date: Date; dateStr: string }[][] = [];
+  for (let w = 0; w < WEEKS; w++) {
+    const week: { date: Date; dateStr: string }[] = [];
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + w * 7 + d);
+      week.push({ date, dateStr: getLocalDateString(date) });
     }
-
-    const dateStr = getLocalDateString(d);
-    const minutes = dailyMinutes[dateStr] || 0;
-
-    const cell = document.createElement('div');
-    cell.className = 'heatmap-cell';
-    const level = minutes === 0 ? 0 : minutes < 30 ? 1 : minutes < 60 ? 2 : minutes < 120 ? 3 : 4;
-    cell.dataset.level = String(level);
-    cell.title = `${dateStr}: ${formatStatDuration(minutes)}`;
-    cell.setAttribute('aria-label', `${dateStr}: ${formatStatDuration(minutes)}`);
-    container.appendChild(cell);
+    allWeeks.push(week);
   }
-}
 
-// Week Bars
+  // Group weeks by month of their Monday
+  const groupMap = new Map<string, { label: string; weeks: typeof allWeeks }>();
+  allWeeks.forEach(week => {
+    const mon = week[0].date;
+    const key = `${mon.getFullYear()}-${mon.getMonth()}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { label: MONTH_NAMES[mon.getMonth()], weeks: [] });
+    }
+    groupMap.get(key)!.weeks.push(week);
+  });
+
+  const body = document.createElement('div');
+  body.className = 'heatmap-body';
+
+  const dayLabelsEl = document.createElement('div');
+  dayLabelsEl.className = 'heatmap-day-labels';
+  dayLabelsEl.appendChild(document.createElement('span'));
+  ['Mo', '', 'Mi', '', 'Fr', '', ''].forEach(label => {
+    const span = document.createElement('span');
+    span.textContent = label;
+    dayLabelsEl.appendChild(span);
+  });
+  dayLabelsEl.appendChild(document.createElement('span'));
+
+  const monthsRow = document.createElement('div');
+  monthsRow.className = 'heatmap-months-row';
+
+  groupMap.forEach(({ label, weeks }) => {
+    const group = document.createElement('div');
+    group.className = 'heatmap-month-group';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'heatmap-month-label';
+    labelEl.textContent = label;
+
+    const grid = document.createElement('div');
+    grid.className = 'heatmap-month-grid';
+
+    let activeDays = 0;
+
+    weeks.forEach(week => {
+      week.forEach(({ date, dateStr }) => {
+        const cell = document.createElement('div');
+        cell.className = 'heatmap-cell';
+        if (date > today) {
+          cell.style.visibility = 'hidden';
+        } else {
+          const minutes = dailyMinutes[dateStr] || 0;
+          if (minutes > 0) activeDays++;
+          const level = minutes === 0 ? 0 : minutes < 30 ? 1 : minutes < 60 ? 2 : minutes < 120 ? 3 : 4;
+          cell.dataset.level = String(level);
+          cell.title = `${dateStr}: ${formatStatDuration(minutes)}`;
+          cell.setAttribute('aria-label', `${dateStr}: ${formatStatDuration(minutes)}`);
+        }
+        grid.appendChild(cell);
+      });
+    });
+
+    const activeEl = document.createElement('span');
+    activeEl.className = 'heatmap-month-active' + (activeDays > 0 ? ' has-data' : '');
+    activeEl.textContent = activeDays > 0 ? `${activeDays}d` : '';
+    activeEl.title = activeDays > 0 ? `${activeDays} active days` : 'No activity';
+
+    group.appendChild(labelEl);
+    group.appendChild(grid);
+    group.appendChild(activeEl);
+    monthsRow.appendChild(group);
+  });
+
+  body.appendChild(dayLabelsEl);
+  body.appendChild(monthsRow);
+  container.appendChild(body);
+}
 
 function renderWeekBars(dailyMinutes: Record<string, number>): void {
   const container = document.getElementById('weekBars');
@@ -441,9 +527,11 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
   const days = getWeekDates();
   const maxMin = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
 
+  const BAR_MAX_PX = 64;
+
   for (const day of days) {
     const min = dailyMinutes[day.date] || 0;
-    const heightPct = Math.max(2, (min / maxMin) * 100);
+    const heightPx = Math.max(2, Math.round((min / maxMin) * BAR_MAX_PX));
 
     const col = document.createElement('div');
     col.className = 'week-bar-col';
@@ -454,7 +542,7 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
 
     const bar = document.createElement('div');
     bar.className = `week-bar${day.isToday ? ' today' : ''}`;
-    bar.style.height = `${heightPct}%`;
+    bar.style.height = `${heightPx}px`;
 
     const label = document.createElement('div');
     label.className = 'week-bar-label';
@@ -467,8 +555,6 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
   }
 }
 
-// Monthly Overview
-
 function renderMonthBars(dailyMinutes: Record<string, number>): void {
   const container = document.getElementById('monthBars');
   if (!container) return;
@@ -478,14 +564,13 @@ function renderMonthBars(dailyMinutes: Record<string, number>): void {
   const months: { key: string; label: string; minutes: number; isCurrent: boolean }[] = [];
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-  // Letzte 6 Monate (inkl. aktueller)
+  // Last 6 months including current
   for (let i = 5; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const year = d.getFullYear();
     const month = d.getMonth();
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
 
-    // Alle Tage dieses Monats summieren
     let total = 0;
     for (const [date, min] of Object.entries(dailyMinutes)) {
       if (date.startsWith(prefix)) total += min;
@@ -501,8 +586,10 @@ function renderMonthBars(dailyMinutes: Record<string, number>): void {
 
   const maxMin = Math.max(1, ...months.map(m => m.minutes));
 
+  const BAR_MAX_PX = 64;
+
   for (const month of months) {
-    const heightPct = Math.max(2, (month.minutes / maxMin) * 100);
+    const heightPx = Math.max(2, Math.round((month.minutes / maxMin) * BAR_MAX_PX));
 
     const col = document.createElement('div');
     col.className = 'month-bar-col';
@@ -513,7 +600,7 @@ function renderMonthBars(dailyMinutes: Record<string, number>): void {
 
     const bar = document.createElement('div');
     bar.className = `month-bar${month.isCurrent ? ' current' : ''}`;
-    bar.style.height = `${heightPct}%`;
+    bar.style.height = `${heightPx}px`;
 
     const label = document.createElement('div');
     label.className = 'month-bar-label';
@@ -525,8 +612,6 @@ function renderMonthBars(dailyMinutes: Record<string, number>): void {
     container.appendChild(col);
   }
 }
-
-// Session History
 
 function renderSessions(entries: PendingEntry[]): void {
   const container = document.getElementById('sessionList');
@@ -557,7 +642,6 @@ function renderSessions(entries: PendingEntry[]): void {
     const item = document.createElement('div');
     item.className = 'session-item';
 
-    // Thumbnail
     if (entry.thumbnail && isValidImageUrl(entry.thumbnail)) {
       const img = document.createElement('img');
       img.className = 'session-thumb';
@@ -572,14 +656,13 @@ function renderSessions(entries: PendingEntry[]): void {
       item.appendChild(ph);
     }
 
-    // Info
     const info = document.createElement('div');
     info.className = 'session-info';
 
-    const title = document.createElement('div');
-    title.className = 'session-title';
-    title.textContent = entry.project;
-    info.appendChild(title);
+    const titleEl = entry.url
+      ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = entry.project; a.href = entry.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
+      : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = entry.project; return d; })();
+    info.appendChild(titleEl);
 
     const meta = document.createElement('div');
     meta.className = 'session-meta';
@@ -596,13 +679,11 @@ function renderSessions(entries: PendingEntry[]): void {
     info.appendChild(meta);
     item.appendChild(info);
 
-    // Dauer
     const dur = document.createElement('div');
     dur.className = 'session-duration';
     dur.textContent = formatDuration(entry.duration_min);
     item.appendChild(dur);
 
-    // Delete Button
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-delete-entry';
     delBtn.textContent = '×';
@@ -610,7 +691,6 @@ function renderSessions(entries: PendingEntry[]): void {
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (entry.synced && entry.serverEntryId) {
-        // Server-seitig loeschen
         const data = await loadData();
         if (data.userState?.extApiToken || data.userState?.nonce) {
           try {
@@ -625,10 +705,9 @@ function renderSessions(entries: PendingEntry[]): void {
                 entry_id: String(entry.serverEntryId)
               });
             }
-          } catch { /* Server-Delete fehlgeschlagen — trotzdem lokal aufraemen */ }
+          } catch { /* Server delete failed — still clean up locally */ }
         }
       }
-      // Lokal loeschen
       await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id });
       refresh();
     });
@@ -651,10 +730,10 @@ function renderSessions(entries: PendingEntry[]): void {
   }
 }
 
-let serverSessionsCache: any[] | null = null;
+let serverSessionsCache: ServerSession[] | null = null;
 const INITIAL_SERVER_SESSIONS = 5;
 
-function renderServerSessions(sessions: any[]): void {
+function renderServerSessions(sessions: ServerSession[]): void {
   const container = document.getElementById('sessionList');
   if (!container) return;
   container.textContent = '';
@@ -698,11 +777,10 @@ function renderServerSessions(sessions: any[]): void {
   }
 }
 
-function createServerSessionItem(session: any): HTMLElement {
+function createServerSessionItem(session: ServerSession): HTMLElement {
   const item = document.createElement('div');
   item.className = 'session-item';
 
-  // Thumbnail/Icon
   if (session.image && isValidImageUrl(session.image)) {
     const img = document.createElement('img');
     img.className = 'session-thumb';
@@ -717,14 +795,13 @@ function createServerSessionItem(session: any): HTMLElement {
     item.appendChild(ph);
   }
 
-  // Info
   const info = document.createElement('div');
   info.className = 'session-info';
 
-  const title = document.createElement('div');
-  title.className = 'session-title';
-  title.textContent = session.title || session.project_name || 'Session';
-  info.appendChild(title);
+  const titleEl = session.url
+    ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = session.title!; a.href = session.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
+    : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = session.title!; return d; })();
+  info.appendChild(titleEl);
 
   const meta = document.createElement('div');
   meta.className = 'session-meta';
@@ -743,15 +820,11 @@ function createServerSessionItem(session: any): HTMLElement {
 
   item.appendChild(info);
 
-  // Dauer
   const dur = document.createElement('div');
   dur.className = 'session-duration';
-  dur.textContent = session.duration_seconds
-    ? formatDuration(session.duration_seconds / 60)
-    : formatDuration(session.duration_minutes || session.minutes || 0);
+  dur.textContent = formatDuration((session.duration_seconds || 0) / 60);
   item.appendChild(dur);
 
-  // Delete Button
   const delBtn = document.createElement('button');
   delBtn.className = 'btn-delete-entry';
   delBtn.textContent = '×';
@@ -773,7 +846,7 @@ function createServerSessionItem(session: any): HTMLElement {
           });
         }
         item.remove();
-      } catch { /* Loeschen fehlgeschlagen */ }
+      } catch { /* Delete failed */ }
     }
   });
   item.appendChild(delBtn);
@@ -781,15 +854,13 @@ function createServerSessionItem(session: any): HTMLElement {
   return item;
 }
 
-// Sync CTA
-
 function renderSyncCta(entries: PendingEntry[], userState: JP343UserState | null): void {
   const section = document.getElementById('syncSection');
   const container = document.getElementById('syncCta');
   if (!container || !section) return;
   container.textContent = '';
 
-  // Eingeloggt: Section komplett ausblenden
+  // Logged in: hide sync CTA entirely
   if (userState?.isLoggedIn) {
     section.style.display = 'none';
     return;
@@ -810,8 +881,6 @@ function renderSyncCta(entries: PendingEntry[], userState: JP343UserState | null
     container.appendChild(p2);
   }
 }
-
-// Tier Badge + Footer
 
 function renderTierBadge(userState: JP343UserState | null): void {
   const badge = document.getElementById('tierBadge');
@@ -849,7 +918,48 @@ async function renderAuthUI(userState: JP343UserState | null): Promise<void> {
 
 const CACHED_SERVER_STATS_KEY = 'jp343_cached_server_stats';
 
-function applyServerStats(serverData: Record<string, any>): void {
+function mergeDailyMinutes(
+  local: Record<string, number>,
+  server: Record<string, number>
+): Record<string, number> {
+  const merged: Record<string, number> = { ...server };
+  for (const [date, localMin] of Object.entries(local)) {
+    if (localMin > (merged[date] ?? 0)) merged[date] = localMin;
+  }
+  return merged;
+}
+
+function applyDerivedStats(dailyMinutes: Record<string, number>): void {
+  const now = new Date();
+  const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  let totalMin = 0;
+  let monthMin = 0;
+  let bestDay = 0;
+  const activeWeeks = new Set<string>();
+  const activeMonths = new Set<string>();
+
+  for (const [date, min] of Object.entries(dailyMinutes)) {
+    if (min <= 0) continue;
+    totalMin += min;
+    if (date.startsWith(thisMonthPrefix)) monthMin += min;
+    if (min > bestDay) bestDay = min;
+    const d = new Date(date + 'T12:00:00');
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    const weekNum = Math.ceil(((d.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
+    activeWeeks.add(`${d.getFullYear()}-W${weekNum}`);
+    activeMonths.add(date.slice(0, 7));
+  }
+
+  setText('statMonth', formatStatDuration(monthMin));
+  setText('statBestDay', formatStatDuration(bestDay));
+  if (activeWeeks.size > 0)
+    setText('statWeeklyAvg', formatStatDuration(Math.round(totalMin / activeWeeks.size)));
+  if (activeMonths.size > 0)
+    setText('statMonthlyAvg', formatStatDuration(Math.round(totalMin / activeMonths.size)));
+}
+
+function applyServerStats(serverData: ServerStatsResponse): void {
   if (serverData.total_seconds !== undefined) {
     renderHeroTime(serverData.total_seconds / 60);
   }
@@ -861,6 +971,16 @@ function applyServerStats(serverData: Record<string, any>): void {
   }
   if (serverData.streak !== undefined) {
     setText('statStreak', `${serverData.streak}d`);
+  }
+  if (serverData.daily_avg_seconds !== undefined) {
+    setText('statDailyAvg', formatStatDuration(serverData.daily_avg_seconds / 60));
+  }
+  if (serverData.daily_minutes) {
+    const merged = mergeDailyMinutes(_localDailyMinutes, serverData.daily_minutes);
+    renderHeatmap(merged);
+    renderWeekBars(merged);
+    renderMonthBars(merged);
+    applyDerivedStats(merged);
   }
   browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: serverData });
 }
@@ -876,15 +996,12 @@ function renderFooter(): void {
   const el = document.getElementById('dashboardFooter');
   if (!el) return;
 
-  // Version Text
   const version = document.createElement('span');
   version.textContent = `jp343 Extension v${browser.runtime.getManifest().version}`;
 
-  // Mittig: Discord + Website
   const links = document.createElement('div');
   links.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;';
 
-  // Discord Icon
   const discord = document.createElement('a');
   discord.href = 'https://discord.gg/EA2A93DY';
   discord.target = '_blank';
@@ -902,7 +1019,6 @@ function renderFooter(): void {
   svg.appendChild(path);
   discord.appendChild(svg);
 
-  // Website Link
   const site = document.createElement('a');
   site.href = 'https://jp343.com';
   site.target = '_blank';
@@ -917,8 +1033,6 @@ function renderFooter(): void {
   el.appendChild(version);
   el.appendChild(links);
 }
-
-// Helpers
 
 function setText(id: string, text: string): void {
   const el = document.getElementById(id);
@@ -939,17 +1053,15 @@ function showSessionsLoading(): void {
   container.appendChild(placeholder);
 }
 
-// Main
-
 async function refresh(): Promise<void> {
   if (isRefreshing) return;
   isRefreshing = true;
 
   try {
   const data = await loadData();
+  _localDailyMinutes = { ...data.stats.dailyMinutes };
   const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
-  // Auth-UI + Heatmap immer sofort rendern
   renderHeatmap(data.stats.dailyMinutes);
   renderWeekBars(data.stats.dailyMinutes);
   renderMonthBars(data.stats.dailyMinutes);
@@ -993,16 +1105,14 @@ async function refresh(): Promise<void> {
   }
 }
 
-// Theme Toggle
 function setupThemeToggle(): void {
   const btn = document.getElementById('themeToggle');
   if (!btn) return;
 
-  // Gespeicherten Theme laden
   const saved = localStorage.getItem('jp343_theme');
   if (saved === 'light') {
     document.documentElement.setAttribute('data-theme', 'light');
-    btn.textContent = '\u2600'; // Sonne
+    btn.textContent = '\u2600';
   }
 
   btn.addEventListener('click', () => {
@@ -1010,23 +1120,22 @@ function setupThemeToggle(): void {
     if (isLight) {
       document.documentElement.removeAttribute('data-theme');
       localStorage.setItem('jp343_theme', 'dark');
-      btn.textContent = '\u263E'; // Mond
+      btn.textContent = '\u263E';
     } else {
       document.documentElement.setAttribute('data-theme', 'light');
       localStorage.setItem('jp343_theme', 'light');
-      btn.textContent = '\u2600'; // Sonne
+      btn.textContent = '\u2600';
     }
   });
 }
 
-// Initial render + Auth-UI setup
 setupThemeToggle();
 setupAuthUI();
 refresh();
 
-// Live-Update bei Storage-Aenderungen
+// Live-update on storage changes
 browser.storage.onChanged.addListener((changes, area) => {
-  if (isLoggingOut) return;
+  if (isLoggingOut) return; // Logout in progress — skip re-refresh
   if (area === 'local' && (
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
