@@ -581,7 +581,7 @@ function renderPendingList(entries: PendingEntry[]): void {
             ` : ''}
           </div>
           <div class="pending-entry-meta">
-            ${entry.platform} · <strong>${formatDuration(group.totalMinutes)}</strong>
+            ${escapeHtml(entry.platform)} · <strong>${formatDuration(group.totalMinutes)}</strong>
             ${hasMultipleSessions ? `<button class="pending-entry-expand" data-group="${groupIndex}" title="Show ${group.sessionCount} sessions">(${group.sessionCount}×) ▼</button>` : ''}
             ${entry.url && !group.allSynced ? `<button class="pending-entry-continue" data-url="${safeUrl}" title="Continue watching">Continue ▶</button>` : ''}
           </div>
@@ -624,7 +624,7 @@ function renderPendingList(entries: PendingEntry[]): void {
     thumb.addEventListener('click', (e) => {
       e.stopPropagation();
       const url = (thumb as HTMLElement).dataset.url;
-      if (url) {
+      if (url && /^https?:\/\//i.test(url)) {
         browser.tabs.create({ url });
       }
     });
@@ -634,7 +634,7 @@ function renderPendingList(entries: PendingEntry[]): void {
     title.addEventListener('click', (e) => {
       e.stopPropagation();
       const url = (title as HTMLElement).dataset.url;
-      if (url) {
+      if (url && /^https?:\/\//i.test(url)) {
         browser.tabs.create({ url });
       }
     });
@@ -644,7 +644,7 @@ function renderPendingList(entries: PendingEntry[]): void {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const url = (btn as HTMLElement).dataset.url;
-      if (url) {
+      if (url && /^https?:\/\//i.test(url)) {
         await browser.tabs.create({ url });
         window.close();
       }

@@ -72,7 +72,7 @@ async function loadData(): Promise<DashboardData> {
   };
 }
 
-async function ajaxPost(action: string, params: Record<string, string> = {}): Promise<any> {
+async function ajaxPost(action: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
   const body = new URLSearchParams({ action, ...params });
   const response = await fetch(AJAX_URL, {
     method: 'POST',
@@ -126,7 +126,7 @@ async function doLogin(email: string, password: string): Promise<{ success: bool
         isLoggedIn: true,
         userId: result.data.userId,
         nonce: result.data.nonce,
-        ajaxUrl: result.data.ajaxUrl || AJAX_URL,
+        ajaxUrl: (result.data.ajaxUrl && /^https:\/\/(.*\.)?jp343\.com\//i.test(result.data.ajaxUrl)) ? result.data.ajaxUrl : AJAX_URL,
         guestToken: null,
         extApiToken: result.data.extApiToken || null
       };
@@ -264,7 +264,7 @@ async function doRegister(email: string, password: string): Promise<{ success: b
         isLoggedIn: true,
         userId: result.data.userId,
         nonce: result.data.nonce,
-        ajaxUrl: result.data.ajaxUrl || AJAX_URL,
+        ajaxUrl: (result.data.ajaxUrl && /^https:\/\/(.*\.)?jp343\.com\//i.test(result.data.ajaxUrl)) ? result.data.ajaxUrl : AJAX_URL,
         guestToken: null,
         extApiToken: result.data.extApiToken || null
       };
@@ -659,7 +659,7 @@ function renderSessions(entries: PendingEntry[]): void {
     const info = document.createElement('div');
     info.className = 'session-info';
 
-    const titleEl = entry.url
+    const titleEl = entry.url && /^https?:\/\//i.test(entry.url)
       ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = entry.project; a.href = entry.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
       : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = entry.project; return d; })();
     info.appendChild(titleEl);
@@ -798,7 +798,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   const info = document.createElement('div');
   info.className = 'session-info';
 
-  const titleEl = session.url
+  const titleEl = session.url && /^https?:\/\//i.test(session.url)
     ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = session.title!; a.href = session.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
     : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = session.title!; return d; })();
   info.appendChild(titleEl);

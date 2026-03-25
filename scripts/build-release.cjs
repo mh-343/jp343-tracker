@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// =============================================================================
-// JP343 Extension - Release Build Script
-// Creates ZIP files for Chrome and Firefox
-// =============================================================================
 
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -89,7 +85,7 @@ async function buildRelease() {
   console.log('2. git add . && git commit -m "Release v' + version + '"');
   console.log('3. git push');
   console.log('4. Create GitHub Release and upload both ZIPs');
-  console.log('   https://github.com/mh-343/jp343-extension/releases/new\n');
+  console.log('   Create a GitHub Release and upload both ZIPs\n');
 }
 
 buildRelease().catch(console.error);

@@ -141,7 +141,7 @@ export default defineContentScript({
     if (DEBUG_MODE) {
       let lastPlayerAdShowing = false;
 
-      const debugMutationObserver = new MutationObserver((mutations) => {
+      const domObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
             if (node instanceof HTMLElement) {
@@ -200,13 +200,13 @@ export default defineContentScript({
         });
       });
 
-      debugMutationObserver.observe(document.body, {
+      domObserver.observe(document.body, {
         childList: true,
         subtree: true,
         attributes: true,
         attributeFilter: ['class']
       });
-      observers.push(debugMutationObserver);
+      observers.push(domObserver);
 
       debugLog('INIT', 'Debug Mutation Observer started');
     }
@@ -582,13 +582,13 @@ export default defineContentScript({
     }
 
     if (DEBUG_MODE) {
-      const debugPeriodicId = setInterval(() => {
+      const periodicCheckId = setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
           debugLog('PERIODIC', 'Periodic state check', collectUIState());
         }
       }, 5000);
-      intervalIds.push(debugPeriodicId);
+      intervalIds.push(periodicCheckId);
     }
 
     let observerConnected = false;

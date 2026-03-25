@@ -1,4 +1,3 @@
-
 import type { VideoState } from '../../types';
 
 export default defineContentScript({
@@ -102,7 +101,7 @@ export default defineContentScript({
     }
 
     if (DEBUG_MODE) {
-      const debugObserver = new MutationObserver((mutations) => {
+      const domObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
             if (node instanceof HTMLElement) {
@@ -114,8 +113,8 @@ export default defineContentScript({
           });
         });
       });
-      debugObserver.observe(document.body, { childList: true, subtree: true });
-      observers.push(debugObserver);
+      domObserver.observe(document.body, { childList: true, subtree: true });
+      observers.push(domObserver);
       debugLog('INIT', 'Debug observer started');
 
       intervalIds.push(setInterval(() => {

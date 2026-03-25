@@ -35,6 +35,12 @@ store-assets/
 # web-ext build artifacts
 web-ext-artifacts/
 
+# Preview / mockup files
+*-preview.html
+*-screenshot-*.html
+*-sakura.html
+SESSION-HANDOFF-*.md
+
 # Claude Code
 .claude/
 

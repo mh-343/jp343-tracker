@@ -255,7 +255,7 @@ export default defineContentScript({
     }
 
     if (DEBUG_MODE) {
-      const debugMutationObserver = new MutationObserver((mutations) => {
+      const domObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
             if (node instanceof HTMLElement) {
@@ -297,11 +297,11 @@ export default defineContentScript({
         });
       });
 
-      debugMutationObserver.observe(document.body, {
+      domObserver.observe(document.body, {
         childList: true,
         subtree: true
       });
-      observers.push(debugMutationObserver);
+      observers.push(domObserver);
 
       debugLog('INIT', 'Debug Mutation Observer started');
     }
