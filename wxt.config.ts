@@ -1,10 +1,5 @@
 import { defineConfig } from 'wxt';
 
-// WXT Konfiguration fuer JP343 Streaming Time Tracker
-// Siehe: https://wxt.dev/api/config.html
-// HINWEIS (Fix 14): Firefox MV3 wird von WXT automatisch unterstuetzt.
-// Wenn Firefox irgendwann volle MV3-Kompatibilitaet erhaelt (background.service_worker),
-// muss hier nichts angepasst werden — WXT generiert das korrekte Manifest pro Browser.
 export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
@@ -12,9 +7,8 @@ export default defineConfig({
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
     version: '2.1.1',
-    description: 'Auto-tracks YouTube, Netflix, Crunchyroll & Prime Video. Built-in dashboard with heatmap, streaks, and history.',
+    description: 'Auto-tracks YouTube, Netflix, Crunchyroll, Prime Video, Disney+ & CI Japanese. Built-in dashboard with heatmap, streaks, and history.',
 
-    // Firefox Add-on ID (fuer AMO Store Submission)
     browser_specific_settings: {
       gecko: {
         id: 'tracker@jp343.com',
@@ -27,9 +21,9 @@ export default defineConfig({
     },
 
     permissions: [
-      'storage',      // chrome.storage.local fuer pending entries
-      'tabs',         // Tab-Info fuer aktive Sessions
-      'alarms'        // Periodische Sync-Checks
+      'storage',
+      'tabs',
+      'alarms'
     ],
 
     host_permissions: [
@@ -43,17 +37,14 @@ export default defineConfig({
       '*://*.amazon.co.uk/*',
       '*://*.disneyplus.com/*',
       '*://*.cijapanese.com/*',
-      // JP343 Domains - hier deine Domain eintragen
       '*://jp343.com/*',
       '*://*.jp343.com/*',
-      // localhost nur im Dev-Build (Fix 12)
       ...(process.env.NODE_ENV !== 'production' ? [
         '*://localhost/*',
         '*://127.0.0.1/*'
       ] : [])
     ],
 
-    // Icon-Dateien (Anime-Maskottchen)
     icons: {
       16: 'icon/icon-16.png',
       32: 'icon/icon-32.png',
@@ -61,14 +52,12 @@ export default defineConfig({
       128: 'icon/icon-128.png'
     },
 
-    // Web accessible resources - Scripts die in Page Context injiziert werden
     web_accessible_resources: [
       {
         resources: ['inject-user-state.js'],
         matches: [
           '*://jp343.com/*',
           '*://*.jp343.com/*',
-          // localhost nur im Dev-Build (Fix 12)
           ...(process.env.NODE_ENV !== 'production' ? [
             '*://localhost/*',
             '*://127.0.0.1/*'
@@ -78,6 +67,5 @@ export default defineConfig({
     ]
   },
 
-  // Chrome als Haupt-Target, Firefox wird automatisch unterstuetzt
   browser: 'chrome'
 });

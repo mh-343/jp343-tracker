@@ -1,10 +1,7 @@
-// =============================================================================
 // JP343 Extension - Amazon Prime Video Content Script
-// =============================================================================
 
 import type { VideoState } from '../../types';
 
-// Metadata fuer Prime Video
 interface PrimeVideoMetadata {
   title: string;
   episodeTitle: string | null;
@@ -17,7 +14,7 @@ interface PrimeVideoMetadata {
 export default defineContentScript({
   matches: [
     '*://*.primevideo.com/*',
-    // Breite Patterns - Content Script prueft intern ob es eine Watch-Seite ist
+    // Broad patterns - content script checks internally whether it's a watch page
     '*://*.amazon.com/*',
     '*://*.amazon.de/*',
     '*://*.amazon.co.jp/*',
@@ -53,7 +50,6 @@ export default defineContentScript({
         || document.querySelector('[data-testid="web-player"]'));
     }
 
-    // Cleanup-Registry
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
@@ -62,10 +58,9 @@ export default defineContentScript({
       observers.length = 0;
       intervalIds.length = 0;
     }
-    // Bei Seitenverlassen: Session beenden + Cleanup
     window.addEventListener('pagehide', () => {
       if (lastVideoId) {
-        log('[JP343] Prime Video: Seite wird verlassen - VIDEO_ENDED');
+        log('[JP343] Prime Video: Page is being left - VIDEO_ENDED');
         sendMessage('VIDEO_ENDED');
       }
       cleanup();
@@ -79,7 +74,7 @@ export default defineContentScript({
 
     const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
-    log('[JP343] Prime Video Content Script geladen');
+    log('[JP343] Prime Video Content Script loaded');
     const LOG_BUFFER: string[] = [];
     const MAX_LOG_ENTRIES = 5000;
 
@@ -94,7 +89,6 @@ export default defineContentScript({
       if (LOG_BUFFER.length > MAX_LOG_ENTRIES) LOG_BUFFER.shift();
     }
 
-    // Debug-Funktionen in Page Context injizieren
     if (DEBUG_MODE) {
       const script = document.createElement('script');
       script.textContent = `
@@ -107,7 +101,7 @@ export default defineContentScript({
         window.JP343_logStatus = function() {
           window.dispatchEvent(new CustomEvent('JP343_LOG_STATUS'));
         };
-        console.log('[JP343] Debug-Logging aktiv. Befehle: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
+        console.log('[JP343] Debug logging active. Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
       `;
       (document.head || document.documentElement).appendChild(script);
       script.remove();
@@ -123,20 +117,19 @@ export default defineContentScript({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        console.log('[JP343] Log-Datei heruntergeladen mit', LOG_BUFFER.length, 'Eintraegen');
+        console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
       });
 
       window.addEventListener('JP343_CLEAR_LOGS', () => {
         LOG_BUFFER.length = 0;
-        console.log('[JP343] Log-Buffer geleert');
+        console.log('[JP343] Log buffer cleared');
       });
 
       window.addEventListener('JP343_LOG_STATUS', () => {
-        console.log('[JP343] Log-Buffer:', LOG_BUFFER.length, 'Eintraege');
+        console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
       });
     }
 
-    // Sammelt UI-State fuer Debug-Output
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
       return {
@@ -161,7 +154,6 @@ export default defineContentScript({
       };
     }
 
-    // DOM Mutation Observer fuer Debug
     if (DEBUG_MODE) {
       const debugMutationObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -175,7 +167,7 @@ export default defineContentScript({
                 /ad|skip|interstitial|overlay|countdown|timer/i.test(classes) ||
                 /Werbung|^Ad\s/i.test(innerText);
               if (isInteresting) {
-                debugLog('DOM_ADD', 'Neues Element', {
+                debugLog('DOM_ADD', 'New element', {
                   tag: node.tagName,
                   dataTestId,
                   classes,
@@ -190,7 +182,7 @@ export default defineContentScript({
             if (node instanceof HTMLElement) {
               const dataTestId = node.getAttribute?.('data-testid');
               if (dataTestId && /ad|skip|interstitial/i.test(dataTestId)) {
-                debugLog('DOM_REMOVE', 'Element entfernt', { tag: node.tagName, dataTestId });
+                debugLog('DOM_REMOVE', 'Element removed', { tag: node.tagName, dataTestId });
               }
             }
           });
@@ -198,9 +190,8 @@ export default defineContentScript({
       });
       debugMutationObserver.observe(document.body, { childList: true, subtree: true });
       observers.push(debugMutationObserver);
-      debugLog('INIT', 'Debug Mutation Observer gestartet');
+      debugLog('INIT', 'Debug Mutation Observer started');
 
-      // Periodischer State-Check (alle 5s wenn Video laeuft)
       intervalIds.push(setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
@@ -209,21 +200,14 @@ export default defineContentScript({
       }, 5000));
     }
 
-    // =======================================================================
-    // URL + VIDEO ID ERKENNUNG
-    // =======================================================================
-
     function isWatchPage(): boolean {
       const path = window.location.pathname;
-      const search = window.location.search;
       const hostname = window.location.hostname;
 
-      // primevideo.com: Player laeuft auf /detail/ Seiten
       if (hostname.includes('primevideo.com')) {
         return path.includes('/detail/') || path.includes('/dp/');
       }
 
-      // amazon.*: Player auf /gp/video/detail/ Seiten
       if (hostname.includes('amazon.')) {
         return path.includes('/gp/video/detail/') || path.includes('/gp/video/dp/');
       }
@@ -233,18 +217,11 @@ export default defineContentScript({
 
     function getVideoId(): string | null {
       const path = window.location.pathname;
-
-      // ID aus URL extrahieren (ASIN = 10 Zeichen, aber Amazon nutzt auch laengere IDs)
-      // Patterns: /detail/<ID>/, /dp/<ID>/, /gp/video/detail/<ID>/
+      // ASIN is typically 10 chars, but Amazon also uses longer IDs
       const asinMatch = path.match(/\/(?:detail|dp)\/([A-Z0-9]{10,})/i);
       return asinMatch ? asinMatch[1] : null;
     }
 
-    // =======================================================================
-    // TITEL-EXTRAKTION
-    // =======================================================================
-
-    // Generische/unbrauchbare Titel
     const GENERIC_TITLES = new Set([
       'prime video', 'amazon prime video', 'amazon prime',
       'filme und serien', 'movies and tv', 'movies & tv',
@@ -269,7 +246,6 @@ export default defineContentScript({
         thumbnailUrl: null
       };
 
-      // 1. Document Title
       const docTitle = document.title;
       if (!isGenericTitle(docTitle)) {
         const cleanTitle = docTitle
@@ -288,15 +264,11 @@ export default defineContentScript({
         }
       }
 
-      // Fallback: gespeicherter bester Titel
       if (metadata.title === 'Prime Video Content' && bestKnownTitle && !isGenericTitle(bestKnownTitle)) {
         metadata.title = bestKnownTitle;
       }
 
-      // 2. Player-UI Titel (data-testid basiert)
       tryExtractPlayerTitle(metadata);
-
-      // 3. Thumbnail
       metadata.thumbnailUrl = extractThumbnail();
 
       return metadata;
@@ -310,7 +282,6 @@ export default defineContentScript({
         '.dv-player-fullscreen .title',
         '.dv-dp-node-title',
         '.av-detail-section .dv-node-dp-title',
-        // Generischer Fallback
         'h1[data-automation-id="title"]'
       ];
 
@@ -320,12 +291,11 @@ export default defineContentScript({
         if (text && text.length > 1 && !isGenericTitle(text)) {
           metadata.title = text;
           bestKnownTitle = text;
-          log('[JP343] Prime Video: Player-Titel gefunden via', selector, ':', text);
+          log('[JP343] Prime Video: Player title found via', selector, ':', text);
           break;
         }
       }
 
-      // Episode-Info Selektoren
       const subtitleSelectors = [
         '[data-testid="subtitle-text"]',
         '.atvwebplayersdk-subtitle-text',
@@ -342,7 +312,7 @@ export default defineContentScript({
             metadata.episodeNumber = epInfo.episodeNumber;
             metadata.episodeTitle = epInfo.episodeTitle;
             metadata.isMovie = false;
-            log('[JP343] Prime Video: Episode-Info gefunden:', text);
+            log('[JP343] Prime Video: Episode info found:', text);
             break;
           }
         }
@@ -355,7 +325,7 @@ export default defineContentScript({
         isMovie: true
       };
 
-      // "Serienname - S1:E5 - Episodentitel"
+      // "SeriesName - S1:E5 - EpisodeTitle"
       const sePattern = /^(.+?)\s*[-–]\s*S(\d+):?E(\d+)\s*[-–]?\s*(.*)$/i;
       let match = rawTitle.match(sePattern);
       if (match) {
@@ -367,7 +337,7 @@ export default defineContentScript({
         return result;
       }
 
-      // "Serienname - Season 1 Episode 5"
+      // "SeriesName - Season 1 Episode 5"
       const longPattern = /^(.+?)\s*[-–]\s*Season\s*(\d+).*Episode\s*(\d+)(.*)$/i;
       match = rawTitle.match(longPattern);
       if (match) {
@@ -379,7 +349,7 @@ export default defineContentScript({
         return result;
       }
 
-      // "Serienname - Staffel 1 Folge 5"
+      // "SeriesName - Staffel 1 Folge 5" (German)
       const dePattern = /^(.+?)\s*[-–]\s*Staffel\s*(\d+).*Folge\s*(\d+)(.*)$/i;
       match = rawTitle.match(dePattern);
       if (match) {
@@ -391,7 +361,7 @@ export default defineContentScript({
         return result;
       }
 
-      // S1E5 irgendwo im Titel
+      // S1E5 anywhere in the title
       const inlinePattern = /S(\d+)\s*E(\d+)/i;
       match = rawTitle.match(inlinePattern);
       if (match) {
@@ -420,13 +390,13 @@ export default defineContentScript({
       };
 
       const patterns: [RegExp, boolean][] = [
-        [/S(\d+)\s*[:\s]?\s*E(\d+)/i, true],          // S1E5, S1:E5
-        [/Season\s*(\d+).*Episode\s*(\d+)/i, true],    // Season 1 Episode 5
-        [/Staffel\s*(\d+).*Folge\s*(\d+)/i, true],     // Staffel 1 Folge 5
-        [/(\d+)x(\d+)/, true],                          // 1x05
-        [/Ep\.?\s*(\d+)/i, false],                      // Ep. 5 / Episode 5
-        [/Folge\s*(\d+)/i, false],                      // Folge 5
-        [/Episode\s*(\d+)/i, false]                     // Episode 5
+        [/S(\d+)\s*[:\s]?\s*E(\d+)/i, true],
+        [/Season\s*(\d+).*Episode\s*(\d+)/i, true],
+        [/Staffel\s*(\d+).*Folge\s*(\d+)/i, true],
+        [/(\d+)x(\d+)/, true],
+        [/Ep\.?\s*(\d+)/i, false],
+        [/Folge\s*(\d+)/i, false],
+        [/Episode\s*(\d+)/i, false]
       ];
 
       for (const [pattern, hasSeason] of patterns) {
@@ -450,13 +420,11 @@ export default defineContentScript({
     }
 
     function extractThumbnail(): string | null {
-      // OG Image Meta Tag
       const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
       if (ogImage?.content && ogImage.content.startsWith('https://')) {
         return ogImage.content;
       }
 
-      // Poster-Bild auf der Detail-Seite
       const posterSelectors = [
         '[data-testid="packshot"] img',
         '.dv-dp-packshot img',
@@ -473,10 +441,6 @@ export default defineContentScript({
 
       return null;
     }
-
-    // =======================================================================
-    // WERBUNG ERKENNUNG (Prime Video AVOD)
-    // =======================================================================
 
     function isAdPlaying(): boolean {
       if (!isWatchPage()) return false;
@@ -500,34 +464,32 @@ export default defineContentScript({
         if (element) {
           const rect = element.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
-            log('[JP343] Prime Video: Ad erkannt via:', selector);
+            log('[JP343] Prime Video: Ad detected via:', selector);
             return true;
           }
         }
       }
 
-      // Text-basierte Erkennung: "Werbung 0:32" / "Ad 1 of 3" etc.
-      // Suche im gesamten Body, nicht nur im Player-Container (Overlay kann ausserhalb liegen)
+      // Text-based detection for multi-language ad labels
+      // Search entire body since ad overlay may be outside the player container
       const allElements = document.querySelectorAll('span, div, p, [class*="ad"], [class*="Ad"]');
       for (const el of allElements) {
         const text = (el as HTMLElement).innerText?.trim();
         if (!text || text.length > 40) continue;
-        // "Werbung 0:32", "Ad 2 of 3", "Ad 0:15", "Publicité 0:20", "広告 0:15"
         if (/^(?:Werbung|Ad|Ads|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
-            log('[JP343] Prime Video: Ad erkannt via Text:', text);
+            log('[JP343] Prime Video: Ad detected via text:', text);
             return true;
           }
         }
       }
 
-      // Breitere Klassen-Suche: Alle Elemente mit "ad" im class-Namen die sichtbar sind
       const adClassElements = document.querySelectorAll('[class*="adBreak"], [class*="adTimer"], [class*="ad-timer"], [class*="adOverlay"], [class*="AdSlot"], [class*="ad-slot"]');
       for (const el of adClassElements) {
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          log('[JP343] Prime Video: Ad erkannt via Klasse:', el.className);
+          log('[JP343] Prime Video: Ad detected via class:', el.className);
           return true;
         }
       }
@@ -540,21 +502,16 @@ export default defineContentScript({
 
       if (adPlaying && !isCurrentlyInAd) {
         isCurrentlyInAd = true;
-        log('[JP343] Prime Video: Werbung beginnt');
+        log('[JP343] Prime Video: Ad started');
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
-        log('[JP343] Prime Video: Werbung beendet');
+        log('[JP343] Prime Video: Ad ended');
         sendMessage('AD_END');
       }
     }
 
-    // Ad-Status alle 500ms pruefen
     intervalIds.push(setInterval(handleAdStateChange, 500));
-
-    // =======================================================================
-    // FORMATIERTER TITEL + VIDEO STATE
-    // =======================================================================
 
     function getFormattedTitle(): string {
       const metadata = extractMetadata();
@@ -594,8 +551,7 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        // Titel als Channel (fuer Block-Funktion) - immer setzen, nicht nur fuer Serien
-        // Prime Video zeigt oft keinen Episoden-Info, trotzdem soll Block moeglich sein
+        // Use title as channel for block feature - always set, not just for series
         channelId: (metadata.title !== 'Prime Video Content')
           ? 'primevideo:' + metadata.title : null,
         channelName: (metadata.title !== 'Prime Video Content')
@@ -603,10 +559,6 @@ export default defineContentScript({
         channelUrl: null
       };
     }
-
-    // =======================================================================
-    // MESSAGING
-    // =======================================================================
 
     async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
       try {
@@ -616,13 +568,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Prime Video: Message error:', error);
       }
     }
-
-    // =======================================================================
-    // VIDEO EVENT BINDING
-    // =======================================================================
 
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) return;
@@ -632,13 +581,13 @@ export default defineContentScript({
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
 
         if (!isWatchPage()) {
-          log('[JP343] Prime Video: Play auf Nicht-Watch-Seite ignoriert');
+          log('[JP343] Prime Video: Play on non-watch page ignored');
           return;
         }
 
         if (isAdPlaying() || isCurrentlyInAd) {
-          debugLog('VIDEO_PLAY', 'Play waehrend Werbung ignoriert', { isCurrentlyInAd, isAdPlaying: isAdPlaying() });
-          log('[JP343] Prime Video: Play waehrend Werbung ignoriert');
+          debugLog('VIDEO_PLAY', 'Play during ad ignored', { isCurrentlyInAd, isAdPlaying: isAdPlaying() });
+          log('[JP343] Prime Video: Play during ad ignored');
           if (!isCurrentlyInAd) {
             isCurrentlyInAd = true;
             sendMessage('AD_START');
@@ -647,7 +596,6 @@ export default defineContentScript({
         }
 
         const videoId = getVideoId();
-        // Bei neuem Video: bestKnownTitle zuruecksetzen
         if (videoId && lastVideoId && videoId !== lastVideoId) {
           bestKnownTitle = '';
         }
@@ -655,8 +603,7 @@ export default defineContentScript({
         const state = getCurrentVideoState();
         if (state) {
           if (isGenericTitle(state.title)) {
-            log('[JP343] Prime Video: Generischer Titel - verzoegere...');
-            // Retry-Logik fuer Titel
+            log('[JP343] Prime Video: Generic title - delaying...');
             let retryCount = 0;
             const titleRetry = setInterval(() => {
               retryCount++;
@@ -665,7 +612,7 @@ export default defineContentScript({
                 clearInterval(titleRetry);
                 lastVideoId = videoId;
                 lastTitle = retryState.title;
-                log('[JP343] Prime Video: Guter Titel nach Retry #' + retryCount + ':', retryState.title);
+                log('[JP343] Prime Video: Good title after retry #' + retryCount + ':', retryState.title);
                 sendMessage('VIDEO_PLAY', { state: retryState });
               } else if (retryCount >= 5) {
                 clearInterval(titleRetry);
@@ -695,13 +642,13 @@ export default defineContentScript({
       video.addEventListener('ended', () => {
         debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
         if (isCurrentlyInAd) {
-          log('[JP343] Prime Video: ended waehrend Werbung ignoriert');
+          log('[JP343] Prime Video: ended during ad ignored');
           return;
         }
         sendMessage('VIDEO_ENDED');
       });
 
-      // Periodische Updates (alle 30 Sekunden)
+      // Periodic state updates
       const updateInterval = setInterval(() => {
         if (isCurrentlyInAd || !isWatchPage()) return;
 
@@ -709,9 +656,8 @@ export default defineContentScript({
         if (state && state.isPlaying) {
           const currentVideoId = getVideoId();
 
-          // Video-Wechsel erkennen
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
-            log('[JP343] Prime Video: Video-Wechsel:', lastVideoId, '->', currentVideoId);
+            log('[JP343] Prime Video: Video change:', lastVideoId, '->', currentVideoId);
             sendMessage('VIDEO_ENDED');
             bestKnownTitle = '';
             lastVideoId = currentVideoId;
@@ -733,14 +679,14 @@ export default defineContentScript({
       }, 30000);
       intervalIds.push(updateInterval);
 
-      // Schnelle Titel-Updates fuer die ersten 30s
+      // Fast title updates for first 30s (title may load asynchronously)
       let quickUpdateCount = 0;
       const quickTitleUpdate = setInterval(() => {
         quickUpdateCount++;
         if (isCurrentlyInAd || video.paused) return;
         const state = getCurrentVideoState();
         if (state && state.isPlaying && !isGenericTitle(state.title) && state.title !== lastTitle) {
-          log('[JP343] Prime Video: Titel-Update (quick #' + quickUpdateCount + '):', state.title);
+          log('[JP343] Prime Video: Title update (quick #' + quickUpdateCount + '):', state.title);
           lastTitle = state.title;
           sendMessage('VIDEO_STATE_UPDATE', { state });
         }
@@ -748,18 +694,13 @@ export default defineContentScript({
       }, 5000);
       intervalIds.push(quickTitleUpdate);
 
-      log('[JP343] Prime Video: Events gebunden');
+      log('[JP343] Prime Video: Events bound');
     }
 
-    // =======================================================================
-    // VIDEO ELEMENT OBSERVER
-    // =======================================================================
-
-    // MutationObserver: Sucht nach neuen Video-Elementen + erkennt Player-Close
+    // Watches for new video elements and detects player close
     const observer = new MutationObserver(() => {
-      // Player-Close erkennen: Wenn wir ein Video hatten aber der Player jetzt weg ist
       if (currentVideoElement && lastVideoId && !isPlayerActive()) {
-        log('[JP343] Prime Video: Player geschlossen - Session beenden');
+        log('[JP343] Prime Video: Player closed - ending session');
         sendMessage('VIDEO_ENDED');
         currentVideoElement = null;
         bestKnownTitle = '';
@@ -776,16 +717,15 @@ export default defineContentScript({
         attachVideoEvents(video);
         const videoId = getVideoId();
 
-        // Falls Video bereits laeuft
         if (!video.paused && !video.ended && videoId) {
           if (isAdPlaying() || isCurrentlyInAd) {
-            log('[JP343] Prime Video: Neues Video waehrend Werbung');
+            log('[JP343] Prime Video: New video during ad');
             if (!isCurrentlyInAd) {
               isCurrentlyInAd = true;
               sendMessage('AD_START');
             }
           } else {
-            log('[JP343] Prime Video: Video laeuft bereits');
+            log('[JP343] Prime Video: Video already playing');
             lastVideoId = videoId;
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
@@ -800,7 +740,6 @@ export default defineContentScript({
     observer.observe(document.body, { childList: true, subtree: true });
     observers.push(observer);
 
-    // Initiales Video suchen
     if (isWatchPage()) {
       const initialVideo = findVideoElement();
       if (initialVideo) {
@@ -817,7 +756,7 @@ export default defineContentScript({
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
-              log('[JP343] Prime Video: Initiales Video laeuft');
+              log('[JP343] Prime Video: Initial video playing');
               sendMessage('VIDEO_PLAY', { state });
             }
           }
@@ -825,10 +764,7 @@ export default defineContentScript({
       }
     }
 
-    // =======================================================================
-    // SPA NAVIGATION (URL Polling)
-    // =======================================================================
-
+    // SPA navigation detection via URL polling
     let lastUrl = window.location.href;
     intervalIds.push(setInterval(() => {
       if (window.location.href !== lastUrl) {
@@ -837,13 +773,12 @@ export default defineContentScript({
         const wasOnWatch = oldUrl.includes('/detail/') || oldUrl.includes('/dp/') || oldUrl.includes('/gp/video/detail/');
         const isOnWatch = isWatchPage();
 
-        debugLog('URL_CHANGE', '=== URL WECHSEL ===', { oldUrl, newUrl, wasOnWatch, isOnWatch, ...collectUIState() });
-        log('[JP343] Prime Video: URL-Wechsel:', oldUrl, '->', newUrl);
+        debugLog('URL_CHANGE', '=== URL CHANGED ===', { oldUrl, newUrl, wasOnWatch, isOnWatch, ...collectUIState() });
+        log('[JP343] Prime Video: URL change:', oldUrl, '->', newUrl);
         lastUrl = newUrl;
 
-        // Weg von Watch-Seite: Session beenden
         if (wasOnWatch && !isOnWatch) {
-          log('[JP343] Prime Video: Watch-Seite verlassen');
+          log('[JP343] Prime Video: Left watch page');
           sendMessage('VIDEO_ENDED');
           bestKnownTitle = '';
           return;
@@ -851,7 +786,6 @@ export default defineContentScript({
 
         bestKnownTitle = '';
 
-        // Neue Watch-Seite: Video suchen
         if (isOnWatch) {
           setTimeout(() => {
             const video = findVideoElement();
@@ -866,7 +800,7 @@ export default defineContentScript({
       }
     }, 1000));
 
-    // Title-Observer: Titel wird manchmal verzoegert gesetzt
+    // Title observer: title may be set asynchronously
     const titleElement = document.querySelector('title');
     if (titleElement) {
       const titleObserver = new MutationObserver(() => {
@@ -878,7 +812,7 @@ export default defineContentScript({
             .trim();
           if (cleanTitle && cleanTitle.length > 2 && !isGenericTitle(cleanTitle) && cleanTitle !== bestKnownTitle) {
             if (isWatchPage()) {
-              log('[JP343] Prime Video: Neuer Titel erkannt:', cleanTitle);
+              log('[JP343] Prime Video: New title detected:', cleanTitle);
               bestKnownTitle = cleanTitle;
             }
           }
@@ -888,7 +822,7 @@ export default defineContentScript({
       observers.push(titleObserver);
     }
 
-    // Fallback: Falls Video laeuft aber nicht getrackt wird (nach 3s)
+    // Fallback: start tracking if video is playing but untracked after 3s
     setTimeout(() => {
       if (!isWatchPage()) return;
       const video = findVideoElement();
@@ -896,7 +830,7 @@ export default defineContentScript({
       if (video && !video.paused && !video.ended && videoId && !isAdPlaying() && !isCurrentlyInAd) {
         const state = getCurrentVideoState();
         if (state && !isGenericTitle(state.title)) {
-          log('[JP343] Prime Video: Starte verzoegertes Tracking');
+          log('[JP343] Prime Video: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
           sendMessage('VIDEO_PLAY', { state });
@@ -904,7 +838,7 @@ export default defineContentScript({
       }
     }, 3000);
 
-    // PAUSE_VIDEO / RESUME_VIDEO: Steuerung vom Popup
+    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

@@ -1,9 +1,3 @@
-// =============================================================================
-// JP343 Extension - Bridge Content Script
-// Laeuft auf JP343-Seite und meldet User-State an Background
-// Auto-Sync im Background uebernimmt den Rest
-// =============================================================================
-
 import type { JP343UserState } from '../../types';
 
 export default defineContentScript({
@@ -21,16 +15,13 @@ export default defineContentScript({
     const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-    log('[JP343 Bridge] Content Script geladen');
+    log('[JP343 Bridge] Content script loaded');
 
-    // Signal fuer Website: Extension ist installiert
+    // Signal to website that the extension is installed
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
-    log('[JP343 Bridge] Extension v' + version + ' signalisiert');
+    log('[JP343 Bridge] Extension v' + version + ' signaled');
 
-    // Script injizieren das JP343_USER aus Page Context in data-Attribut schreibt
-    // (Content Scripts haben isolierten Context und koennen window.JP343_USER nicht direkt lesen!)
-    // Wichtig: Externes Script nutzen wegen CSP (inline Scripts werden blockiert!)
     function injectUserStateScript(): void {
       const script = document.createElement('script');
       script.src = browser.runtime.getURL('inject-user-state.js');
@@ -38,17 +29,14 @@ export default defineContentScript({
       (document.head || document.documentElement).appendChild(script);
     }
 
-    // Sofort beim Laden injizieren um User State zu extrahieren
     injectUserStateScript();
 
-    // JP343_USER aus data-Attribut lesen (wurde von injiziertem Script gesetzt)
     function getUserState(): JP343UserState {
       const dataAttr = document.documentElement.getAttribute('data-jp343-user');
       if (dataAttr) {
         try {
           const userData = JSON.parse(dataAttr);
 
-          // ajaxUrl validieren: muss auf jp343.com zeigen
           let validatedAjaxUrl: string | null = null;
           if (userData.ajaxUrl) {
             try {
@@ -60,10 +48,10 @@ export default defineContentScript({
               if (isJp343 || isLocalDev) {
                 validatedAjaxUrl = userData.ajaxUrl;
               } else {
-                log('[JP343 Bridge] Ungueltige ajaxUrl ignoriert:', url.hostname);
+                log('[JP343 Bridge] Invalid ajaxUrl ignored:', url.hostname);
               }
             } catch {
-              log('[JP343 Bridge] ajaxUrl ist keine gueltige URL');
+              log('[JP343 Bridge] ajaxUrl is not a valid URL');
             }
           }
 
@@ -76,7 +64,7 @@ export default defineContentScript({
             extApiToken: userData.extApiToken || null
           };
         } catch (e) {
-          log('[JP343 Bridge] Fehler beim Parsen von data-jp343-user:', e);
+          log('[JP343 Bridge] Failed to parse data-jp343-user:', e);
         }
       }
 
@@ -90,7 +78,6 @@ export default defineContentScript({
       };
     }
 
-    // User State an Background melden (fuer Auto-Sync Auth)
     async function reportUserState(): Promise<void> {
       const userState = getUserState();
       try {
@@ -98,13 +85,15 @@ export default defineContentScript({
           type: 'JP343_SITE_LOADED',
           userState
         });
-        log('[JP343 Bridge] User State gemeldet:', userState.isLoggedIn ? 'eingeloggt' : 'nicht eingeloggt');
+        log('[JP343 Bridge] User state reported:', userState.isLoggedIn ? 'logged in' : 'not logged in');
       } catch (_error) {
-        // Extension context ungueltig
+        // Extension context invalidated
       }
     }
 
-    // Warten bis JP343_USER verfuegbar ist (Script braucht evtl. einen Moment)
+    // Poll for user state: the injected script sets a data attribute when ready.
+    // Re-injection needed because the script is removed after onload and
+    // SPA DOM state may not be immediately available.
     function waitForUserStateAndReport(maxWait = 5000): void {
       const startTime = Date.now();
 
@@ -116,7 +105,6 @@ export default defineContentScript({
           return;
         }
 
-        // Script braucht evtl. noch einen Moment
         if (!document.documentElement.hasAttribute('data-jp343-user')) {
           injectUserStateScript();
         }
@@ -126,7 +114,6 @@ export default defineContentScript({
       setTimeout(check, 50);
     }
 
-    // Message Handler fuer Background-Anfragen
     browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === 'JP343_GET_USER_STATE') {
         sendResponse(getUserState());
@@ -134,8 +121,7 @@ export default defineContentScript({
       return true;
     });
 
-    // Extension-Daten (Pending Entries + Stats) fuer die Website bereitstellen
-    // Website kann diese ueber data-jp343-extension-data Attribut lesen
+    // Expose pending entries + stats to the website via data attribute
     async function provideExtensionData(): Promise<void> {
       try {
         const [entriesResponse, statsResponse] = await Promise.all([
@@ -148,16 +134,13 @@ export default defineContentScript({
 
         const data = JSON.stringify({ entries, stats });
         document.documentElement.setAttribute('data-jp343-extension-data', data);
-        log('[JP343 Bridge] Extension-Daten bereitgestellt:', entries.length, 'Entries');
+        log('[JP343 Bridge] Extension data provided:', entries.length, 'entries');
       } catch (_error) {
-        // Extension context ungueltig oder kein Background
+        // Extension context invalidated
       }
     }
 
-    // User State melden (mit Warten auf Script-Injection)
     waitForUserStateAndReport();
-
-    // Extension-Daten bereitstellen (fuer My Hub ohne Account)
     provideExtensionData();
   }
 });

@@ -1,9 +1,4 @@
-// =============================================================================
-// JP343 Extension - Shared Formatting Utilities
-// Genutzt von Popup UND Dashboard
-// =============================================================================
-
-// Dauer in Minuten als "2h 30m" / "45m" formatieren (fuer Stats-Anzeige)
+// Compact format for stats: "2h 30m" / "45m"
 export function formatStatDuration(minutes: number): string {
   const totalSec = Math.round(minutes * 60);
   const h = Math.floor(totalSec / 3600);
@@ -14,7 +9,7 @@ export function formatStatDuration(minutes: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-// Dauer in Minuten als "1h 30m 15s" / "5m 30s" / "12s" formatieren (fuer Session-Details)
+// Verbose format for sessions: "1h 30m 15s" / "5m 30s" / "12s"
 export function formatDuration(minutes: number): string {
   const totalSec = Math.round(minutes * 60);
   const h = Math.floor(totalSec / 3600);
@@ -25,7 +20,6 @@ export function formatDuration(minutes: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-// HTTPS-URL Validierung fuer Thumbnails
 export function isValidImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -35,7 +29,6 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
-// ISO-Datum als relative Zeitangabe formatieren
 export function formatSessionDate(isoDate: string): string {
   try {
     const date = new Date(isoDate);
@@ -52,7 +45,6 @@ export function formatSessionDate(isoDate: string): string {
   }
 }
 
-// Lokales Datum als ISO-String (YYYY-MM-DD)
 export function getLocalDateString(date: Date = new Date()): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -60,10 +52,10 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-// Wochentage Mo-So als ISO-Datums-Strings
+// Returns Mon-Sun dates for the current week
 export function getWeekDates(): { date: string; label: string; isToday: boolean }[] {
   const now = new Date();
-  const dayOfWeek = now.getDay(); // 0=So, 1=Mo...
+  const dayOfWeek = now.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   const todayStr = getLocalDateString(now);
   const labels = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
