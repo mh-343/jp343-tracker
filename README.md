@@ -20,22 +20,12 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - **Channel/title blocking** to exclude specific content from tracking
 - **Title editing** during or after tracking sessions
 - **Optional account sync** to [jp343.com](https://jp343.com) for cross-device stats
-- **Works offline** with local storage, syncs when connected
+- **Works offline** with local storage, no account required
 
 ## Installation
 
-### Chrome / Edge
-
-1. Download the latest release ZIP from [Releases](https://github.com/mh-343/jp343-extension/releases)
-2. Extract to a folder
-3. Open `chrome://extensions`, enable **Developer mode**
-4. Click **Load unpacked** and select the extracted folder
-
-### Firefox
-
-1. Download the Firefox ZIP from [Releases](https://github.com/mh-343/jp343-extension/releases)
-2. Open `about:debugging` > **This Firefox** > **Load Temporary Add-on**
-3. Select `manifest.json` from the extracted folder
+- **Chrome / Edge:** [Chrome Web Store](https://chromewebstore.google.com/detail/jp343-track-your-japanese/ogjnhhmcfdkpmllikfmjdlhjepadeigl)
+- **Firefox:** [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jp343-immersion-tracker/)
 
 ## Permissions
 
