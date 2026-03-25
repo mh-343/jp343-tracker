@@ -17,13 +17,6 @@ export default defineContentScript({
     '*://*.amazon.com/*',
     '*://*.amazon.de/*',
     '*://*.amazon.co.jp/*',
-    '*://*.amazon.co.uk/*',
-    '*://*.amazon.fr/*',
-    '*://*.amazon.es/*',
-    '*://*.amazon.it/*',
-    '*://*.amazon.ca/*',
-    '*://*.amazon.com.au/*',
-    '*://*.amazon.in/*',
     '*://*.amazon.com.br/*'
   ],
   runAt: 'document_idle',
