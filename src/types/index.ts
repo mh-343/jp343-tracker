@@ -165,5 +165,6 @@ export const STORAGE_KEYS = {
   SESSION: 'jp343_extension_session',
   USER: 'jp343_extension_user',
   SETTINGS: 'jp343_extension_settings',
-  STATS: 'jp343_extension_stats'
+  STATS: 'jp343_extension_stats',
+  DISPLAY_NAME: 'jp343_extension_display_name'
 } as const;

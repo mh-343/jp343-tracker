@@ -34,7 +34,7 @@ export default defineConfig({
       '*://*.amazon.com/*',
       '*://*.amazon.de/*',
       '*://*.amazon.co.jp/*',
-      '*://*.amazon.co.uk/*',
+      '*://*.amazon.com.br/*',
       '*://*.disneyplus.com/*',
       '*://*.cijapanese.com/*',
       '*://jp343.com/*',
