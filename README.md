@@ -37,11 +37,16 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 2. Open `about:debugging` > **This Firefox** > **Load Temporary Add-on**
 3. Select `manifest.json` from the extracted folder
 
+## Permissions
+
+- **Storage** for saving sessions and settings locally
+- **Tabs** for the manual tracking feature (reads the active tab's title and URL when you start a session)
+- **Host access** limited to the 6 supported platforms and jp343.com
+
 ## Privacy
 
-- All data stays in your browser. Nothing is sent anywhere unless you create an account.
+- All data stays in your browser unless you create an account on jp343.com
 - No third-party data sharing, no analytics
-- Extension only activates on supported streaming sites
 - Account is optional, only needed for cross-device sync
 
 ## Development
