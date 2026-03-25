@@ -1,7 +1,6 @@
-// Dieses Script laeuft im Page Context (nicht im isolierten Content Script Context)
-// Es liest window.JP343_USER und schreibt es als data-Attribut auf <html>
-// So kann das Content Script die Daten lesen
-// Guest Token wird aus localStorage gelesen (falls Gast mit Token-Session)
+// Runs in page context (not the isolated content script context).
+// Reads window.JP343_USER and writes it as a data attribute on <html>
+// so the content script can access it.
 (function() {
   if (window.JP343_USER) {
     document.documentElement.setAttribute('data-jp343-user', JSON.stringify({

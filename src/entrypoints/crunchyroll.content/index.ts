@@ -2,9 +2,8 @@
 
 import type { VideoState } from '../../types';
 
-// Crunchyroll-spezifische Metadata
 interface CrunchyrollMetadata {
-  title: string;           // Anime-Titel
+  title: string;
   episodeTitle: string | null;
   seasonNumber: number | null;
   episodeNumber: number | null;
@@ -28,28 +27,26 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', cleanup);
 
-    const DEBUG_MODE = import.meta.env.DEV;  // true in Dev, false in Prod (Fix 11)
+    const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
-    const buildTimestamp = new Date().toISOString();
-    log('%c[JP343] Crunchyroll Content Script v1.4.0-DATA-ATTR-FIX geladen', 'color: #00ff00; font-weight: bold; font-size: 14px');
-    log('[JP343] Build: ' + buildTimestamp);
+    log('[JP343] Crunchyroll Content Script loaded');
 
     const isIframe = window !== window.top;
     const isMainFrame = !isIframe;
-    log('[JP343] Context:', isIframe ? 'iframe' : 'Haupt-Frame');
+    log('[JP343] Context:', isIframe ? 'iframe' : 'main frame');
 
     function sendVideoMetadataToIframe() {
       const videoId = window.location.pathname.match(/\/watch\/([A-Z0-9]+)/i)?.[1];
       if (!videoId) return;
 
-      log('[JP343] Haupt-Frame: Video-ID erkannt:', videoId);
+      log('[JP343] Main frame: Video ID detected:', videoId);
 
       let thumbnail: string | null = null;
 
       let iframeFound = false;
       let messagesSent = 0;
-      const maxMessages = 25; // 25 * 200ms = 5 Sekunden
+      const maxMessages = 25; // 25 * 200ms = 5s
       let ackReceived = false;
 
       const ackListener = (event: MessageEvent) => {
@@ -59,7 +56,7 @@ export default defineContentScript({
         if (event.data && event.data.type === 'JP343_VIDEO_ID_ACK' && event.data.videoId === videoId) {
           if (!ackReceived) {
             ackReceived = true;
-            log('[JP343] Haupt-Frame: Bestätigung vom iframe erhalten nach', messagesSent, 'Nachrichten');
+            log('[JP343] Main frame: Acknowledgment from iframe received after', messagesSent, 'messages');
             clearInterval(checkIframe);
             window.removeEventListener('message', ackListener);
           }
@@ -73,7 +70,7 @@ export default defineContentScript({
         const iframe = document.querySelector('iframe[src*="vilos"]') as HTMLIFrameElement;
         if (iframe && iframe.contentWindow) {
           if (!iframeFound) {
-            log('[JP343] Haupt-Frame: iframe gefunden, sende Video-ID wiederholt...');
+            log('[JP343] Main frame: iframe found, sending Video ID repeatedly...');
             iframeFound = true;
           }
 
@@ -81,11 +78,10 @@ export default defineContentScript({
             const ogImage = document.querySelector('meta[property="og:image"]');
             thumbnail = ogImage?.getAttribute('content') || null;
             if (thumbnail) {
-              log('[JP343] Haupt-Frame: Thumbnail extrahiert:', thumbnail.substring(0, 60) + '...');
+              log('[JP343] Main frame: Thumbnail extracted:', thumbnail.substring(0, 60) + '...');
             }
           }
 
-          // Episode-Titel aus DOM
           const episodeHeading = document.querySelector('h1[class*="heading"][class*="title"]')
             || document.querySelector('h1.title');
           const episodeText = episodeHeading?.textContent?.trim() || null;
@@ -94,7 +90,7 @@ export default defineContentScript({
           try {
             const iframeUrl = new URL(iframe.src);
             targetOrigin = iframeUrl.origin;
-          } catch { /* Fallback auf Crunchyroll-Origin */ }
+          } catch { /* fallback to Crunchyroll origin */ }
 
           iframe.contentWindow.postMessage({
             type: 'JP343_VIDEO_ID',
@@ -108,16 +104,16 @@ export default defineContentScript({
           messagesSent++;
 
           if (messagesSent === 1) {
-            log('[JP343] Haupt-Frame: Video-ID wird gesendet:', videoId);
+            log('[JP343] Main frame: Sending Video ID:', videoId);
           }
 
           if (messagesSent >= maxMessages) {
-            log('[JP343] Haupt-Frame: Video-ID', maxMessages, 'mal gesendet (keine Bestätigung erhalten)');
+            log('[JP343] Main frame: Video ID sent', maxMessages, 'times (no acknowledgment received)');
             clearInterval(checkIframe);
             window.removeEventListener('message', ackListener);
           }
         }
-      }, 200); // Alle 200ms senden
+      }, 200);
 
       setTimeout(() => {
         clearInterval(checkIframe);
@@ -126,15 +122,15 @@ export default defineContentScript({
     }
 
     if (isMainFrame) {
-      // Initial beim Page-Load
       sendVideoMetadataToIframe();
 
       let lastMainFrameUrl = window.location.href;
       intervalIds.push(setInterval(() => {
         if (window.location.href !== lastMainFrameUrl) {
-          log('[JP343] Haupt-Frame: URL-Wechsel erkannt:', lastMainFrameUrl, '->', window.location.href);
+          log('[JP343] Main frame: URL change detected:', lastMainFrameUrl, '->', window.location.href);
           lastMainFrameUrl = window.location.href;
 
+          // Wait for DOM update before resending
           setTimeout(() => {
             sendVideoMetadataToIframe();
           }, 500);
@@ -146,13 +142,12 @@ export default defineContentScript({
     let lastTitle: string = '';
     let lastVideoId: string | null = null;
     let cachedMetadata: CrunchyrollMetadata | null = null;
-    let bestKnownTitle: string = '';  // Bester Titel den wir je gesehen haben
+    let bestKnownTitle: string = '';
     let isCurrentlyInAd: boolean = false;
-    let pendingVideoId: string | null = null;  // Video-ID die auf Werbe-Ende wartet
-
+    let pendingVideoId: string | null = null;
 
     const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;  // Limit um Speicher zu schonen
+    const MAX_LOG_ENTRIES = 5000;
 
     function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
       if (!DEBUG_MODE) return;
@@ -160,7 +155,6 @@ export default defineContentScript({
       const fullTimestamp = new Date().toISOString();
       const logLine = `[${fullTimestamp}] [${category}] ${message}`;
 
-      // In Console ausgeben
       console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
 
       const bufferEntry = data
@@ -169,7 +163,6 @@ export default defineContentScript({
 
       LOG_BUFFER.push(bufferEntry);
 
-      // Buffer-Groesse begrenzen
       if (LOG_BUFFER.length > MAX_LOG_ENTRIES) {
         LOG_BUFFER.shift();
       }
@@ -178,7 +171,6 @@ export default defineContentScript({
     const injectPageScript = () => {
       const script = document.createElement('script');
       script.textContent = `
-        // JP343 Debug-Funktionen im Page Context
         window.JP343_downloadLogs = function() {
           window.dispatchEvent(new CustomEvent('JP343_REQUEST_LOGS'));
         };
@@ -191,14 +183,13 @@ export default defineContentScript({
           window.dispatchEvent(new CustomEvent('JP343_LOG_STATUS'));
         };
 
-        console.log('[JP343] Debug-Logging aktiv. Befehle: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
+        console.log('[JP343] Debug logging active. Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
       `;
       (document.head || document.documentElement).appendChild(script);
       script.remove();
     };
 
     if (DEBUG_MODE) {
-      // Event-Listener im Content Script Context
       window.addEventListener('JP343_REQUEST_LOGS', () => {
         const content = LOG_BUFFER.join('\n');
         const blob = new Blob([content], { type: 'text/plain' });
@@ -210,20 +201,19 @@ export default defineContentScript({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        console.log('[JP343] Log-Datei heruntergeladen mit', LOG_BUFFER.length, 'Eintraegen');
+        console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
       });
 
       window.addEventListener('JP343_CLEAR_LOGS', () => {
         LOG_BUFFER.length = 0;
-        console.log('[JP343] Log-Buffer geleert');
+        console.log('[JP343] Log buffer cleared');
       });
 
       window.addEventListener('JP343_LOG_STATUS', () => {
-        console.log('[JP343] Log-Buffer:', LOG_BUFFER.length, 'Eintraege');
-        console.log('[JP343] Befehle: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
+        console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
+        console.log('[JP343] Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
       });
 
-      // Script sofort injizieren
       if (document.head || document.documentElement) {
         injectPageScript();
       } else {
@@ -240,34 +230,23 @@ export default defineContentScript({
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video') as HTMLVideoElement | null;
       return {
-        // Video-Element State
         videoExists: !!video,
         videoPaused: video?.paused ?? null,
         videoEnded: video?.ended ?? null,
         videoDuration: video?.duration ?? null,
         videoCurrentTime: video?.currentTime ?? null,
-
-        // URL & Titel
         url: window.location.href,
         videoIdFromUrl: window.location.pathname.match(/\/watch\/([A-Z0-9]+)/i)?.[1] || null,
         documentTitle: document.title,
-
-        // Potentielle Ad-Elemente
         adDataTestidElements: Array.from(document.querySelectorAll('[data-testid*="ad"]')).map(el => ({
           tag: el.tagName,
           dataTestid: el.getAttribute('data-testid'),
           classes: el.className,
           visible: (el as HTMLElement).offsetParent !== null
         })),
-
-        // Video-Container
         videoPlayer: !!document.querySelector('.video-player'),
         videoPlayerIframe: !!document.querySelector('.video-player iframe'),
-
-        // Body Klassen
         bodyClasses: document.body.className,
-
-        // Interne States
         isCurrentlyInAd: isCurrentlyInAd,
         pendingVideoId: pendingVideoId,
         lastVideoId: lastVideoId,
@@ -284,14 +263,13 @@ export default defineContentScript({
               const classes = node.className || '';
               const ariaLabel = node.getAttribute?.('aria-label');
 
-              // Logge interessante Elemente
               const isInteresting =
                 dataTestid ||
                 /ad|skip|overlay|countdown|player/i.test(classes) ||
                 /ad|skip/i.test(ariaLabel || '');
 
               if (isInteresting) {
-                debugLog('DOM_ADD', 'Neues Element hinzugefuegt', {
+                debugLog('DOM_ADD', 'New element added', {
                   tag: node.tagName,
                   dataTestid: dataTestid,
                   classes: classes,
@@ -309,7 +287,7 @@ export default defineContentScript({
             if (node instanceof HTMLElement) {
               const dataTestid = node.getAttribute?.('data-testid');
               if (dataTestid && /ad|skip/i.test(dataTestid)) {
-                debugLog('DOM_REMOVE', 'Element entfernt', {
+                debugLog('DOM_REMOVE', 'Element removed', {
                   tag: node.tagName,
                   dataTestid: dataTestid
                 });
@@ -325,16 +303,14 @@ export default defineContentScript({
       });
       observers.push(debugMutationObserver);
 
-      debugLog('INIT', 'Debug Mutation Observer gestartet');
+      debugLog('INIT', 'Debug Mutation Observer started');
     }
 
     function findVideoElement(): HTMLVideoElement | null {
-      // Primaer: Standard video Element
       return document.querySelector('video') as HTMLVideoElement
         ?? document.querySelector('#player0') as HTMLVideoElement
         ?? null;
     }
-
 
     function isAdPlaying(): boolean {
       return false;
@@ -345,18 +321,19 @@ export default defineContentScript({
 
       if (adPlaying && !isCurrentlyInAd) {
         isCurrentlyInAd = true;
-        debugLog('AD_STATE', '=== WERBUNG BEGINNT ===', collectUIState());
-        log('[JP343] Crunchyroll: Werbung beginnt');
+        debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
+        log('[JP343] Crunchyroll: Ad started');
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
-        debugLog('AD_STATE', '=== WERBUNG BEENDET ===', collectUIState());
-        log('[JP343] Crunchyroll: Werbung beendet');
+        debugLog('AD_STATE', '=== AD ENDED ===', collectUIState());
+        log('[JP343] Crunchyroll: Ad ended');
         sendMessage('AD_END');
 
+        // Resume pending session after ad ends
         if (pendingVideoId) {
-          debugLog('AD_STATE', 'Starte gemerkte Session', { pendingVideoId });
-          log('[JP343] Crunchyroll: Starte gemerkte Session nach Werbe-Ende');
+          debugLog('AD_STATE', 'Starting saved session', { pendingVideoId });
+          log('[JP343] Crunchyroll: Starting saved session after ad ended');
           setTimeout(() => {
             const state = getCurrentVideoState();
             if (state && state.isPlaying && !isAdPlaying()) {
@@ -370,19 +347,16 @@ export default defineContentScript({
       }
     }
 
-    // Ad-Status alle 500ms pruefen
     intervalIds.push(setInterval(handleAdStateChange, 500));
 
     if (DEBUG_MODE) {
       intervalIds.push(setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
-          debugLog('PERIODIC', 'Periodischer State-Check', collectUIState());
+          debugLog('PERIODIC', 'Periodic state check', collectUIState());
         }
       }, 5000));
     }
-
-    // CRUNCHYROLL METADATA-EXTRAKTION
 
     function extractCrunchyrollMetadata(): CrunchyrollMetadata {
       const metadata: CrunchyrollMetadata = {
@@ -398,7 +372,6 @@ export default defineContentScript({
       let docTitle = document.title;
 
       if (isIframe) {
-        // 1. Priorität: Cached title vom postMessage
         if (cachedTitleFromParent) {
           docTitle = cachedTitleFromParent;
         } else {
@@ -409,7 +382,6 @@ export default defineContentScript({
         }
       }
 
-      // 1. PRIMAER: Document Title
       const isGenericTitle = !docTitle ||
         docTitle.toLowerCase() === 'crunchyroll' ||
         docTitle.toLowerCase().includes('crunchyroll home');
@@ -422,7 +394,6 @@ export default defineContentScript({
         if (cleanTitle && cleanTitle.length > 0 && cleanTitle.toLowerCase() !== 'crunchyroll') {
           const parsed = parseCrunchyrollTitle(cleanTitle);
           Object.assign(metadata, parsed);
-          // Besten Titel merken
           if (metadata.title !== 'Crunchyroll Content') {
             bestKnownTitle = metadata.title;
           }
@@ -433,7 +404,6 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
-      // 2. OPTIONAL: OpenGraph meta tag (meist vorhanden)
       if (metadata.title === 'Crunchyroll Content') {
         const ogTitle = document.querySelector('meta[property="og:title"]');
         if (ogTitle) {
@@ -452,7 +422,7 @@ export default defineContentScript({
           const epTitle = epMatch[2].trim();
           metadata.episodeNumber = epNum;
           metadata.episodeTitle = epTitle;
-          log('[JP343] Episode aus DOM: E' + epNum + ' - ' + epTitle);
+          log('[JP343] Episode from DOM: E' + epNum + ' - ' + epTitle);
         }
       }
 
@@ -493,6 +463,8 @@ export default defineContentScript({
         return result;
       }
 
+      // "SeriesName - ArcName (EpRange) EpisodeTitle"
+      // e.g. "One Piece - East Blue (1-61) Here Comes Luffy"
       match = rawTitle.match(/^(.+?)\s*[-–]\s*.+?\s*\(\d+[-–]\d+\)\s+(.+)$/i);
       if (match) {
         result.seriesName = match[1].trim();
@@ -500,7 +472,6 @@ export default defineContentScript({
         result.episodeTitle = match[2].trim();
         return result;
       }
-
 
       match = rawTitle.match(/^(.+?)\s*[-–]\s*(?:Episode\s*)?(\d+)\s*[-–]\s*(.+)$/i);
       if (match) {
@@ -511,6 +482,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "E1 - Title" (without series name)
       match = rawTitle.match(/^E(\d+)\s*[-–]\s*(.+)$/i);
       if (match) {
         result.episodeNumber = parseInt(match[1], 10);
@@ -519,6 +491,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "Season X Episode Y" anywhere in title
       match = rawTitle.match(/Season\s*(\d+)\s*Episode\s*(\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
@@ -531,6 +504,7 @@ export default defineContentScript({
         return result;
       }
 
+      // "S1:E5" or "S1 E5"
       match = rawTitle.match(/S(\d+)[:\s]*E(\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
@@ -553,11 +527,8 @@ export default defineContentScript({
         if (content) return content;
       }
 
-      // (z.B. Poster-Images, Background-Images etc.)
-
       return null;
     }
-
 
     function getFormattedTitle(): string {
       const metadata = extractCrunchyrollMetadata();
@@ -590,7 +561,6 @@ export default defineContentScript({
       const isIframe = window !== window.top;
 
       if (isIframe) {
-        // Cache nutzen falls bereits gefunden
         if (cachedVideoIdInIframe) {
           return cachedVideoIdInIframe;
         }
@@ -598,19 +568,19 @@ export default defineContentScript({
         try {
           const videoIdFromAttr = window.frameElement?.getAttribute('data-jp343-video-id');
           if (videoIdFromAttr) {
-            log('[JP343] iframe: Video-ID aus Attribut gefunden:', videoIdFromAttr);
+            log('[JP343] iframe: Video ID found from attribute:', videoIdFromAttr);
             cachedVideoIdInIframe = videoIdFromAttr;
             return videoIdFromAttr;
           }
         } catch (e) {
-          log('[JP343] iframe: Kein Zugriff auf frameElement');
+          log('[JP343] iframe: No access to frameElement');
         }
 
         try {
           const parentUrl = window.parent.location.href;
           const match = parentUrl.match(/\/watch\/([A-Z0-9]+)/i);
           if (match) {
-            log('[JP343] iframe: Video-ID vom Parent via location:', match[1]);
+            log('[JP343] iframe: Video ID from parent via location:', match[1]);
             cachedVideoIdInIframe = match[1];
             return match[1];
           }
@@ -618,7 +588,7 @@ export default defineContentScript({
           if (document.referrer) {
             const match = document.referrer.match(/\/watch\/([A-Z0-9]+)/i);
             if (match) {
-              log('[JP343] iframe: Video-ID vom Parent via referrer:', match[1]);
+              log('[JP343] iframe: Video ID from parent via referrer:', match[1]);
               cachedVideoIdInIframe = match[1];
               return match[1];
             }
@@ -628,7 +598,6 @@ export default defineContentScript({
         return null;
       }
 
-      // Haupt-Frame: Eigene URL pruefen
       const match = window.location.pathname.match(/\/watch\/([A-Z0-9]+)/i);
       return match ? match[1] : null;
     }
@@ -638,7 +607,6 @@ export default defineContentScript({
         if (event.origin && !event.origin.endsWith('.crunchyroll.com') && !event.origin.endsWith('.crunchyroll.co.jp')) {
           return;
         }
-        // Prüfe ob es unsere Message ist
         if (event.data && event.data.type === 'JP343_VIDEO_ID') {
           const videoId = event.data.videoId;
           const title = event.data.title;
@@ -653,7 +621,7 @@ export default defineContentScript({
 
             if (videoIdChanged) {
               resetForNewVideo();
-              log('[JP343] iframe: Video-ID gewechselt, bestKnownTitle zurueckgesetzt');
+              log('[JP343] iframe: Video ID changed, bestKnownTitle reset');
             }
 
             if (title) {
@@ -673,18 +641,19 @@ export default defineContentScript({
             }
 
             if (isFirstTime) {
-              log('[JP343] iframe: Video-ID via postMessage empfangen:', videoId);
+              log('[JP343] iframe: Video ID received via postMessage:', videoId);
               if (title) {
-                log('[JP343] iframe: Titel vom Parent empfangen:', title);
+                log('[JP343] iframe: Title received from parent:', title);
               }
               if (thumbnail) {
-                log('[JP343] iframe: Thumbnail vom Parent empfangen');
+                log('[JP343] iframe: Thumbnail received from parent');
               }
               if (episodeText) {
-                log('[JP343] iframe: Episode-Text vom DOM:', episodeText);
+                log('[JP343] iframe: Episode text from DOM:', episodeText);
               }
             }
 
+            // Send acknowledgment back to parent
             if (window.parent && event.source) {
               (event.source as Window).postMessage({
                 type: 'JP343_VIDEO_ID_ACK',
@@ -696,15 +665,15 @@ export default defineContentScript({
       });
 
       let retryCount = 0;
-      const maxRetries = 20; // 20 x 200ms = 4 Sekunden
+      const maxRetries = 20; // 20 x 200ms = 4s
       const videoIdChecker = setInterval(() => {
         retryCount++;
         const videoId = getVideoId();
         if (videoId) {
-          log('[JP343] iframe: Video-ID gefunden nach', retryCount, 'Versuchen:', videoId);
+          log('[JP343] iframe: Video ID found after', retryCount, 'attempts:', videoId);
           clearInterval(videoIdChecker);
         } else if (retryCount >= maxRetries) {
-          log('[JP343] iframe: Video-ID nicht gefunden nach', maxRetries, 'Versuchen - warte auf postMessage');
+          log('[JP343] iframe: Video ID not found after', maxRetries, 'attempts - waiting for postMessage');
           clearInterval(videoIdChecker);
         }
       }, 200);
@@ -745,6 +714,7 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Message error:', error);
       }
     }
@@ -756,7 +726,7 @@ export default defineContentScript({
     function resetForNewVideo(): void {
       cachedMetadata = null;
       if (bestKnownTitle) {
-        log('[JP343] Crunchyroll: bestKnownTitle bei Video-Wechsel zurueckgesetzt (war:', bestKnownTitle + ')');
+        log('[JP343] Crunchyroll: bestKnownTitle reset on video change (was:', bestKnownTitle + ')');
         bestKnownTitle = '';
       }
     }
@@ -770,7 +740,6 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
 
-        // Metadata neu laden bei Play
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
           resetForNewVideo();
@@ -779,8 +748,8 @@ export default defineContentScript({
         }
 
         if (isAdPlaying() || isCurrentlyInAd) {
-          debugLog('VIDEO_PLAY', 'Play waehrend Werbung - wird ignoriert', { videoId, isCurrentlyInAd, isAdPlaying: isAdPlaying() });
-          log('[JP343] Crunchyroll Play waehrend Werbung - wird ignoriert, Video-ID gemerkt:', videoId);
+          debugLog('VIDEO_PLAY', 'Play during ad - ignored', { videoId, isCurrentlyInAd, isAdPlaying: isAdPlaying() });
+          log('[JP343] Crunchyroll Play during ad - ignored, Video ID saved:', videoId);
           pendingVideoId = videoId;
           if (!isCurrentlyInAd) {
             isCurrentlyInAd = true;
@@ -793,7 +762,7 @@ export default defineContentScript({
         if (state) {
           lastVideoId = videoId;
           lastTitle = state.title;
-          debugLog('VIDEO_PLAY', 'Tracking gestartet', { videoId, title: state.title });
+          debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Crunchyroll Play:', state.title, '(ID:', lastVideoId, ')');
           sendMessage('VIDEO_PLAY', { state });
         }
@@ -807,16 +776,16 @@ export default defineContentScript({
       video.addEventListener('ended', () => {
         debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
 
+        // Don't send VIDEO_ENDED during ads
         if (isCurrentlyInAd) {
-          debugLog('VIDEO_ENDED', 'Ended waehrend Werbung - wird ignoriert', { isCurrentlyInAd });
-          log('[JP343] Crunchyroll Video ended waehrend Werbung - wird ignoriert');
+          debugLog('VIDEO_ENDED', 'Ended during ad - ignored', { isCurrentlyInAd });
+          log('[JP343] Crunchyroll Video ended during ad - ignored');
           return;
         }
         sendMessage('VIDEO_ENDED');
         clearMetadataCache();
       });
 
-      // loadedmetadata Event loggen
       video.addEventListener('loadedmetadata', () => {
         debugLog('VIDEO_META', '=== VIDEO LOADEDMETADATA ===', {
           duration: video.duration,
@@ -826,12 +795,11 @@ export default defineContentScript({
         });
       });
 
-      // Seeking Events
       video.addEventListener('seeking', () => {
         debugLog('VIDEO_SEEK', 'Seeking', { currentTime: video.currentTime });
       });
 
-      // Periodische Updates (alle 30 Sekunden)
+      // Periodic state updates
       setInterval(() => {
         if (isCurrentlyInAd) {
           return;
@@ -841,8 +809,9 @@ export default defineContentScript({
         if (state && state.isPlaying) {
           const currentVideoId = getVideoId();
 
+          // Detect video change by ID only
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
-            log('[JP343] Crunchyroll Video-Wechsel (ID):', lastVideoId, '->', currentVideoId);
+            log('[JP343] Crunchyroll Video change (ID):', lastVideoId, '->', currentVideoId);
             lastVideoId = currentVideoId;
             lastTitle = state.title;
             resetForNewVideo();
@@ -862,7 +831,7 @@ export default defineContentScript({
         }
       }, 30000);
 
-      log('[JP343] Crunchyroll Video Events gebunden');
+      log('[JP343] Crunchyroll Video events bound');
     }
 
     const observer = new MutationObserver(() => {
@@ -874,19 +843,17 @@ export default defineContentScript({
         attachVideoEvents(video);
         const videoId = getVideoId();
 
-        // Falls neues Video bereits laeuft
         if (!video.paused && !video.ended && videoId) {
           if (isAdPlaying() || isCurrentlyInAd) {
-            debugLog('OBSERVER', 'Neues Video waehrend Werbung', { videoId });
-            log('[JP343] Crunchyroll: Neues Video waehrend Werbung erkannt, ID gemerkt:', videoId);
+            debugLog('OBSERVER', 'New video during ad', { videoId });
+            log('[JP343] Crunchyroll: New video during ad detected, ID saved:', videoId);
             pendingVideoId = videoId;
             if (!isCurrentlyInAd) {
               isCurrentlyInAd = true;
               sendMessage('AD_START');
             }
           } else {
-            // Kein Ad erkannt - sofort tracken
-            log('[JP343] Crunchyroll: Neues Video laeuft bereits');
+            log('[JP343] Crunchyroll: New video already playing');
             lastVideoId = videoId;
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
@@ -910,15 +877,14 @@ export default defineContentScript({
       attachVideoEvents(initialVideo);
       const videoId = getVideoId();
 
-      // Falls Video bereits laeuft
       if (!initialVideo.paused && !initialVideo.ended && videoId) {
         if (isAdPlaying()) {
-          log('[JP343] Crunchyroll: Video laeuft bereits waehrend Werbung');
+          log('[JP343] Crunchyroll: Video already playing during ad');
           isCurrentlyInAd = true;
           pendingVideoId = videoId;
           sendMessage('AD_START');
         } else {
-          log('[JP343] Crunchyroll: Video laeuft bereits, starte Tracking');
+          log('[JP343] Crunchyroll: Video already playing, starting tracking');
           lastVideoId = videoId;
           lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
@@ -937,16 +903,15 @@ export default defineContentScript({
         const wasOnWatch = oldUrl.includes('/watch/');
         const isOnWatch = newUrl.includes('/watch/');
 
-        debugLog('URL_CHANGE', '=== URL WECHSEL ===', {
+        debugLog('URL_CHANGE', '=== URL CHANGED ===', {
           oldUrl, newUrl, wasOnWatch, isOnWatch,
           ...collectUIState()
         });
-        log('[JP343] Crunchyroll URL-Wechsel:', oldUrl, '->', newUrl);
+        log('[JP343] Crunchyroll URL change:', oldUrl, '->', newUrl);
         lastUrl = newUrl;
 
-        // Weg von /watch/: Session beenden
         if (wasOnWatch && !isOnWatch) {
-          log('[JP343] Crunchyroll: /watch/ verlassen - Session beenden');
+          log('[JP343] Crunchyroll: Left /watch/ - ending session');
           sendMessage('VIDEO_ENDED');
           resetForNewVideo();
           return;
@@ -954,12 +919,11 @@ export default defineContentScript({
 
         resetForNewVideo();
 
-        // Nur auf /watch/ URLs neue Videos suchen
         if (isOnWatch) {
           setTimeout(() => {
             const video = findVideoElement();
             if (video && video !== currentVideoElement) {
-              debugLog('URL_CHANGE', 'Neues Video nach URL-Wechsel erkannt', collectUIState());
+              debugLog('URL_CHANGE', 'New video detected after URL change', collectUIState());
               currentVideoElement = video;
               attachVideoEvents(video);
               lastVideoId = getVideoId();
@@ -978,7 +942,7 @@ export default defineContentScript({
           .trim();
         if (cleanTitle && cleanTitle.length > 2 && cleanTitle.toLowerCase() !== 'crunchyroll') {
           if (cleanTitle !== bestKnownTitle) {
-            log('[JP343] Crunchyroll: Neuer Titel erkannt:', cleanTitle);
+            log('[JP343] Crunchyroll: New title detected:', cleanTitle);
             bestKnownTitle = cleanTitle;
             clearMetadataCache();
           }
@@ -986,13 +950,13 @@ export default defineContentScript({
       }
     });
 
-    // Beobachte <title> Element
     const titleElement = document.querySelector('title');
     if (titleElement) {
       titleObserver.observe(titleElement, { childList: true, characterData: true, subtree: true });
       observers.push(titleObserver);
     }
 
+    // Periodic title check for first 30s
     let titleCheckCount = 0;
     const titleCheckInterval = setInterval(() => {
       titleCheckCount++;
@@ -1003,7 +967,7 @@ export default defineContentScript({
           .replace(/\s*[-|–]\s*Crunchyroll.*$/i, '')
           .trim();
         if (cleanTitle && cleanTitle.length > 2 && cleanTitle !== bestKnownTitle) {
-          log('[JP343] Crunchyroll: Titel gefunden (Check #' + titleCheckCount + '):', cleanTitle);
+          log('[JP343] Crunchyroll: Title found (check #' + titleCheckCount + '):', cleanTitle);
           bestKnownTitle = cleanTitle;
           clearMetadataCache();
         }
@@ -1035,17 +999,18 @@ export default defineContentScript({
       if (video && !video.paused && !video.ended && videoId && !adPlaying && !isCurrentlyInAd) {
         const state = getCurrentVideoState();
         if (state) {
-          log('[JP343] Crunchyroll: Starte verzoegertes Tracking');
+          log('[JP343] Crunchyroll: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
           sendMessage('VIDEO_PLAY', { state });
         }
       } else if (video && !video.paused && (adPlaying || isCurrentlyInAd) && videoId) {
-        log('[JP343] Crunchyroll: Video laeuft waehrend Werbung - Tracking pausiert');
+        log('[JP343] Crunchyroll: Video playing during ad - tracking paused');
         pendingVideoId = videoId;
       }
     }, 3000);
 
+    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

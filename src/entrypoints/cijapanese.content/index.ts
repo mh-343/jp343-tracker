@@ -10,7 +10,6 @@ export default defineContentScript({
     let lastTitle: string = '';
     let lastVideoId: string | null = null;
 
-    // Cleanup-Registry
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
@@ -34,7 +33,7 @@ export default defineContentScript({
 
     const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
-    log('[JP343] CI Japanese Content Script geladen');
+    log('[JP343] CI Japanese content script loaded');
     const LOG_BUFFER: string[] = [];
     const MAX_LOG_ENTRIES = 5000;
 
@@ -49,7 +48,6 @@ export default defineContentScript({
       if (LOG_BUFFER.length > MAX_LOG_ENTRIES) LOG_BUFFER.shift();
     }
 
-    // Debug-Funktionen in Page Context
     if (DEBUG_MODE) {
       const script = document.createElement('script');
       script.textContent = `
@@ -59,7 +57,7 @@ export default defineContentScript({
         window.JP343_clearLogs = function() {
           window.dispatchEvent(new CustomEvent('JP343_CLEAR_LOGS'));
         };
-        console.log('[JP343] Debug aktiv. Befehle: JP343_downloadLogs(), JP343_clearLogs()');
+        console.log('[JP343] Debug active. Commands: JP343_downloadLogs(), JP343_clearLogs()');
       `;
       (document.head || document.documentElement).appendChild(script);
       script.remove();
@@ -79,7 +77,7 @@ export default defineContentScript({
 
       window.addEventListener('JP343_CLEAR_LOGS', () => {
         LOG_BUFFER.length = 0;
-        console.log('[JP343] Log-Buffer geleert');
+        console.log('[JP343] Log buffer cleared');
       });
     }
 
@@ -96,7 +94,6 @@ export default defineContentScript({
         documentTitle: document.title,
         lastVideoId,
         lastTitle,
-        // Vidstack Player Attribute
         mediaPlayerPlaying: mediaPlayer?.hasAttribute('data-playing') ?? null,
         mediaPlayerStarted: mediaPlayer?.hasAttribute('data-started') ?? null,
         mediaPlayerPaused: mediaPlayer?.hasAttribute('data-paused') ?? null,
@@ -104,7 +101,6 @@ export default defineContentScript({
       };
     }
 
-    // Debug DOM Observer
     if (DEBUG_MODE) {
       const debugObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -120,18 +116,15 @@ export default defineContentScript({
       });
       debugObserver.observe(document.body, { childList: true, subtree: true });
       observers.push(debugObserver);
-      debugLog('INIT', 'Debug Observer gestartet');
+      debugLog('INIT', 'Debug observer started');
 
-      // Periodischer State-Check
       intervalIds.push(setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
-          debugLog('PERIODIC', 'State-Check', collectUIState());
+          debugLog('PERIODIC', 'State check', collectUIState());
         }
       }, 5000));
     }
-
-    // VIDEO + TITEL ERKENNUNG
 
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('media-provider video') as HTMLVideoElement)
@@ -148,21 +141,17 @@ export default defineContentScript({
     }
 
     function getVideoId(): string | null {
-      // URL als ID nutzen (kein Standard-ID-Format bei CI Japanese)
       const path = window.location.pathname;
-      // Pfad ohne trailing slash als ID
       return path.replace(/\/$/, '') || null;
     }
 
     function getTitle(): string {
-      // 1. Vidstack Player Title
       const mediaPlayer = document.querySelector('media-player');
       const playerTitle = mediaPlayer?.getAttribute('title');
       if (playerTitle && playerTitle.length > 1) {
         return playerTitle;
       }
 
-      // 2. Seiten-Heading
       const headings = ['h1', 'h2.video-title', '.video-title', '[class*="title"]'];
       for (const selector of headings) {
         const el = document.querySelector(selector);
@@ -172,7 +161,6 @@ export default defineContentScript({
         }
       }
 
-      // 3. Document Title
       const docTitle = document.title
         .replace(/\s*[\|–-]\s*Comprehensible Japanese.*$/i, '')
         .replace(/\s*[\|–-]\s*CI Japanese.*$/i, '')
@@ -185,23 +173,18 @@ export default defineContentScript({
     }
 
     function getThumbnail(): string | null {
-      // Vidstack Poster
       const poster = document.querySelector('media-poster img') as HTMLImageElement;
       if (poster?.src) return poster.src;
 
-      // media-player poster Attribut
       const mediaPlayer = document.querySelector('media-player');
       const posterAttr = mediaPlayer?.getAttribute('poster');
       if (posterAttr) return posterAttr;
 
-      // OG Image
       const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
       if (ogImage?.content) return ogImage.content;
 
       return null;
     }
-
-    // VIDEO STATE + MESSAGING
 
     function getCurrentVideoState(): VideoState | null {
       const video = findVideoElement();
@@ -234,11 +217,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] CI Japanese: Message error:', error);
       }
     }
-
-    // VIDEO EVENT BINDING
 
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) return;
@@ -246,14 +228,13 @@ export default defineContentScript({
 
       video.addEventListener('play', () => {
         if (!isWatchPage()) {
-          log('[JP343] CI Japanese: Play auf Nicht-Watch-Seite ignoriert');
+          log('[JP343] CI Japanese: Play on non-watch page ignored');
           return;
         }
         debugLog('VIDEO_PLAY', '=== PLAY ===', collectUIState());
 
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
-          // Video-Wechsel
           sendMessage('VIDEO_ENDED');
         }
 
@@ -277,13 +258,12 @@ export default defineContentScript({
         lastVideoId = null;
       });
 
-      // Periodische Updates (alle 30 Sekunden)
       const updateInterval = setInterval(() => {
         const state = getCurrentVideoState();
         if (state && state.isPlaying) {
           const currentVideoId = getVideoId();
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
-            log('[JP343] CI Japanese: Video-Wechsel:', lastVideoId, '->', currentVideoId);
+            log('[JP343] CI Japanese: Video switch:', lastVideoId, '->', currentVideoId);
             sendMessage('VIDEO_ENDED');
             lastVideoId = currentVideoId;
             lastTitle = state.title;
@@ -303,7 +283,6 @@ export default defineContentScript({
       }, 30000);
       intervalIds.push(updateInterval);
 
-      // Schnelle Titel-Updates
       let quickCount = 0;
       const quickUpdate = setInterval(() => {
         quickCount++;
@@ -317,10 +296,8 @@ export default defineContentScript({
       }, 5000);
       intervalIds.push(quickUpdate);
 
-      log('[JP343] CI Japanese: Events gebunden');
+      log('[JP343] CI Japanese: Events bound');
     }
-
-    // OBSERVER + INIT
 
     const observer = new MutationObserver(() => {
       if (!isWatchPage()) return;
@@ -331,7 +308,7 @@ export default defineContentScript({
         const videoId = getVideoId();
 
         if (!video.paused && !video.ended && videoId) {
-          log('[JP343] CI Japanese: Video laeuft bereits');
+          log('[JP343] CI Japanese: Video already playing');
           lastVideoId = videoId;
           lastTitle = getTitle();
           const state = getCurrentVideoState();
@@ -352,7 +329,7 @@ export default defineContentScript({
       const videoId = getVideoId();
 
       if (!initialVideo.paused && !initialVideo.ended && videoId) {
-        log('[JP343] CI Japanese: Initiales Video laeuft');
+        log('[JP343] CI Japanese: Initial video playing');
         lastVideoId = videoId;
         lastTitle = getTitle();
         const state = getCurrentVideoState();
@@ -367,10 +344,9 @@ export default defineContentScript({
       if (window.location.href !== lastUrl) {
         const oldUrl = lastUrl;
         lastUrl = window.location.href;
-        debugLog('URL_CHANGE', 'URL Wechsel', { oldUrl, newUrl: lastUrl });
-        log('[JP343] CI Japanese: URL-Wechsel:', oldUrl, '->', lastUrl);
+        debugLog('URL_CHANGE', 'URL changed', { oldUrl, newUrl: lastUrl });
+        log('[JP343] CI Japanese: URL change:', oldUrl, '->', lastUrl);
 
-        // Alte Session beenden bei Navigation
         if (lastVideoId) {
           sendMessage('VIDEO_ENDED');
           lastVideoId = null;
@@ -387,7 +363,7 @@ export default defineContentScript({
             }
             const videoId = getVideoId();
             if (!video.paused && !video.ended && videoId && !lastVideoId) {
-              log('[JP343] CI Japanese: Video laeuft nach URL-Wechsel');
+              log('[JP343] CI Japanese: Video playing after URL change');
               lastVideoId = videoId;
               lastTitle = getTitle();
               const state = getCurrentVideoState();
@@ -405,7 +381,7 @@ export default defineContentScript({
       const video = findVideoElement();
       const videoId = getVideoId();
       if (video && !video.paused && !video.ended && videoId && !lastVideoId) {
-        log('[JP343] CI Japanese: Verzoegertes Tracking');
+        log('[JP343] CI Japanese: Delayed tracking pickup');
         lastVideoId = videoId;
         lastTitle = getTitle();
         const state = getCurrentVideoState();
@@ -415,7 +391,6 @@ export default defineContentScript({
       }
     }, 3000);
 
-    // PAUSE/RESUME vom Popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

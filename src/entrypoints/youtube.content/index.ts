@@ -14,7 +14,6 @@ export default defineContentScript({
     let stateUpdateInterval: ReturnType<typeof setInterval> | null = null;
     let extensionContextValid = true;
 
-    // Cleanup-Registry (Fix 4+5)
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
@@ -25,12 +24,11 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', cleanup);
 
-
-    const DEBUG_MODE = import.meta.env.DEV;  // true in Dev, false in Prod (Fix 11)
+    const DEBUG_MODE = import.meta.env.DEV;
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
-    log('[JP343] YouTube Content Script geladen');
+    log('[JP343] YouTube Content Script loaded');
     const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;  // Limit um Speicher zu schonen
+    const MAX_LOG_ENTRIES = 5000;
 
     function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
       if (!DEBUG_MODE) return;
@@ -38,7 +36,6 @@ export default defineContentScript({
       const fullTimestamp = new Date().toISOString();
       const logLine = `[${fullTimestamp}] [${category}] ${message}`;
 
-      // In Console ausgeben
       console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
 
       const bufferEntry = data
@@ -47,7 +44,6 @@ export default defineContentScript({
 
       LOG_BUFFER.push(bufferEntry);
 
-      // Buffer-Groesse begrenzen
       if (LOG_BUFFER.length > MAX_LOG_ENTRIES) {
         LOG_BUFFER.shift();
       }
@@ -68,18 +64,18 @@ export default defineContentScript({
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
-          console.log('[JP343] Log-Datei heruntergeladen mit', LOG_BUFFER.length, 'Eintraegen');
+          console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
         } else if (event.data.type === 'JP343_CLEAR_LOGS') {
           LOG_BUFFER.length = 0;
-          console.log('[JP343] Log-Buffer geleert');
+          console.log('[JP343] Log buffer cleared');
         } else if (event.data.type === 'JP343_LOG_STATUS') {
-          console.log('[JP343] Log-Buffer:', LOG_BUFFER.length, 'Eintraege');
+          console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
         }
       });
     }
 
     if (DEBUG_MODE) {
-      console.log('[JP343] Debug-Logging aktiv. Befehle in Console:');
+      console.log('[JP343] Debug logging active. Console commands:');
       console.log('  postMessage({type:"JP343_DOWNLOAD_LOGS"})');
       console.log('  postMessage({type:"JP343_CLEAR_LOGS"})');
       console.log('  postMessage({type:"JP343_LOG_STATUS"})');
@@ -89,7 +85,6 @@ export default defineContentScript({
       const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
       const player = document.querySelector('#movie_player') as HTMLElement | null;
 
-      // Ad-Selektoren einzeln pruefen
       const adSelectors: Record<string, string> = {
         'ytp-ad-player-overlay': '.ytp-ad-player-overlay',
         'ytp-ad-player-overlay-instream-info': '.ytp-ad-player-overlay-instream-info',
@@ -106,7 +101,6 @@ export default defineContentScript({
         adSelectorResults[name] = !!document.querySelector(selector);
       }
 
-      // Ad-Text-Inhalte erfassen
       const adTextElements = document.querySelectorAll('.ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-skip-button-text');
       const adTexts: string[] = [];
       adTextElements.forEach(el => {
@@ -126,56 +120,40 @@ export default defineContentScript({
         }));
 
       return {
-        // Video-Element State
         videoExists: !!video,
         videoPaused: video?.paused ?? null,
         videoEnded: video?.ended ?? null,
         videoDuration: video?.duration ?? null,
         videoCurrentTime: video?.currentTime ?? null,
-
-        // Player State
         playerExists: !!player,
         playerClasses: player?.className || null,
         playerHasAdShowing: player?.classList.contains('ad-showing') ?? false,
-
-        // URL
         url: window.location.href,
         videoIdFromUrl: new URL(window.location.href).searchParams.get('v'),
-
-        // Ad-Selektoren einzeln
         adSelectors: adSelectorResults,
-
-        // Ad-Texte
         adTexts: adTexts,
-
-        // Elemente mit Ad-Klassen
         adClassElements: adClassElements,
-
-        // Interne States
         isCurrentlyAd: isCurrentlyAd,
         extensionContextValid: extensionContextValid
       };
     }
 
-    // Debug DOM Mutation Observer
     if (DEBUG_MODE) {
       let lastPlayerAdShowing = false;
 
       const debugMutationObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
-          // Node-Additionen
           mutation.addedNodes.forEach((node) => {
             if (node instanceof HTMLElement) {
               const classes = node.className || '';
               const id = node.id || '';
 
-              // Logge ad-bezogene Elemente
               const isAdRelated =
                 /ytp-ad|ad-showing|ad-interrupting|ad-overlay/i.test(classes) ||
                 /ytp-ad|ad-showing/i.test(id);
 
               if (isAdRelated) {
-                debugLog('DOM_ADD', 'Neues Ad-Element hinzugefuegt', {
+                debugLog('DOM_ADD', 'New ad element added', {
                   tag: node.tagName,
                   classes: classes,
                   id: id,
@@ -186,7 +164,6 @@ export default defineContentScript({
             }
           });
 
-          // Node-Entfernungen
           mutation.removedNodes.forEach((node) => {
             if (node instanceof HTMLElement) {
               const classes = node.className || '';
@@ -197,7 +174,7 @@ export default defineContentScript({
                 /ytp-ad|ad-showing/i.test(id);
 
               if (isAdRelated) {
-                debugLog('DOM_REMOVE', 'Ad-Element entfernt', {
+                debugLog('DOM_REMOVE', 'Ad element removed', {
                   tag: node.tagName,
                   classes: classes,
                   id: id
@@ -212,7 +189,7 @@ export default defineContentScript({
               const hasAdShowing = target.classList.contains('ad-showing');
               if (hasAdShowing !== lastPlayerAdShowing) {
                 lastPlayerAdShowing = hasAdShowing;
-                debugLog('DOM_ATTR', hasAdShowing ? 'ad-showing AKTIVIERT' : 'ad-showing ENTFERNT', {
+                debugLog('DOM_ATTR', hasAdShowing ? 'ad-showing ACTIVATED' : 'ad-showing REMOVED', {
                   tag: target.tagName,
                   id: target.id,
                   hasAdShowing: hasAdShowing
@@ -231,7 +208,7 @@ export default defineContentScript({
       });
       observers.push(debugMutationObserver);
 
-      debugLog('INIT', 'Debug Mutation Observer gestartet');
+      debugLog('INIT', 'Debug Mutation Observer started');
     }
 
     function isExtensionContextValid(): boolean {
@@ -244,8 +221,8 @@ export default defineContentScript({
 
     function invalidateExtensionContext(): void {
       if (extensionContextValid) {
-        log('[JP343] Extension Context ungueltig - stoppe Tracking');
-        debugLog('CONTEXT', 'Extension Context ungueltig - stoppe Tracking');
+        log('[JP343] Extension context invalid - stopping tracking');
+        debugLog('CONTEXT', 'Extension context invalid - stopping tracking');
         extensionContextValid = false;
         if (adCheckInterval) {
           clearInterval(adCheckInterval);
@@ -258,19 +235,16 @@ export default defineContentScript({
       }
     }
 
-    // YouTube Video Element finden
     function findVideoElement(): HTMLVideoElement | null {
       const video = document.querySelector('video.html5-main-video') as HTMLVideoElement;
       return video || document.querySelector('video');
     }
 
-    // Video-ID aus URL extrahieren
     function getVideoId(): string | null {
       const url = new URL(window.location.href);
       return url.searchParams.get('v');
     }
 
-    // Video-Titel extrahieren
     function getVideoTitle(): string {
       const titleSelectors = [
         'h1.ytd-video-primary-info-renderer yt-formatted-string',
@@ -294,6 +268,7 @@ export default defineContentScript({
       return title.trim() || 'YouTube Video';
     }
 
+    // mqdefault is faster and smaller than maxresdefault
     function getThumbnailUrl(): string | null {
       const videoId = getVideoId();
       if (videoId) {
@@ -302,7 +277,6 @@ export default defineContentScript({
       return null;
     }
 
-    // Channel-Informationen extrahieren
     function getChannelInfo(): { id: string | null; name: string | null; url: string | null } {
       let channelId: string | null = null;
       let channelName: string | null = null;
@@ -323,7 +297,6 @@ export default defineContentScript({
         '#owner a'
       ];
 
-      // Erst Channel-Name finden
       for (const selector of channelNameSelectors) {
         const element = document.querySelector(selector);
         if (element?.textContent?.trim()) {
@@ -354,7 +327,6 @@ export default defineContentScript({
         }
       }
 
-      // Channel-ID aus URL extrahieren
       if (channelUrl) {
         const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
         if (channelMatch) {
@@ -387,7 +359,7 @@ export default defineContentScript({
             }
           }
         } catch {
-          // Ignorieren falls Parse fehlschlaegt
+          // Ignore parse failures
         }
       }
 
@@ -404,7 +376,6 @@ export default defineContentScript({
       return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
-    // Aktuellen Video-State zusammenstellen
     function getCurrentVideoState(): VideoState | null {
       const video = findVideoElement();
       if (!video) return null;
@@ -414,6 +385,7 @@ export default defineContentScript({
         return null;
       }
 
+      // time-tracker.ts updateSessionChannelInfo corrects this
       const channelInfo = getChannelInfo();
 
       return {
@@ -432,7 +404,6 @@ export default defineContentScript({
       };
     }
 
-    // Message an Background senden
     async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
       if (!isExtensionContextValid()) {
         invalidateExtensionContext();
@@ -446,7 +417,6 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
-        // "Extension context invalidated" abfangen
         if (error instanceof Error && error.message.includes('Extension context invalidated')) {
           invalidateExtensionContext();
           return;
@@ -455,7 +425,6 @@ export default defineContentScript({
       }
     }
 
-    // Video Events binden
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) {
         return;
@@ -497,23 +466,22 @@ export default defineContentScript({
         intervalIds.push(stateUpdateInterval);
       }
 
-      debugLog('INIT', 'Video Events gebunden', { src: video.src?.slice(0, 80) });
-      log('[JP343] Video Events gebunden');
+      debugLog('INIT', 'Video events bound', { src: video.src?.slice(0, 80) });
+      log('[JP343] Video events bound');
 
       setTimeout(() => {
         if (!isExtensionContextValid()) return;
         if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
-            if (DEBUG_MODE) debugLog('VIDEO_PLAY', 'Video laeuft bereits - starte Tracking', collectUIState());
-            log('[JP343] Video laeuft bereits - starte Tracking');
+            if (DEBUG_MODE) debugLog('VIDEO_PLAY', 'Video already playing - starting tracking', collectUIState());
+            log('[JP343] Video already playing - starting tracking');
             sendMessage('VIDEO_PLAY', { state });
           }
         }
       }, 500);
     }
 
-    // Ad-Status ueberwachen
     let lastAdState = false;
     function startAdMonitoring(): void {
       if (adCheckInterval) return;
@@ -529,9 +497,9 @@ export default defineContentScript({
         if (DEBUG_MODE && isAd !== lastAdState) {
           lastAdState = isAd;
           if (isAd) {
-            debugLog('AD_STATE', '=== WERBUNG BEGINNT ===', collectUIState());
+            debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
           } else {
-            debugLog('AD_STATE', '=== WERBUNG BEENDET ===', collectUIState());
+            debugLog('AD_STATE', '=== AD ENDED ===', collectUIState());
           }
         }
 
@@ -572,17 +540,16 @@ export default defineContentScript({
       const currentUrl = window.location.href;
 
       if (currentUrl !== lastVideoUrl) {
-        // koennen gleichzeitig feuern
         if (urlChangeInProgress) return;
         urlChangeInProgress = true;
 
-        debugLog('URL_CHANGE', '=== URL WECHSEL ===', {
+        debugLog('URL_CHANGE', '=== URL CHANGED ===', {
           oldUrl: lastVideoUrl,
           newUrl: currentUrl
         });
 
         if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
-          log('[JP343] URL-Wechsel - beende vorherige Session');
+          log('[JP343] URL change - ending previous session');
           sendMessage('VIDEO_ENDED');
         }
 
@@ -590,11 +557,10 @@ export default defineContentScript({
 
         cachedPlayer = null;
 
-        // ALLE Intervals sofort stoppen!
         stopAdMonitoring();
         stopStateUpdates();
 
-        // (YouTube kann <video> Element wiederverwenden)
+        // (YouTube can reuse the <video> element)
         if (currentVideoElement) {
           currentVideoElement.removeAttribute('data-jp343-tracked');
         }
@@ -603,7 +569,7 @@ export default defineContentScript({
         disconnectObserver();
 
         setTimeout(() => {
-          urlChangeInProgress = false; // Naechsten URL-Wechsel erlauben
+          urlChangeInProgress = false;
           if (!isExtensionContextValid()) return;
           const video = findVideoElement();
           if (video) {
@@ -619,7 +585,7 @@ export default defineContentScript({
       const debugPeriodicId = setInterval(() => {
         const video = findVideoElement();
         if (video && !video.paused) {
-          debugLog('PERIODIC', 'Periodischer State-Check', collectUIState());
+          debugLog('PERIODIC', 'Periodic state check', collectUIState());
         }
       }, 5000);
       intervalIds.push(debugPeriodicId);
@@ -672,23 +638,20 @@ export default defineContentScript({
         attachVideoEvents(video);
         startAdMonitoring();
         disconnectObserver();
-        debugLog('INIT', 'Video gefunden', { attempts });
-        log('[JP343] Video gefunden nach', attempts, 'Versuchen');
+        debugLog('INIT', 'Video found', { attempts });
+        log('[JP343] Video found after', attempts, 'attempts');
       } else if (attempts < 10) {
-        // Nochmal versuchen (max 10x = 5 Sekunden)
         setTimeout(() => tryInitialVideoAttach(attempts + 1), 500);
       }
     }
 
-    // Nur auf Watch-Seiten initial suchen
     if (window.location.pathname.includes('/watch')) {
       tryInitialVideoAttach();
     }
 
-    // Leichtgewichtiger Video-Polling-Timer
     const videoPollingId = setInterval(() => {
       if (!isExtensionContextValid()) return;
-      if (currentVideoElement) return; // Schon gefunden, nichts tun
+      if (currentVideoElement) return;
       if (!window.location.pathname.includes('/watch')) return;
 
       const video = findVideoElement();
@@ -700,7 +663,6 @@ export default defineContentScript({
     }, 2000);
     intervalIds.push(videoPollingId);
 
-    // URL-Aenderungen via Browser-Events
     window.addEventListener('popstate', () => {
       setTimeout(handleUrlChange, 100);
     });
@@ -720,7 +682,7 @@ export default defineContentScript({
       }
     });
 
-    debugLog('INIT', 'YouTube Content Script vollstaendig initialisiert', {
+    debugLog('INIT', 'YouTube Content Script fully initialized', {
       url: window.location.href,
       isWatchPage: window.location.pathname.includes('/watch')
     });

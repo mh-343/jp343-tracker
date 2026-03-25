@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // =============================================================================
 // JP343 Extension - Release Build Script
-// Erstellt ZIP-Dateien fuer Chrome und Firefox
+// Creates ZIP files for Chrome and Firefox
 // =============================================================================
 
 const { execSync } = require('child_process');
@@ -12,11 +12,11 @@ const archiver = require('archiver');
 const ROOT_DIR = path.join(__dirname, '..');
 const RELEASE_DIR = path.join(ROOT_DIR, 'releases');
 
-// Version aus package.json lesen
+// Read version from package.json
 const packageJson = require(path.join(ROOT_DIR, 'package.json'));
 const version = packageJson.version;
 
-// Browser-Konfigurationen
+// Browser configurations
 const browsers = [
   {
     name: 'Chrome',
@@ -32,7 +32,7 @@ const browsers = [
   }
 ];
 
-// ZIP-Datei erstellen
+// Create ZIP file
 async function createZip(distDir, zipPath, zipName) {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(zipPath);
@@ -55,14 +55,14 @@ async function buildRelease() {
   console.log(`\n🚀 Building JP343 Extension v${version}\n`);
   console.log('=' .repeat(50));
 
-  // Release-Ordner erstellen/leeren
+  // Create/clear release directory
   if (!fs.existsSync(RELEASE_DIR)) {
     fs.mkdirSync(RELEASE_DIR, { recursive: true });
   }
 
   const createdFiles = [];
 
-  // Beide Browser bauen
+  // Build for both browsers
   for (const browser of browsers) {
     console.log(`\n📦 Building for ${browser.name}...`);
 
@@ -78,7 +78,7 @@ async function buildRelease() {
     }
   }
 
-  // Zusammenfassung
+  // Summary
   console.log('\n' + '=' .repeat(50));
   console.log(`\n✨ Release v${version} ready!\n`);
   console.log('Created files:');
@@ -93,3 +93,4 @@ async function buildRelease() {
 }
 
 buildRelease().catch(console.error);
+
