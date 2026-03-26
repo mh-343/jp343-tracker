@@ -424,7 +424,7 @@ export default defineBackground(() => {
 
   async function handleMessage(
     message: ExtensionMessage,
-    sender: browser.Runtime.MessageSender
+    _sender: browser.Runtime.MessageSender
   ): Promise<unknown> {
     if (!message || typeof message.type !== 'string') {
       return { success: false, error: 'Invalid message format' };
@@ -601,7 +601,7 @@ export default defineBackground(() => {
       }
 
       case 'JP343_SITE_LOADED': {
-        const senderUrl = sender?.url || sender?.tab?.url || '';
+        const senderUrl = _sender?.url || _sender?.tab?.url || '';
         if (!/^https?:\/\/(.*\.)?jp343\.com(\/|$)/i.test(senderUrl) && !senderUrl.startsWith(browser.runtime.getURL(''))) {
           return { success: false, error: 'Unauthorized origin' };
         }
