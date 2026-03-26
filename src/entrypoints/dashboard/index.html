@@ -25,21 +25,21 @@
     }
 
     [data-theme="light"] {
-      --bg-body: #f8f0ee;
-      --bg-card: #fffbfa;
-      --bg-card-hover: #f5edeb;
-      --bg-input: #f2eae7;
-      --text: #2e2228;
-      --text-dim: #9a868e;
-      --magenta: #a03060;
-      --magenta-glow: rgba(160, 48, 96, 0.08);
-      --cyan: #1a8a8a;
-      --purple: #6b3a7d;
-      --green: #4a8a50;
-      --orange: #b87830;
-      --red: #b83030;
-      --gradient: linear-gradient(90deg, #e8b4b8, #c4728a, #a03060);
-      --border: rgba(160, 48, 96, 0.08);
+      --bg-body: #f6f3ef;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f0ebe6;
+      --bg-input: #efeae5;
+      --text: #2c2633;
+      --text-dim: #706677;
+      --magenta: #7d3556;
+      --magenta-glow: rgba(125, 53, 86, 0.06);
+      --cyan: #7d3556;
+      --purple: #a25c7a;
+      --green: #4a7c59;
+      --orange: #a67c3d;
+      --red: #b04040;
+      --gradient: linear-gradient(90deg, #d4a0b0, #a25c7a, #7d3556);
+      --border: rgba(125, 53, 86, 0.08);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -707,19 +707,27 @@
     }
 
     /* ── Light Mode Overrides ────────────────────────── */
-    [data-theme="light"] .header { background: rgba(255, 251, 250, 0.88); }
-    [data-theme="light"] .hero::before {
-      background: radial-gradient(ellipse, rgba(232, 180, 184, 0.25), rgba(160, 48, 96, 0.06) 50%, transparent 75%);
+    [data-theme="light"] .header { background: rgba(246, 243, 239, 0.92); }
+    [data-theme="light"] .header-logo {
+      background: none;
+      -webkit-text-fill-color: var(--magenta);
+      color: var(--magenta);
     }
-    [data-theme="light"] .heatmap-cell { background: rgba(160, 48, 96, 0.08); }
-    [data-theme="light"] .heatmap-cell[data-level="1"] { background: rgba(196, 114, 138, 0.35); }
-    [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(196, 114, 138, 0.60); }
-    [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(160, 48, 96, 0.75); }
-    [data-theme="light"] .heatmap-cell[data-level="4"] { background: #a03060; }
-    [data-theme="light"] .month-bar.current { background: #a03060; }
-    [data-theme="light"] .session-thumb { background: rgba(160, 48, 96, 0.06); }
-    [data-theme="light"] .session-thumb-placeholder { background: rgba(160, 48, 96, 0.08); color: #a03060; }
-    [data-theme="light"] .session-platform { background: rgba(160, 48, 96, 0.08); color: #a03060; }
+    [data-theme="light"] .hero::before {
+      background: radial-gradient(ellipse, rgba(125, 53, 86, 0.06), transparent 70%);
+    }
+    [data-theme="light"] .hero-time .unit { color: var(--text-dim); opacity: 0.6; }
+    [data-theme="light"] .qs-value.dim { color: var(--purple); }
+    [data-theme="light"] .user-name { color: var(--magenta); }
+    [data-theme="light"] .heatmap-cell { background: rgba(125, 53, 86, 0.04); }
+    [data-theme="light"] .heatmap-cell[data-level="1"] { background: rgba(125, 53, 86, 0.12); }
+    [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(125, 53, 86, 0.30); }
+    [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(125, 53, 86, 0.55); }
+    [data-theme="light"] .heatmap-cell[data-level="4"] { background: #7d3556; }
+    [data-theme="light"] .month-bar.current { background: #7d3556; }
+    [data-theme="light"] .session-thumb { background: rgba(125, 53, 86, 0.06); }
+    [data-theme="light"] .session-thumb-placeholder { background: rgba(125, 53, 86, 0.06); color: #7d3556; }
+    [data-theme="light"] .session-platform { background: rgba(125, 53, 86, 0.06); color: #7d3556; }
     [data-theme="light"] .skeleton {
       background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
       background-size: 200% 100%;
@@ -727,7 +735,12 @@
     [data-theme="light"] .card,
     [data-theme="light"] .hero,
     [data-theme="light"] .qs-card,
-    [data-theme="light"] .user-bar { box-shadow: 0 1px 4px rgba(46, 34, 40, 0.05); }
+    [data-theme="light"] .user-bar { box-shadow: 0 1px 4px rgba(44, 38, 51, 0.05); }
+    [data-theme="light"] .btn-login,
+    [data-theme="light"] .btn-register,
+    [data-theme="light"] .btn-sync-dashboard {
+      background: var(--magenta);
+    }
 
     /* Theme Toggle */
     .theme-toggle {
