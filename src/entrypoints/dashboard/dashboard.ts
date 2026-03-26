@@ -809,7 +809,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   if (session.platform && session.platform !== 'manual') {
     const platform = document.createElement('span');
     platform.className = 'session-platform';
-    platform.textContent = session.platform === 'extension' ? 'youtube' : session.platform;
+    platform.textContent = session.platform;
     meta.appendChild(platform);
   }
 
