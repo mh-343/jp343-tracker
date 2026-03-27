@@ -733,13 +733,32 @@ function renderSessions(entries: PendingEntry[]): void {
 let serverSessionsCache: ServerSession[] | null = null;
 const INITIAL_SERVER_SESSIONS = 5;
 
-function renderServerSessions(sessions: ServerSession[]): void {
+function pendingToServerSession(entry: PendingEntry): ServerSession {
+  return {
+    id: entry.id,
+    title: entry.project,
+    platform: entry.platform,
+    duration_seconds: Math.round(entry.duration_min * 60),
+    date: entry.date,
+    image: entry.thumbnail || undefined,
+    url: entry.url,
+  };
+}
+
+function renderServerSessions(sessions: ServerSession[], unsyncedLocal: PendingEntry[] = []): void {
   const container = document.getElementById('sessionList');
   if (!container) return;
   container.textContent = '';
-  serverSessionsCache = sessions;
 
-  if (sessions.length === 0) {
+  const localConverted = unsyncedLocal.map(pendingToServerSession);
+  const serverIds = new Set(sessions.map(s => String(s.id)));
+  const deduped = localConverted.filter(l => !serverIds.has(String(l.id)));
+  const merged = [...deduped, ...sessions].sort(
+    (a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime()
+  );
+  serverSessionsCache = merged;
+
+  if (merged.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
     const icon = document.createElement('div');
@@ -754,8 +773,8 @@ function renderServerSessions(sessions: ServerSession[]): void {
     return;
   }
 
-  const display = sessions.slice(0, INITIAL_SERVER_SESSIONS);
-  const remaining = sessions.length - INITIAL_SERVER_SESSIONS;
+  const display = merged.slice(0, INITIAL_SERVER_SESSIONS);
+  const remaining = merged.length - INITIAL_SERVER_SESSIONS;
 
   for (const session of display) {
     container.appendChild(createServerSessionItem(session));
@@ -769,7 +788,7 @@ function renderServerSessions(sessions: ServerSession[]): void {
     showMore.textContent = `Show ${remaining} more`;
     showMore.addEventListener('click', () => {
       showMore.remove();
-      for (const session of sessions.slice(INITIAL_SERVER_SESSIONS)) {
+      for (const session of merged.slice(INITIAL_SERVER_SESSIONS)) {
         container.appendChild(createServerSessionItem(session));
       }
     });
@@ -831,6 +850,30 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   delBtn.title = 'Delete';
   delBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    item.remove();
+    const durationSec = session.duration_seconds || 0;
+    if (durationSec > 0) {
+      const cached: ServerStatsResponse | undefined =
+        (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
+      if (cached) {
+        if (cached.total_seconds) {
+          cached.total_seconds -= durationSec;
+          renderHeroTime(cached.total_seconds / 60);
+        }
+        const sessionDate = session.date ? getLocalDateString(new Date(session.date)) : '';
+        const today = getLocalDateString();
+        if (sessionDate === today && cached.today_seconds) {
+          cached.today_seconds -= durationSec;
+          setText('statToday', formatStatDuration(cached.today_seconds / 60));
+        }
+        const { start: weekStart, end: weekEnd } = getWeekDates();
+        if (sessionDate >= weekStart && sessionDate <= weekEnd && cached.week_seconds) {
+          cached.week_seconds -= durationSec;
+          setText('statWeek', formatStatDuration(cached.week_seconds / 60));
+        }
+        browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: cached });
+      }
+    }
     const data = await loadData();
     if ((data.userState?.extApiToken || data.userState?.nonce) && session.id) {
       try {
@@ -845,8 +888,13 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
             entry_id: String(session.id)
           });
         }
-        item.remove();
-      } catch { /* Delete failed */ }
+      } catch { /* Server delete failed — item already removed from UI */ }
+    }
+    if (session.id) {
+      browser.runtime.sendMessage({
+        type: 'DELETE_PENDING_BY_SERVER_ID',
+        serverEntryId: Number(session.id)
+      }).catch(() => {});
     }
   });
   item.appendChild(delBtn);
@@ -1071,8 +1119,14 @@ function showSessionsLoading(): void {
   container.appendChild(placeholder);
 }
 
+let initialLoadDone = false;
+let refreshPending = false;
+
 async function refresh(): Promise<void> {
-  if (isRefreshing) return;
+  if (isRefreshing) {
+    refreshPending = true;
+    return;
+  }
   isRefreshing = true;
 
   try {
@@ -1090,7 +1144,7 @@ async function refresh(): Promise<void> {
 
   if (isLoggedIn) {
     await applyCachedServerStats();
-    showSessionsLoading();
+    if (!initialLoadDone) showSessionsLoading();
 
     const refreshed = await tryRefreshNonce(data.userState!);
     const activeState = refreshed || data.userState!;
@@ -1104,7 +1158,10 @@ async function refresh(): Promise<void> {
         applyServerStats(serverStats);
       }
       if (serverSessions) {
-        renderServerSessions(serverSessions);
+        const freshPending: PendingEntry[] =
+          (await browser.storage.local.get(STORAGE_KEYS.PENDING))[STORAGE_KEYS.PENDING] || [];
+        const unsynced = freshPending.filter(e => !e.synced);
+        renderServerSessions(serverSessions, unsynced);
       } else {
         renderSessions(data.entries);
       }
@@ -1119,7 +1176,12 @@ async function refresh(): Promise<void> {
   }
 
   } finally {
+    initialLoadDone = true;
     isRefreshing = false;
+    if (refreshPending) {
+      refreshPending = false;
+      refresh();
+    }
   }
 }
 
@@ -1150,6 +1212,53 @@ function setupThemeToggle(): void {
 setupThemeToggle();
 setupAuthUI();
 refresh();
+
+interface NewsResponse {
+  id?: string;
+  text?: string;
+  type?: 'info' | 'warning' | 'critical';
+  link_url?: string;
+  link_text?: string;
+}
+
+async function loadNews(): Promise<void> {
+  try {
+    const res = await fetch('https://jp343.com/wp-json/jp343/v1/extension/news');
+    if (!res.ok) return;
+    const data: NewsResponse = await res.json();
+    if (!data.id || !data.text) return;
+    if (localStorage.getItem(`jp343_news_dismissed_${data.id}`)) return;
+
+    const banner = document.getElementById('newsBanner');
+    const textEl = document.getElementById('newsBannerText');
+    const closeBtn = document.getElementById('newsBannerClose');
+    const iconEl = banner?.querySelector('.news-banner-icon');
+    if (!banner || !textEl || !closeBtn) return;
+
+    textEl.textContent = data.text;
+    if (data.link_url) {
+      const link = document.createElement('a');
+      link.href = data.link_url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = data.link_text || 'Learn more';
+      textEl.append(' ', link);
+    }
+    if (iconEl) {
+      const icons: Record<string, string> = { info: '\u2139', warning: '\u26A0', critical: '\u274C' };
+      iconEl.textContent = icons[data.type || 'info'] || '\u2139';
+      if (data.type === 'warning') (iconEl as HTMLElement).style.color = 'var(--orange)';
+      if (data.type === 'critical') (iconEl as HTMLElement).style.color = 'var(--red)';
+    }
+    banner.style.display = '';
+    closeBtn.addEventListener('click', () => {
+      banner.style.display = 'none';
+      localStorage.setItem(`jp343_news_dismissed_${data.id}`, '1');
+    });
+  } catch { /* offline or server error — no banner */ }
+}
+
+loadNews();
 
 // Live-update on storage changes
 browser.storage.onChanged.addListener((changes, area) => {

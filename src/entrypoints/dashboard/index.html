@@ -25,21 +25,22 @@
     }
 
     [data-theme="light"] {
-      --bg-body: #f6f3ef;
+      --bg-body: #f0f1f8;
       --bg-card: #ffffff;
-      --bg-card-hover: #f0ebe6;
-      --bg-input: #efeae5;
-      --text: #2c2633;
-      --text-dim: #706677;
-      --magenta: #7d3556;
-      --magenta-glow: rgba(125, 53, 86, 0.06);
-      --cyan: #7d3556;
-      --purple: #a25c7a;
-      --green: #4a7c59;
+      --bg-card-hover: #ecedf8;
+      --bg-input: #e8e9f4;
+      --text: #2a2545;
+      --text-dim: #6b6490;
+      --magenta: #7b5ea7;
+      --magenta-glow: rgba(123, 94, 167, 0.06);
+      --cyan: #7b5ea7;
+      --purple: #9a7ec4;
+      --green: #5a9a6e;
       --orange: #a67c3d;
       --red: #b04040;
-      --gradient: linear-gradient(90deg, #d4a0b0, #a25c7a, #7d3556);
-      --border: rgba(125, 53, 86, 0.08);
+      --gradient: linear-gradient(135deg, #7ec8e3 0%, #a78bda 30%, #d4a5c9 60%, #8ee4df 100%);
+      --border: rgba(123, 94, 167, 0.10);
+      --iri-gradient-subtle: linear-gradient(135deg, rgba(126,200,227,0.15), rgba(167,139,218,0.15), rgba(212,165,201,0.15), rgba(142,228,223,0.12));
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -706,28 +707,58 @@
       .wrap { max-width: 1060px; }
     }
 
+    @keyframes iri-shimmer {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes iri-shift {
+      0%   { filter: hue-rotate(0deg); }
+      33%  { filter: hue-rotate(15deg); }
+      66%  { filter: hue-rotate(-10deg); }
+      100% { filter: hue-rotate(0deg); }
+    }
+
     /* ── Light Mode Overrides ────────────────────────── */
-    [data-theme="light"] .header { background: rgba(246, 243, 239, 0.92); }
+    [data-theme="light"] .header { background: rgba(240, 241, 248, 0.92); }
     [data-theme="light"] .header-logo {
-      background: none;
-      -webkit-text-fill-color: var(--magenta);
-      color: var(--magenta);
+      background: linear-gradient(135deg, #6b4d99, #3a9ab8, #a8578e, #3aada6);
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: iri-shimmer 5s ease infinite;
     }
     [data-theme="light"] .hero::before {
-      background: radial-gradient(ellipse, rgba(125, 53, 86, 0.06), transparent 70%);
+      width: 500px; height: 500px; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(126,200,227,0.12) 0%, rgba(167,139,218,0.08) 40%, rgba(212,165,201,0.06) 70%, transparent 100%);
+      animation: iri-shift 8s ease-in-out infinite;
     }
     [data-theme="light"] .hero-time .unit { color: var(--text-dim); opacity: 0.6; }
     [data-theme="light"] .qs-value.dim { color: var(--purple); }
-    [data-theme="light"] .user-name { color: var(--magenta); }
-    [data-theme="light"] .heatmap-cell { background: rgba(125, 53, 86, 0.04); }
-    [data-theme="light"] .heatmap-cell[data-level="1"] { background: rgba(125, 53, 86, 0.12); }
-    [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(125, 53, 86, 0.30); }
-    [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(125, 53, 86, 0.55); }
-    [data-theme="light"] .heatmap-cell[data-level="4"] { background: #7d3556; }
-    [data-theme="light"] .month-bar.current { background: #7d3556; }
-    [data-theme="light"] .session-thumb { background: rgba(125, 53, 86, 0.06); }
-    [data-theme="light"] .session-thumb-placeholder { background: rgba(125, 53, 86, 0.06); color: #7d3556; }
-    [data-theme="light"] .session-platform { background: rgba(125, 53, 86, 0.06); color: #7d3556; }
+    [data-theme="light"] .user-name {
+      background: linear-gradient(90deg, #7b5ea7, #3a9ab8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    [data-theme="light"] .heatmap-cell { background: rgba(123, 94, 167, 0.08); border: 1px solid rgba(123, 94, 167, 0.06); }
+    [data-theme="light"] .heatmap-cell[data-level="1"] { background: rgba(126, 200, 227, 0.25); }
+    [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(167, 139, 218, 0.35); }
+    [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(167, 139, 218, 0.55); }
+    [data-theme="light"] .heatmap-cell[data-level="4"] {
+      background: linear-gradient(135deg, #7ec8e3, #a78bda, #d4a5c9, #8ee4df);
+      background-size: 300% 300%;
+      animation: iri-shimmer 3s ease infinite;
+    }
+    [data-theme="light"] .week-bar { background: linear-gradient(180deg, #a78bda, #7ec8e3); }
+    [data-theme="light"] .month-bar { background: linear-gradient(180deg, #a78bda, #8ee4df); }
+    [data-theme="light"] .month-bar.current {
+      background: linear-gradient(180deg, #7ec8e3, #a78bda, #d4a5c9);
+      background-size: 100% 300%;
+      animation: iri-shimmer 3s ease infinite;
+    }
+    [data-theme="light"] .session-thumb { background: var(--iri-gradient-subtle); }
+    [data-theme="light"] .session-thumb-placeholder { background: var(--iri-gradient-subtle); color: #7b5ea7; }
+    [data-theme="light"] .session-platform { background: var(--iri-gradient-subtle); color: #7b5ea7; }
     [data-theme="light"] .skeleton {
       background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
       background-size: 200% 100%;
@@ -735,12 +766,17 @@
     [data-theme="light"] .card,
     [data-theme="light"] .hero,
     [data-theme="light"] .qs-card,
-    [data-theme="light"] .user-bar { box-shadow: 0 1px 4px rgba(44, 38, 51, 0.05); }
+    [data-theme="light"] .user-bar {
+      box-shadow: 0 1px 4px rgba(42, 37, 69, 0.05), 0 0 0 1px rgba(123, 94, 167, 0.06);
+    }
     [data-theme="light"] .btn-login,
     [data-theme="light"] .btn-register,
     [data-theme="light"] .btn-sync-dashboard {
-      background: var(--magenta);
+      background: linear-gradient(135deg, #7ec8e3, #a78bda, #d4a5c9, #8ee4df);
+      background-size: 300% 300%;
+      animation: iri-shimmer 4s ease infinite;
     }
+    [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(123, 94, 167, 0.25); }
 
     /* Theme Toggle */
     .theme-toggle {
@@ -759,6 +795,41 @@
       padding: 0;
     }
     .theme-toggle:hover { border-color: var(--magenta); color: var(--magenta); }
+
+    .news-banner {
+      background: linear-gradient(90deg, rgba(0, 229, 255, 0.08), rgba(135, 90, 255, 0.08));
+      border-bottom: 1px solid var(--border);
+    }
+    .news-banner-inner {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .news-banner-icon {
+      font-size: 18px;
+      color: var(--cyan);
+      flex-shrink: 0;
+    }
+    .news-banner-text {
+      flex: 1;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .news-banner-text a { color: var(--cyan); text-decoration: underline; }
+    .news-banner-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 0 4px;
+      flex-shrink: 0;
+    }
+    .news-banner-close:hover { color: var(--text); }
   </style>
 </head>
 <body>
@@ -770,6 +841,14 @@
         <button class="theme-toggle" id="themeToggle" title="Toggle theme">&#9790;</button>
         <a class="link-site" href="https://jp343.com/my-hub/" target="_blank">jp343.com</a>
       </div>
+    </div>
+  </div>
+
+  <div id="newsBanner" class="news-banner" style="display: none;">
+    <div class="news-banner-inner">
+      <span class="news-banner-icon">&#9432;</span>
+      <span class="news-banner-text" id="newsBannerText"></span>
+      <button class="news-banner-close" id="newsBannerClose" title="Dismiss">&times;</button>
     </div>
   </div>
 

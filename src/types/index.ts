@@ -99,6 +99,7 @@ export type ExtensionMessage =
   | { type: 'GET_CURRENT_SESSION' }
   | { type: 'GET_PENDING_ENTRIES' }
   | { type: 'DELETE_PENDING_ENTRY'; entryId: string }
+  | { type: 'DELETE_PENDING_BY_SERVER_ID'; serverEntryId: number }
   | { type: 'CLEAR_SYNCED_ENTRIES' }
   | { type: 'STOP_SESSION' }
   | { type: 'PAUSE_SESSION' }
