@@ -63,6 +63,7 @@ export default defineBackground(() => {
     await withStorageLock(async () => {
       try {
         const pending = await loadPendingEntries();
+        if (pending.some(e => e.id === entry.id)) return;
         pending.push(entry);
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
         log('[JP343] Entry saved. Pending:', pending.length);
@@ -72,29 +73,27 @@ export default defineBackground(() => {
         log('[JP343] Failed to save entry:', error);
       }
     });
-    scheduleAutoSync();
+    await triggerSync();
   }
 
-  let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let syncInProgress = false;
 
-  function scheduleAutoSync(): void {
-    if (autoSyncTimer) return;
-    autoSyncTimer = setTimeout(async () => {
-      autoSyncTimer = null;
-      try {
-        const userState: JP343UserState | null = (
-          await browser.storage.local.get(STORAGE_KEYS.USER)
-        )[STORAGE_KEYS.USER] ?? null;
-
-        if (userState?.isLoggedIn && (userState?.extApiToken || userState?.nonce)) {
-          log('[JP343] Auto-sync started');
-          const result = await syncEntriesDirect();
-          log('[JP343] Auto-sync result:', result.succeeded, 'synced,', result.failed, 'failed');
-        }
-      } catch (error) {
-        log('[JP343] Auto-sync error:', error);
-      }
-    }, 5000);
+  async function triggerSync(): Promise<void> {
+    if (syncInProgress) return;
+    try {
+      const userState: JP343UserState | null = (
+        await browser.storage.local.get(STORAGE_KEYS.USER)
+      )[STORAGE_KEYS.USER] ?? null;
+      if (!userState?.isLoggedIn || (!userState?.extApiToken && !userState?.nonce)) return;
+      syncInProgress = true;
+      log('[JP343] Sync started');
+      const result = await syncEntriesDirect();
+      log('[JP343] Sync result:', result.succeeded, 'synced,', result.failed, 'failed');
+    } catch (error) {
+      log('[JP343] Sync error:', error);
+    } finally {
+      syncInProgress = false;
+    }
   }
 
   browser.alarms.create('jp343-auto-sync-retry', { periodInMinutes: 5 });
@@ -102,7 +101,7 @@ export default defineBackground(() => {
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
-      scheduleAutoSync();
+      await triggerSync();
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {
@@ -124,9 +123,10 @@ export default defineBackground(() => {
       await browser.storage.local.get(STORAGE_KEYS.USER)
     )[STORAGE_KEYS.USER] ?? null;
 
-    if (!userState || !userState.ajaxUrl) {
+    if (!userState) {
       return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
     }
+    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
 
     const hasToken = !!userState.extApiToken;
     const hasNonce = !!userState.nonce;
@@ -175,7 +175,7 @@ export default defineBackground(() => {
           params.guest_token = userState.guestToken;
         }
 
-        const response = await fetch(userState.ajaxUrl, {
+        const response = await fetch(ajaxUrl, {
           method: 'POST',
           credentials: 'include',
           body: new URLSearchParams(params)
@@ -655,6 +655,22 @@ export default defineBackground(() => {
           });
         }
         return { success: false, error: 'No entryId provided' };
+      }
+
+      case 'DELETE_PENDING_BY_SERVER_ID': {
+        if ('serverEntryId' in message && typeof message.serverEntryId === 'number') {
+          return withStorageLock(async () => {
+            const pending = await loadPendingEntries();
+            const match = pending.find(e => e.serverEntryId === message.serverEntryId);
+            if (!match) return { success: true, data: { found: false } };
+            const filtered = pending.filter(e => e.serverEntryId !== message.serverEntryId);
+            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
+            updateBadge(filtered.filter(e => !e.synced).length);
+            await subtractFromStats(match);
+            return { success: true, data: { found: true } };
+          });
+        }
+        return { success: false, error: 'No serverEntryId provided' };
       }
 
       case 'CLEAR_SYNCED_ENTRIES': {
