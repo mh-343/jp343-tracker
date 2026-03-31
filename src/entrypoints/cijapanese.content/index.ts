@@ -1,4 +1,5 @@
 import type { VideoState } from '../../types';
+import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 
 export default defineContentScript({
   matches: ['*://*.cijapanese.com/*'],
@@ -30,55 +31,10 @@ export default defineContentScript({
       }
     });
 
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const logger = createDebugLogger('cijapanese');
+    const { log, debugLog } = logger;
     log('[JP343] CI Japanese content script loaded');
-    const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;
-
-    function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
-      if (!DEBUG_MODE) return;
-      const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
-      const fullTimestamp = new Date().toISOString();
-      const logLine = `[${fullTimestamp}] [${category}] ${message}`;
-      console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
-      const bufferEntry = data ? `${logLine} ${JSON.stringify(data)}` : logLine;
-      LOG_BUFFER.push(bufferEntry);
-      if (LOG_BUFFER.length > MAX_LOG_ENTRIES) LOG_BUFFER.shift();
-    }
-
-    if (DEBUG_MODE) {
-      const script = document.createElement('script');
-      script.textContent = `
-        window.JP343_downloadLogs = function() {
-          window.dispatchEvent(new CustomEvent('JP343_REQUEST_LOGS'));
-        };
-        window.JP343_clearLogs = function() {
-          window.dispatchEvent(new CustomEvent('JP343_CLEAR_LOGS'));
-        };
-        console.log('[JP343] Debug active. Commands: JP343_downloadLogs(), JP343_clearLogs()');
-      `;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
-
-      window.addEventListener('JP343_REQUEST_LOGS', () => {
-        const content = LOG_BUFFER.join('\n');
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `jp343-cijapanese-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-
-      window.addEventListener('JP343_CLEAR_LOGS', () => {
-        LOG_BUFFER.length = 0;
-        console.log('[JP343] Log buffer cleared');
-      });
-    }
+    setupDebugCommands(logger, 'cijapanese', { logStatus: false });
 
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
@@ -140,8 +96,8 @@ export default defineContentScript({
     }
 
     function getVideoId(): string | null {
-      const path = window.location.pathname;
-      return path.replace(/\/$/, '') || null;
+      const match = window.location.pathname.match(/\/video\/(\d+)/);
+      return match ? match[1] : null;
     }
 
     function getTitle(): string {
@@ -198,7 +154,7 @@ export default defineContentScript({
         duration: video.duration || 0,
         title: getTitle(),
         url: window.location.href,
-        platform: 'generic',
+        platform: 'cijapanese',
         isAd: false,
         thumbnailUrl: getThumbnail(),
         videoId: videoId,
@@ -212,7 +168,7 @@ export default defineContentScript({
       try {
         await browser.runtime.sendMessage({
           type,
-          platform: 'generic',
+          platform: 'cijapanese',
           ...data
         });
       } catch (error) {

@@ -59,7 +59,6 @@ export default defineContentScript({
             userId: userData.userId || null,
             nonce: userData.nonce || null,
             ajaxUrl: validatedAjaxUrl,
-            guestToken: userData.guestToken || null,
             extApiToken: userData.extApiToken || null
           };
         } catch (e) {
@@ -72,9 +71,14 @@ export default defineContentScript({
         userId: null,
         nonce: null,
         ajaxUrl: null,
-        guestToken: null,
         extApiToken: null
       };
+    }
+
+    function getDisplayName(): string | null {
+      const dataAttr = document.documentElement.getAttribute('data-jp343-user');
+      if (!dataAttr) return null;
+      try { return JSON.parse(dataAttr).displayName || null; } catch { return null; }
     }
 
     async function reportUserState(): Promise<void> {
@@ -82,7 +86,8 @@ export default defineContentScript({
       try {
         await browser.runtime.sendMessage({
           type: 'JP343_SITE_LOADED',
-          userState
+          userState,
+          displayName: getDisplayName()
         });
         log('[JP343 Bridge] User state reported:', userState.isLoggedIn ? 'logged in' : 'not logged in');
       } catch (_error) {

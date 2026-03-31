@@ -1,6 +1,6 @@
 // JP343 Extension - Popup UI
 
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
 
 const DEBUG_MODE = import.meta.env.DEV;
@@ -40,6 +40,7 @@ const elements = {
   manualTrackMode: document.getElementById('manualTrackMode') as HTMLElement,
   currentDomain: document.getElementById('currentDomain') as HTMLElement,
   manualTitle: document.getElementById('manualTitle') as HTMLInputElement,
+  activityTypeSelect: document.getElementById('activityType') as HTMLSelectElement,
   btnStartManual: document.getElementById('btnStartManual') as HTMLButtonElement,
   // Toast
   toast: document.getElementById('toast') as HTMLElement,
@@ -111,6 +112,8 @@ async function loadAndApplySettings(): Promise<void> {
 
 // --- MANUAL TRACKING ---
 
+let lastLoadedDomain = '';
+
 async function loadActiveTabInfo(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
@@ -137,6 +140,10 @@ function updateManualTrackDisplay(): void {
     elements.currentDomain.textContent = activeTabInfo.domain;
     elements.manualTitle.value = activeTabInfo.title;
     elements.manualTitle.placeholder = activeTabInfo.title;
+    if (lastLoadedDomain !== activeTabInfo.domain) {
+      lastLoadedDomain = activeTabInfo.domain;
+      loadActivityTypePreference(activeTabInfo.domain);
+    }
   } else {
     elements.manualTrackMode.style.display = 'none';
     if (!currentSession) {
@@ -154,17 +161,40 @@ function updateManualTrackDisplay(): void {
   }
 }
 
+async function loadActivityTypePreference(domain: string): Promise<void> {
+  try {
+    const result = await browser.storage.local.get('jp343_extension_activity_prefs');
+    const prefs = result['jp343_extension_activity_prefs'] as Record<string, ActivityType> | undefined;
+    elements.activityTypeSelect.value = prefs?.[domain] ?? 'watching';
+  } catch {
+    elements.activityTypeSelect.value = 'watching';
+  }
+}
+
+async function saveActivityTypePreference(domain: string, activityType: ActivityType): Promise<void> {
+  try {
+    const result = await browser.storage.local.get('jp343_extension_activity_prefs');
+    const prefs = (result['jp343_extension_activity_prefs'] as Record<string, ActivityType>) ?? {};
+    prefs[domain] = activityType;
+    await browser.storage.local.set({ 'jp343_extension_activity_prefs': prefs });
+  } catch { /* non-critical */ }
+}
+
 elements.btnStartManual.addEventListener('click', async () => {
   if (!activeTabInfo) return;
 
   const title = elements.manualTitle.value.trim() || activeTabInfo.title;
+  const activityType = elements.activityTypeSelect.value as ActivityType;
+
+  await saveActivityTypePreference(activeTabInfo.domain, activityType);
 
   try {
     const response = await browser.runtime.sendMessage({
       type: 'MANUAL_TRACK_START',
       title: title,
       url: activeTabInfo.url,
-      tabId: activeTabInfo.tabId
+      tabId: activeTabInfo.tabId,
+      activityType
     });
 
     if (response.success) {

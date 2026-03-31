@@ -1,6 +1,7 @@
 // JP343 Extension - YouTube Content Script
 
 import type { VideoState } from '../../types';
+import { createDebugLogger, DEBUG_MODE, downloadBuffer } from '../../lib/debug-logger';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -24,57 +25,16 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', cleanup);
 
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const { log, debugLog, getBuffer, clearBuffer } = createDebugLogger('youtube');
     log('[JP343] YouTube Content Script loaded');
-    const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;
-
-    function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
-      if (!DEBUG_MODE) return;
-      const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
-      const fullTimestamp = new Date().toISOString();
-      const logLine = `[${fullTimestamp}] [${category}] ${message}`;
-
-      console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
-
-      const bufferEntry = data
-        ? `${logLine} ${JSON.stringify(data)}`
-        : logLine;
-
-      LOG_BUFFER.push(bufferEntry);
-
-      if (LOG_BUFFER.length > MAX_LOG_ENTRIES) {
-        LOG_BUFFER.shift();
-      }
-    }
 
     if (DEBUG_MODE) {
       window.addEventListener('message', (event) => {
         if (event.source !== window || !event.data?.type) return;
-
-        if (event.data.type === 'JP343_DOWNLOAD_LOGS') {
-          const content = LOG_BUFFER.join('\n');
-          const blob = new Blob([content], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `jp343-youtube-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
-        } else if (event.data.type === 'JP343_CLEAR_LOGS') {
-          LOG_BUFFER.length = 0;
-          console.log('[JP343] Log buffer cleared');
-        } else if (event.data.type === 'JP343_LOG_STATUS') {
-          console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
-        }
+        if (event.data.type === 'JP343_DOWNLOAD_LOGS') downloadBuffer(getBuffer(), 'youtube');
+        else if (event.data.type === 'JP343_CLEAR_LOGS') { clearBuffer(); console.log('[JP343] Log buffer cleared'); }
+        else if (event.data.type === 'JP343_LOG_STATUS') console.log('[JP343] Log buffer:', getBuffer().length, 'entries');
       });
-    }
-
-    if (DEBUG_MODE) {
       console.log('[JP343] Debug logging active. Console commands:');
       console.log('  postMessage({type:"JP343_DOWNLOAD_LOGS"})');
       console.log('  postMessage({type:"JP343_CLEAR_LOGS"})');
@@ -268,7 +228,6 @@ export default defineContentScript({
       return title.trim() || 'YouTube Video';
     }
 
-    // mqdefault is faster and smaller than maxresdefault
     function getThumbnailUrl(): string | null {
       const videoId = getVideoId();
       if (videoId) {
