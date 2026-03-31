@@ -1,4 +1,15 @@
 import type { VideoState } from '../../types';
+import { createDebugLogger } from '../../lib/debug-logger';
+
+interface DisneyPlusMetadata {
+  title: string;
+  episodeTitle: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+  isMovie: boolean;
+  seriesName: string | null;
+  thumbnailUrl: string | null;
+}
 
 export default defineContentScript({
   matches: ['*://*.disneyplus.com/*'],
@@ -9,14 +20,18 @@ export default defineContentScript({
     let lastTitle: string = '';
     let lastVideoId: string | null = null;
     let isCurrentlyInAd: boolean = false;
+    let bestKnownSeriesName: string = '';
+    let cachedMetadata: DisneyPlusMetadata | null = null;
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
+    let adEndDebounce: ReturnType<typeof setTimeout> | null = null;
     function cleanup(): void {
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
       observers.length = 0;
       intervalIds.length = 0;
+      if (adEndDebounce) clearTimeout(adEndDebounce);
     }
 
     window.addEventListener('pagehide', () => {
@@ -31,8 +46,7 @@ export default defineContentScript({
       }
     });
 
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const { log } = createDebugLogger('disneyplus');
 
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('video.hive-video') as HTMLVideoElement)
@@ -49,7 +63,182 @@ export default defineContentScript({
       return match ? match[1] : null;
     }
 
-    function getTitle(): string {
+    function parseDisneyTitle(rawTitle: string): Partial<DisneyPlusMetadata> {
+      const result: Partial<DisneyPlusMetadata> = {
+        title: rawTitle,
+        seriesName: rawTitle,
+        isMovie: true
+      };
+
+      let match;
+
+      match = rawTitle.match(/^(.+?)\s*[-–]\s*S(\d+):?[EF](\d+)\s*[-–:]?\s*(.*)$/i);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeNumber = parseInt(match[3], 10);
+        result.episodeTitle = match[4].trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
+      match = rawTitle.match(/^(.+?)\s*[-–]\s*Season\s*(\d+)[,:]?\s*Episode\s*(\d+)(.*)$/i);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeNumber = parseInt(match[3], 10);
+        result.episodeTitle = match[4].replace(/^[\s:–-]+/, '').trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
+      match = rawTitle.match(/^(.+?)\s*[-–]\s*Staffel\s*(\d+)[,:]?\s*Folge\s*(\d+)(.*)$/i);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeNumber = parseInt(match[3], 10);
+        result.episodeTitle = match[4].replace(/^[\s:–-]+/, '').trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
+      // Japanese: "Series シーズンN エピソードN"
+      match = rawTitle.match(/^(.+?)\s*シーズン\s*(\d+)\s*エピソード\s*(\d+)(.*)$/);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeNumber = parseInt(match[3], 10);
+        result.episodeTitle = match[4].trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
+      // Japanese: "Series 第N話"
+      match = rawTitle.match(/^(.+?)\s*第(\d+)話(.*)$/);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.episodeNumber = parseInt(match[2], 10);
+        result.episodeTitle = match[3].trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
+      // S1E5 or S1F1 (German) anywhere
+      match = rawTitle.match(/S(\d+)\s*[:\s]?\s*[EF](\d+)/i);
+      if (match) {
+        result.seasonNumber = parseInt(match[1], 10);
+        result.episodeNumber = parseInt(match[2], 10);
+        const titlePart = rawTitle.substring(0, rawTitle.indexOf(match[0])).trim();
+        if (titlePart) {
+          result.seriesName = titlePart.replace(/[-–:,]\s*$/, '').trim();
+          result.title = result.seriesName;
+        }
+        result.isMovie = false;
+        return result;
+      }
+
+      // "Season X Episode Y" anywhere
+      match = rawTitle.match(/Season\s*(\d+)[,:]?\s*Episode\s*(\d+)/i);
+      if (match) {
+        result.seasonNumber = parseInt(match[1], 10);
+        result.episodeNumber = parseInt(match[2], 10);
+        const titlePart = rawTitle.substring(0, rawTitle.indexOf(match[0])).trim();
+        if (titlePart) {
+          result.seriesName = titlePart.replace(/[-–:,]\s*$/, '').trim();
+          result.title = result.seriesName;
+        }
+        result.isMovie = false;
+        return result;
+      }
+
+      return result;
+    }
+
+    function parseEpisodeInfo(text: string): {
+      seasonNumber: number | null;
+      episodeNumber: number | null;
+      episodeTitle: string | null;
+    } {
+      const result = {
+        seasonNumber: null as number | null,
+        episodeNumber: null as number | null,
+        episodeTitle: null as string | null
+      };
+
+      const patterns: [RegExp, boolean][] = [
+        [/S(\d+)\s*[:\s]?\s*[EF](\d+)/i, true],
+        [/Season\s*(\d+)[,:]?\s*Episode\s*(\d+)/i, true],
+        [/Staffel\s*(\d+)[,:]?\s*Folge\s*(\d+)/i, true],
+        [/シーズン\s*(\d+)\s*エピソード\s*(\d+)/, true],
+        [/(\d+)x(\d+)/, true],
+        [/Ep\.?\s*(\d+)/i, false],
+        [/Episode\s*(\d+)/i, false],
+        [/Folge\s*(\d+)/i, false],
+        [/エピソード\s*(\d+)/, false],
+        [/第(\d+)話/, false],
+      ];
+
+      for (const [pattern, hasSeason] of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+          if (hasSeason && match[2]) {
+            result.seasonNumber = parseInt(match[1], 10);
+            result.episodeNumber = parseInt(match[2], 10);
+          } else {
+            result.episodeNumber = parseInt(match[1], 10);
+          }
+          const rest = text.replace(match[0], '').replace(/^[\s:–-]+/, '').trim();
+          if (rest && rest.length > 1) {
+            result.episodeTitle = rest;
+          }
+          break;
+        }
+      }
+
+      return result;
+    }
+
+    function probePlayerTitle(): void {
+      const titleSelectors = [
+        '[data-testid="title-field"]',
+        '[data-testid="content-title"]',
+        '[data-testid="infobar-title"]',
+        '[data-gv2elementtype="title"]',
+        '.title-field',
+      ];
+
+      for (const selector of titleSelectors) {
+        const el = document.querySelector(selector);
+        const text = el?.textContent?.trim();
+        if (text && text.length > 1 && text !== 'Disney+ Content') {
+          if (text !== bestKnownSeriesName) {
+            log('[JP343] Disney+: Player title via', selector, ':', text);
+            bestKnownSeriesName = text;
+            cachedMetadata = null;
+          }
+          return;
+        }
+      }
+    }
+
+    function extractDisneyMetadata(): DisneyPlusMetadata {
+      if (cachedMetadata) return cachedMetadata;
+
+      const metadata: DisneyPlusMetadata = {
+        title: 'Disney+ Content',
+        episodeTitle: null,
+        seasonNumber: null,
+        episodeNumber: null,
+        isMovie: true,
+        seriesName: null,
+        thumbnailUrl: null
+      };
+
       const docTitle = document.title;
       if (docTitle) {
         const cleaned = docTitle
@@ -57,10 +246,73 @@ export default defineContentScript({
           .replace(/\s*[-–]\s*Disney\+.*$/i, '')
           .trim();
         if (cleaned && cleaned.length > 1) {
-          return cleaned;
+          const parsed = parseDisneyTitle(cleaned);
+          Object.assign(metadata, parsed);
         }
       }
-      return 'Disney+ Content';
+
+      probePlayerTitle();
+      if (bestKnownSeriesName) {
+        metadata.seriesName = bestKnownSeriesName;
+        metadata.title = bestKnownSeriesName;
+      }
+
+      if (!metadata.episodeNumber) {
+        const subtitleSelectors = [
+          '[data-testid="subtitle-field"]',
+          '[data-testid="content-subtitle"]',
+          '[data-gv2elementtype="subtitle"]',
+          '.subtitle-field',
+        ];
+        for (const selector of subtitleSelectors) {
+          const el = document.querySelector(selector);
+          const text = el?.textContent?.trim();
+          if (text && text.length > 1) {
+            const epInfo = parseEpisodeInfo(text);
+            if (epInfo.episodeNumber) {
+              metadata.seasonNumber = epInfo.seasonNumber;
+              metadata.episodeNumber = epInfo.episodeNumber;
+              metadata.episodeTitle = epInfo.episodeTitle;
+              metadata.isMovie = false;
+              log('[JP343] Disney+: Episode info from player:', text);
+              break;
+            }
+          }
+        }
+      }
+
+      if (!metadata.seriesName && metadata.title !== 'Disney+ Content') {
+        metadata.seriesName = metadata.title;
+        bestKnownSeriesName = metadata.title;
+      }
+
+      if (metadata.title === 'Disney+ Content' && bestKnownSeriesName) {
+        metadata.title = bestKnownSeriesName;
+        metadata.seriesName = bestKnownSeriesName;
+      }
+
+      metadata.thumbnailUrl = getThumbnail();
+      cachedMetadata = metadata;
+      return metadata;
+    }
+
+    function getFormattedTitle(): string {
+      const metadata = extractDisneyMetadata();
+
+      if (metadata.isMovie) {
+        return metadata.title;
+      }
+
+      let formatted = metadata.seriesName || metadata.title;
+      if (metadata.seasonNumber && metadata.episodeNumber) {
+        formatted += ` S${metadata.seasonNumber}E${metadata.episodeNumber}`;
+      } else if (metadata.episodeNumber) {
+        formatted += ` E${metadata.episodeNumber}`;
+      }
+      if (metadata.episodeTitle) {
+        formatted += `: ${metadata.episodeTitle}`;
+      }
+      return formatted;
     }
 
     function getThumbnail(): string | null {
@@ -90,7 +342,7 @@ export default defineContentScript({
       if (video && !video.paused && !video.ended && videoId) {
         if (!lastVideoId) {
           lastVideoId = videoId;
-          lastTitle = getTitle();
+          lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
             log('[JP343] Disney+: Auto-tracking after ad:', state.title);
@@ -103,22 +355,43 @@ export default defineContentScript({
     function handleAdStateChange(): void {
       const adPlaying = isAdPlaying();
 
-      if (adPlaying && !isCurrentlyInAd) {
-        isCurrentlyInAd = true;
-        log('[JP343] Disney+: Ad started');
-        sendMessage('AD_START');
-      } else if (!adPlaying && isCurrentlyInAd) {
-        isCurrentlyInAd = false;
-        log('[JP343] Disney+: Ad ended');
-        sendMessage('AD_END');
-
-        setTimeout(() => {
-          startTrackingIfContentPlaying();
-        }, 1500);
+      if (adPlaying) {
+        if (adEndDebounce) {
+          clearTimeout(adEndDebounce);
+          adEndDebounce = null;
+        }
+        if (!isCurrentlyInAd) {
+          isCurrentlyInAd = true;
+          log('[JP343] Disney+: Ad started');
+          sendMessage('AD_START');
+        }
+      } else if (isCurrentlyInAd && !adEndDebounce) {
+        adEndDebounce = setTimeout(() => {
+          adEndDebounce = null;
+          if (!isAdPlaying()) {
+            isCurrentlyInAd = false;
+            log('[JP343] Disney+: Ad break ended');
+            sendMessage('AD_END');
+            setTimeout(() => startTrackingIfContentPlaying(), 1500);
+          }
+        }, 3000);
       }
     }
 
     intervalIds.push(setInterval(handleAdStateChange, 500));
+
+    intervalIds.push(setInterval(() => {
+      if (!isWatchPage() || !lastVideoId) return;
+      const before = bestKnownSeriesName;
+      probePlayerTitle();
+      if (bestKnownSeriesName && bestKnownSeriesName !== before) {
+        const state = getCurrentVideoState();
+        if (state && state.isPlaying && !isCurrentlyInAd) {
+          lastTitle = state.title;
+          sendMessage('VIDEO_STATE_UPDATE', { state });
+        }
+      }
+    }, 3000));
 
     function getCurrentVideoState(): VideoState | null {
       const video = findVideoElement();
@@ -127,20 +400,20 @@ export default defineContentScript({
       const videoId = getVideoId();
       if (!videoId) return null;
 
-      const title = getTitle();
+      const metadata = cachedMetadata || extractDisneyMetadata();
 
       return {
         isPlaying: !video.paused && !video.ended,
         currentTime: video.currentTime,
         duration: video.duration || 0,
-        title: title,
+        title: getFormattedTitle(),
         url: window.location.href,
         platform: 'disneyplus',
         isAd: isCurrentlyInAd || isAdPlaying(),
-        thumbnailUrl: getThumbnail(),
+        thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        channelId: (title !== 'Disney+ Content') ? 'disneyplus:' + title : null,
-        channelName: (title !== 'Disney+ Content') ? title : null,
+        channelId: metadata.seriesName ? 'disneyplus:' + metadata.seriesName : null,
+        channelName: metadata.seriesName || null,
         channelUrl: null
       };
     }
@@ -180,6 +453,8 @@ export default defineContentScript({
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
           sendMessage('VIDEO_ENDED');
+          bestKnownSeriesName = '';
+          cachedMetadata = null;
         }
 
         const state = getCurrentVideoState();
@@ -214,6 +489,8 @@ export default defineContentScript({
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
             log('[JP343] Disney+: Video switch:', lastVideoId, '->', currentVideoId);
             sendMessage('VIDEO_ENDED');
+            bestKnownSeriesName = '';
+            cachedMetadata = null;
             lastVideoId = currentVideoId;
             lastTitle = state.title;
             setTimeout(() => {
@@ -265,7 +542,7 @@ export default defineContentScript({
           } else {
             log('[JP343] Disney+: Video already playing');
             lastVideoId = videoId;
-            lastTitle = getTitle();
+            lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
               sendMessage('VIDEO_PLAY', { state });
@@ -291,7 +568,7 @@ export default defineContentScript({
             sendMessage('AD_START');
           } else {
             lastVideoId = videoId;
-            lastTitle = getTitle();
+            lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
               log('[JP343] Disney+: Initial video playing');
@@ -319,6 +596,9 @@ export default defineContentScript({
           lastVideoId = null;
           lastTitle = '';
           isCurrentlyInAd = false;
+          if (adEndDebounce) { clearTimeout(adEndDebounce); adEndDebounce = null; }
+          bestKnownSeriesName = '';
+          cachedMetadata = null;
           return;
         }
 
@@ -326,6 +606,9 @@ export default defineContentScript({
           lastVideoId = null;
           lastTitle = '';
           isCurrentlyInAd = false;
+          if (adEndDebounce) { clearTimeout(adEndDebounce); adEndDebounce = null; }
+          bestKnownSeriesName = '';
+          cachedMetadata = null;
 
           setTimeout(() => {
             const video = findVideoElement();
@@ -341,7 +624,7 @@ export default defineContentScript({
                   sendMessage('AD_START');
                 } else {
                   lastVideoId = videoId;
-                  lastTitle = getTitle();
+                  lastTitle = getFormattedTitle();
                   const state = getCurrentVideoState();
                   if (state) {
                     sendMessage('VIDEO_PLAY', { state });
@@ -358,7 +641,8 @@ export default defineContentScript({
     if (titleElement) {
       const titleObserver = new MutationObserver(() => {
         if (!isWatchPage()) return;
-        const newTitle = getTitle();
+        cachedMetadata = null;
+        const newTitle = getFormattedTitle();
         if (newTitle !== 'Disney+ Content' && newTitle !== lastTitle && lastVideoId) {
           log('[JP343] Disney+: New title:', newTitle);
           lastTitle = newTitle;
@@ -375,7 +659,7 @@ export default defineContentScript({
       if (video && !video.paused && !video.ended && videoId && !isAdPlaying() && !isCurrentlyInAd && !lastVideoId) {
         log('[JP343] Disney+: Delayed tracking pickup');
         lastVideoId = videoId;
-        lastTitle = getTitle();
+        lastTitle = getFormattedTitle();
         const state = getCurrentVideoState();
         if (state) {
           sendMessage('VIDEO_PLAY', { state });

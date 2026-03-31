@@ -1,4 +1,15 @@
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'generic';
+
+export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking';
+
+export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
+  youtube: 'watching',
+  netflix: 'watching',
+  crunchyroll: 'watching',
+  primevideo: 'watching',
+  disneyplus: 'watching',
+  generic: 'watching',
+};
 
 export interface VideoState {
   isPlaying: boolean;
@@ -32,6 +43,7 @@ export interface TrackingSession {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
+  activityType?: ActivityType;
 }
 
 export interface PendingEntry {
@@ -52,6 +64,7 @@ export interface PendingEntry {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
+  activityType?: ActivityType;
 }
 
 export interface JP343UserState {
@@ -59,7 +72,6 @@ export interface JP343UserState {
   userId: number | null;
   nonce: string | null;
   ajaxUrl: string | null;
-  guestToken: string | null;
   extApiToken: string | null;
 }
 
@@ -76,7 +88,6 @@ export interface ExtensionSettings {
   autoSync: boolean;
   minDurationMinutes: number;
   enabledPlatforms: Platform[];
-  showNotifications: boolean;
   blockedChannels: BlockedChannel[];
 }
 
@@ -111,7 +122,7 @@ export type ExtensionMessage =
   | { type: 'GET_CURRENT_CHANNEL' }
   | { type: 'UPDATE_SESSION_TITLE'; title: string }
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
-  | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number }
+  | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number; activityType: ActivityType }
   | { type: 'GET_ACTIVE_TAB_INFO' }
   | { type: 'GET_STATS' }
   | { type: 'RESET_STATS' }
@@ -156,8 +167,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus'],
-  showNotifications: true,
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese'],
   blockedChannels: []
 };
 

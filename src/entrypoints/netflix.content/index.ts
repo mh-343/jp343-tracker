@@ -1,6 +1,7 @@
 // JP343 Extension - Netflix Content Script
 
 import type { VideoState } from '../../types';
+import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 
 interface NetflixMetadata {
   title: string;
@@ -38,89 +39,10 @@ export default defineContentScript({
 
     let cachedBrowseThumbnail: string | null = null;
 
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const logger = createDebugLogger('netflix');
+    const { log, debugLog } = logger;
     log('[JP343] Netflix Content Script loaded');
-    const LOG_BUFFER: string[] = [];
-    const MAX_LOG_ENTRIES = 5000;
-
-    function debugLog(category: string, message: string, data?: Record<string, unknown>): void {
-      if (!DEBUG_MODE) return;
-      const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
-      const fullTimestamp = new Date().toISOString();
-      const logLine = `[${fullTimestamp}] [${category}] ${message}`;
-
-      console.log(`[JP343 DEBUG ${timestamp}] [${category}]`, message, data || '');
-
-      const bufferEntry = data
-        ? `${logLine} ${JSON.stringify(data)}`
-        : logLine;
-
-      LOG_BUFFER.push(bufferEntry);
-
-      if (LOG_BUFFER.length > MAX_LOG_ENTRIES) {
-        LOG_BUFFER.shift();
-      }
-    }
-
-    const injectPageScript = () => {
-      const script = document.createElement('script');
-      script.textContent = `
-        window.JP343_downloadLogs = function() {
-          window.dispatchEvent(new CustomEvent('JP343_REQUEST_LOGS'));
-        };
-
-        window.JP343_clearLogs = function() {
-          window.dispatchEvent(new CustomEvent('JP343_CLEAR_LOGS'));
-        };
-
-        window.JP343_logStatus = function() {
-          window.dispatchEvent(new CustomEvent('JP343_LOG_STATUS'));
-        };
-
-        console.log('[JP343] Debug logging active. Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
-      `;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
-    };
-
-    if (DEBUG_MODE) {
-      window.addEventListener('JP343_REQUEST_LOGS', () => {
-        const content = LOG_BUFFER.join('\n');
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `jp343-netflix-debug-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        console.log('[JP343] Log file downloaded with', LOG_BUFFER.length, 'entries');
-      });
-
-      window.addEventListener('JP343_CLEAR_LOGS', () => {
-        LOG_BUFFER.length = 0;
-        console.log('[JP343] Log buffer cleared');
-      });
-
-      window.addEventListener('JP343_LOG_STATUS', () => {
-        console.log('[JP343] Log buffer:', LOG_BUFFER.length, 'entries');
-        console.log('[JP343] Commands: JP343_downloadLogs(), JP343_clearLogs(), JP343_logStatus()');
-      });
-
-      if (document.head || document.documentElement) {
-        injectPageScript();
-      } else {
-        const observer = new MutationObserver(() => {
-          if (document.head || document.documentElement) {
-            injectPageScript();
-            observer.disconnect();
-          }
-        });
-        observer.observe(document, { childList: true, subtree: true });
-      }
-    }
+    setupDebugCommands(logger, 'netflix');
 
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video') as HTMLVideoElement | null;
@@ -308,7 +230,6 @@ export default defineContentScript({
     }
 
     function isAdPlaying(): boolean {
-      // in their names that are not actual ads
       if (!window.location.pathname.includes('/watch/')) {
         return false;
       }

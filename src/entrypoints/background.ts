@@ -8,7 +8,8 @@ import type {
   ExtensionStats,
   BlockedChannel,
   VideoState,
-  DirectSyncResult
+  DirectSyncResult,
+  ActivityType
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
 
@@ -156,7 +157,7 @@ export default defineBackground(() => {
           duration_seconds: String(Math.round(entry.duration_min * 60)),
           source: 'extension',
           session_id: entry.id,
-          type: 'watching',
+          type: entry.activityType ?? 'watching',
           notes: '',
           project_title: entry.project,
           project_url: entry.url,
@@ -170,10 +171,6 @@ export default defineBackground(() => {
           platform: entry.platform,
           date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19)
         };
-
-        if (userState.guestToken) {
-          params.guest_token = userState.guestToken;
-        }
 
         const response = await fetch(ajaxUrl, {
           method: 'POST',
@@ -418,7 +415,10 @@ export default defineBackground(() => {
   scheduleStatusBadgeUpdate();
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
-    handleMessage(message, sender).then(sendResponse);
+    handleMessage(message, sender).then(
+      sendResponse,
+      () => sendResponse({ success: false, error: 'Internal error' })
+    );
     return true; // Async response
   });
 
@@ -616,6 +616,9 @@ export default defineBackground(() => {
             merged.isLoggedIn = true;
           }
           await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
+          if ('displayName' in message && message.displayName) {
+            await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
+          }
           log('[JP343] User state updated:', merged.isLoggedIn);
         }
         return { success: true };
@@ -870,14 +873,17 @@ export default defineBackground(() => {
           url: message.url as string,
           platform: 'generic',
           isAd: false,
-          thumbnailUrl: null,
+          thumbnailUrl: (() => {
+            try { return `https://www.google.com/s2/favicons?domain=${new URL(message.url as string).hostname}&sz=128`; }
+            catch { return null; }
+          })(),
           videoId: null,
           channelId: null,
           channelName: null,
           channelUrl: null
         };
 
-        const session = tracker.startSession(manualState, message.tabId as number);
+        const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType);
         await saveSessionState(session);
         scheduleStatusBadgeUpdate();
 
@@ -1008,7 +1014,8 @@ export default defineBackground(() => {
       lastSyncError: null,
       channelId: savedSession.channelId,
       channelName: savedSession.channelName,
-      channelUrl: savedSession.channelUrl
+      channelUrl: savedSession.channelUrl,
+      activityType: savedSession.activityType
     };
 
     await savePendingEntry(entry);

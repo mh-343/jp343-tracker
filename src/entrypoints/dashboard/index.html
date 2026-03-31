@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jp343 Dashboard</title>
   <style>
@@ -588,6 +588,22 @@
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
+    .session-platform.platform-youtube { background: rgba(255, 68, 68, 0.12); color: #ff4444; }
+    .session-platform.platform-netflix { background: rgba(229, 9, 20, 0.12); color: #e50914; }
+    .session-platform.platform-crunchyroll { background: rgba(244, 117, 33, 0.12); color: #f47521; }
+    .session-platform.platform-primevideo { background: rgba(0, 168, 225, 0.12); color: #00a8e1; }
+    .session-platform.platform-disneyplus { background: rgba(0, 132, 255, 0.12); color: #0084ff; }
+    .session-platform.platform-cijapanese { background: rgba(211, 130, 155, 0.12); color: #d3829b; }
+
+    .session-activity-type {
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(0, 229, 255, 0.08);
+      color: var(--cyan);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
 
     .session-duration {
       font-size: 14px;
@@ -759,6 +775,7 @@
     [data-theme="light"] .session-thumb { background: var(--iri-gradient-subtle); }
     [data-theme="light"] .session-thumb-placeholder { background: var(--iri-gradient-subtle); color: #7b5ea7; }
     [data-theme="light"] .session-platform { background: var(--iri-gradient-subtle); color: #7b5ea7; }
+    [data-theme="light"] .session-activity-type { background: var(--iri-gradient-subtle); color: #7b5ea7; }
     [data-theme="light"] .skeleton {
       background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
       background-size: 200% 100%;

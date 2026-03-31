@@ -1,4 +1,5 @@
-import type { TrackingSession, VideoState, PendingEntry, Platform } from '../types';
+import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType } from '../types';
+import { PLATFORM_ACTIVITY_TYPE } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -29,7 +30,7 @@ export class TimeTracker {
     this.tickInterval = setInterval(() => this.tick(), 1000);
   }
 
-  startSession(videoState: VideoState, tabId?: number): TrackingSession {
+  startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
     const now = Date.now();
 
     // Same URL: resume existing session
@@ -81,7 +82,8 @@ export class TimeTracker {
       thumbnailUrl: videoState.thumbnailUrl,
       channelId: videoState.channelId || null,
       channelName: videoState.channelName || null,
-      channelUrl: videoState.channelUrl || null
+      channelUrl: videoState.channelUrl || null,
+      activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
 
     log('[JP343] New session started:', this.session.title);
@@ -183,7 +185,8 @@ export class TimeTracker {
       lastSyncError: null,
       channelId: this.session.channelId,
       channelName: this.session.channelName,
-      channelUrl: this.session.channelUrl
+      channelUrl: this.session.channelUrl,
+      activityType: this.session.activityType
     };
 
     log('[JP343] Session finalized:', durationMinutes, 'minutes');

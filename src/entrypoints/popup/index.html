@@ -1084,9 +1084,29 @@
       transition: border-color 0.2s;
     }
 
-    .manual-track-input input:focus {
+    .manual-track-input input:focus,
+    .manual-track-input select:focus {
       border-color: var(--neon);
       box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.15);
+    }
+
+    .manual-track-input select {
+      width: 100%;
+      padding: 10px 12px;
+      padding-right: 32px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      transition: border-color 0.2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239090b0' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
     }
 
     .btn-track {
@@ -1275,6 +1295,16 @@
         <input type="text" id="manualTitle" placeholder="Enter a title..." />
       </div>
 
+      <div class="manual-track-input">
+        <label for="activityType">Type</label>
+        <select id="activityType">
+          <option value="watching">Watching</option>
+          <option value="listening">Listening</option>
+          <option value="reading">Reading</option>
+          <option value="speaking">Speaking</option>
+        </select>
+      </div>
+
       <button class="btn btn-primary btn-track" id="btnStartManual">
         Track This Page
       </button>
@@ -1351,7 +1381,7 @@
 
   <div class="footer">
     <button class="btn-dashboard" id="btnDashboard">Dashboard →</button>
-    <a class="footer-link-secondary" href="https://jp343.com/my-hub/" target="_blank">jp343.com</a>
+    <a class="footer-link-secondary" href="https://jp343.com/my-hub/?src=p" target="_blank">jp343.com</a>
   </div>
 
   <!-- Toast Notification -->
