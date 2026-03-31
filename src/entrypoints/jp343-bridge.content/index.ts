@@ -90,9 +90,7 @@ export default defineContentScript({
           displayName: getDisplayName()
         });
         log('[JP343 Bridge] User state reported:', userState.isLoggedIn ? 'logged in' : 'not logged in');
-      } catch (_error) {
-        // Extension context invalidated
-      }
+      } catch (_error) { /* ignore */ }
     }
 
     function waitForUserStateAndReport(maxWait = 5000): void {
@@ -135,9 +133,7 @@ export default defineContentScript({
         const data = JSON.stringify({ entries, stats });
         document.documentElement.setAttribute('data-jp343-extension-data', data);
         log('[JP343 Bridge] Extension data provided:', entries.length, 'entries');
-      } catch (_error) {
-        // Extension context invalidated
-      }
+      } catch (_error) { /* ignore */ }
     }
 
     waitForUserStateAndReport();

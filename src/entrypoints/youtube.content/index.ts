@@ -317,9 +317,7 @@ export default defineContentScript({
               }
             }
           }
-        } catch {
-          // Ignore parse failures
-        }
+        } catch { /* ignore */ }
       }
 
       return { id: channelId, name: channelName, url: channelUrl };
@@ -344,7 +342,6 @@ export default defineContentScript({
         return null;
       }
 
-      // time-tracker.ts updateSessionChannelInfo corrects this
       const channelInfo = getChannelInfo();
 
       return {
@@ -519,7 +516,6 @@ export default defineContentScript({
         stopAdMonitoring();
         stopStateUpdates();
 
-        // (YouTube can reuse the <video> element)
         if (currentVideoElement) {
           currentVideoElement.removeAttribute('data-jp343-tracked');
         }

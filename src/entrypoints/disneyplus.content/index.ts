@@ -105,7 +105,6 @@ export default defineContentScript({
         return result;
       }
 
-      // Japanese: "Series シーズンN エピソードN"
       match = rawTitle.match(/^(.+?)\s*シーズン\s*(\d+)\s*エピソード\s*(\d+)(.*)$/);
       if (match) {
         result.seriesName = match[1].trim();
@@ -117,7 +116,6 @@ export default defineContentScript({
         return result;
       }
 
-      // Japanese: "Series 第N話"
       match = rawTitle.match(/^(.+?)\s*第(\d+)話(.*)$/);
       if (match) {
         result.seriesName = match[1].trim();
@@ -128,7 +126,6 @@ export default defineContentScript({
         return result;
       }
 
-      // S1E5 or S1F1 (German) anywhere
       match = rawTitle.match(/S(\d+)\s*[:\s]?\s*[EF](\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
@@ -142,7 +139,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "Season X Episode Y" anywhere
       match = rawTitle.match(/Season\s*(\d+)[,:]?\s*Episode\s*(\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
