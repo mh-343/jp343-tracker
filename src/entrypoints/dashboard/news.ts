@@ -6,6 +6,7 @@ interface NewsResponse {
   text?: string;
   type?: 'info' | 'warning' | 'critical';
   audience?: 'all' | 'logged_in' | 'logged_out';
+  min_version?: string;
   link_url?: string;
   link_text?: string;
 }
@@ -16,6 +17,10 @@ export async function loadNews(): Promise<void> {
     if (!res.ok) return;
     const data: NewsResponse = await res.json();
     if (!data.id || !data.text) return;
+    if (data.min_version) {
+      const current = browser.runtime.getManifest().version;
+      if (current.localeCompare(data.min_version, undefined, { numeric: true }) < 0) return;
+    }
     if (localStorage.getItem(`jp343_news_dismissed_${data.id}`)) return;
 
     if (data.audience && data.audience !== 'all') {

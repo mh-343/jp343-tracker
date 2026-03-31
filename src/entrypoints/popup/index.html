@@ -1243,6 +1243,58 @@
     [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-secondary); }
     [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(123, 94, 167, 0.25); }
 
+    .spotify-filter-section {
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .spotify-filter-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .spotify-filter-chips {
+      display: flex;
+      gap: 6px;
+    }
+
+    .spotify-chip {
+      padding: 4px 10px;
+      font-size: 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .spotify-chip:hover {
+      border-color: var(--accent);
+      color: var(--text-primary);
+    }
+
+    .spotify-chip.active {
+      background: rgba(135, 90, 255, 0.25);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .spotify-chip:not(.active) {
+      opacity: 0.5;
+    }
+
+    [data-theme="light"] .spotify-chip.active {
+      background: var(--iri-gradient-subtle);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .theme-toggle-popup {
       background: none;
       border: 1px solid var(--border-subtle);
@@ -1371,6 +1423,15 @@
         <input type="text" class="blocked-search-input" id="blockedSearchInput" placeholder="Filter channels..." />
       </div>
       <div class="blocked-list" id="blockedList"></div>
+    </div>
+  </div>
+
+  <div class="spotify-filter-section" id="spotifyFilterSection" style="display: none;">
+    <span class="spotify-filter-label">Track:</span>
+    <div class="spotify-filter-chips">
+      <button class="spotify-chip active" data-type="music">Music</button>
+      <button class="spotify-chip active" data-type="podcast">Podcasts</button>
+      <button class="spotify-chip active" data-type="audiobook">Audiobooks</button>
     </div>
   </div>
 

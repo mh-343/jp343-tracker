@@ -16,6 +16,7 @@ const platformIcons: Record<string, string> = {
   primevideo: 'P',
   disneyplus: 'D',
   cijapanese: '漢',
+  spotify: '♪',
   generic: '⏵'
 };
 
@@ -97,7 +98,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     platform.textContent = entry.platform;
     meta.appendChild(platform);
 
-    if (entry.activityType && entry.activityType !== 'watching') {
+    if (entry.activityType && entry.activityType !== 'watching' && !(entry.platform === 'spotify' && entry.activityType === 'listening')) {
       const typeEl = document.createElement('span');
       typeEl.className = 'session-activity-type';
       typeEl.textContent = entry.activityType;
@@ -218,7 +219,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
     meta.appendChild(platform);
   }
 
-  if (session.activity_type && session.activity_type !== 'watching' && session.activity_type !== 'other' && session.platform !== 'generic') {
+  if (session.activity_type && session.activity_type !== 'watching' && session.activity_type !== 'other' && session.platform !== 'generic' && !(session.platform === 'spotify' && session.activity_type === 'listening')) {
     const typeEl = document.createElement('span');
     typeEl.className = 'session-activity-type';
     typeEl.textContent = session.activity_type;

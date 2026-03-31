@@ -1,6 +1,8 @@
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'spotify' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking';
+
+export type SpotifyContentType = 'music' | 'podcast' | 'audiobook';
 
 export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   youtube: 'watching',
@@ -8,6 +10,8 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   crunchyroll: 'watching',
   primevideo: 'watching',
   disneyplus: 'watching',
+  cijapanese: 'watching',
+  spotify: 'listening',
   generic: 'watching',
 };
 
@@ -24,6 +28,7 @@ export interface VideoState {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
+  contentType?: SpotifyContentType;
 }
 
 export interface TrackingSession {
@@ -89,6 +94,7 @@ export interface ExtensionSettings {
   minDurationMinutes: number;
   enabledPlatforms: Platform[];
   blockedChannels: BlockedChannel[];
+  spotifyContentTypes: SpotifyContentType[];
 }
 
 export interface BlockedChannel {
@@ -117,6 +123,7 @@ export type ExtensionMessage =
   | { type: 'RESUME_SESSION' }
   | { type: 'GET_SETTINGS' }
   | { type: 'SET_ENABLED'; enabled: boolean }
+  | { type: 'UPDATE_SETTINGS'; settings: ExtensionSettings }
   | { type: 'BLOCK_CHANNEL'; channel: BlockedChannel }
   | { type: 'UNBLOCK_CHANNEL'; channelId: string }
   | { type: 'GET_CURRENT_CHANNEL' }
@@ -167,8 +174,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese'],
-  blockedChannels: []
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify'],
+  blockedChannels: [],
+  spotifyContentTypes: ['podcast', 'music', 'audiobook']
 };
 
 export const STORAGE_KEYS = {
