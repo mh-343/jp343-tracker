@@ -203,7 +203,6 @@ export default defineBackground(() => {
           succeeded++;
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
-          // Auth expired — abort remaining entries
           if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce' || result.data?.code === 'invalid_token') {
             log('[JP343] Direct sync: Auth expired/invalid, aborting');
             failed += (unsynced.length - succeeded - failed);
@@ -279,7 +278,6 @@ export default defineBackground(() => {
         stats.lastActiveDate = today;
       }
 
-      // Prune entries older than 90 days
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = cutoff.toISOString().split('T')[0];
@@ -303,7 +301,6 @@ export default defineBackground(() => {
     let streak = 0;
     const checkDate = new Date(today);
 
-    // Walk backwards from today
     for (let i = 0; i < 365; i++) {
       const dateStr = checkDate.toISOString().split('T')[0];
       if ((dailyMinutes[dateStr] || 0) > 0) {
@@ -419,7 +416,7 @@ export default defineBackground(() => {
       sendResponse,
       () => sendResponse({ success: false, error: 'Internal error' })
     );
-    return true; // Async response
+    return true;
   });
 
   async function handleMessage(
@@ -506,7 +503,6 @@ export default defineBackground(() => {
 
       case 'VIDEO_STATE_UPDATE': {
         if ('state' in message && message.state && typeof message.state === 'object') {
-          // Only update title if not manually edited
           if (message.state.title) {
             tracker.updateSessionTitleFromAutoFetch(message.state.title);
           }
@@ -562,7 +558,7 @@ export default defineBackground(() => {
         if (sessionBeforeStop?.tabId) {
           try {
             await browser.tabs.sendMessage(sessionBeforeStop.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* tab may no longer exist */ }
+          } catch { /* ignore */ }
         }
         const entry = tracker.stopSession();
         if (entry) {
@@ -578,7 +574,7 @@ export default defineBackground(() => {
         if (sessionToPause?.tabId) {
           try {
             await browser.tabs.sendMessage(sessionToPause.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* tab may no longer exist — manual tracking has no video */ }
+          } catch { /* ignore */ }
         }
         tracker.pauseSession();
         const pausedSession = tracker.getCurrentSession();
@@ -593,7 +589,7 @@ export default defineBackground(() => {
         if (resumedSession?.tabId) {
           try {
             await browser.tabs.sendMessage(resumedSession.tabId, { type: 'RESUME_VIDEO' });
-          } catch { /* tab may no longer exist */ }
+          } catch { /* ignore */ }
         }
         await saveSessionState(resumedSession);
         scheduleStatusBadgeUpdate();
@@ -855,7 +851,6 @@ export default defineBackground(() => {
           return { success: false, error: 'Missing required fields' };
         }
 
-        // Save previous session if one exists
         const currentSession = tracker.getCurrentSession();
         if (currentSession) {
           const previousEntry = tracker.finalizeSession();
@@ -949,10 +944,10 @@ export default defineBackground(() => {
     }
   }
 
-  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours
+  const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
 
   const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'generic'];
-  const MIN_VALID_TIMESTAMP = 1704067200000; // Jan 1, 2024
+  const MIN_VALID_TIMESTAMP = 1704067200000;
 
   function isValidSavedSession(session: unknown): session is TrackingSession {
     if (!session || typeof session !== 'object') return false;
@@ -1086,14 +1081,12 @@ export default defineBackground(() => {
           await saveSessionState(null);
           scheduleStatusBadgeUpdate();
         } else {
-          // Same domain — keep session, update URL
           tracker.updateSessionUrl(changeInfo.url);
           const updatedSession = tracker.getCurrentSession();
           await saveSessionState(updatedSession);
           log('[JP343] Navigation within domain - session continues');
         }
       } catch {
-        // URL parsing failed — end session to be safe
         const entry = tracker.finalizeSession();
         if (entry) {
           await savePendingEntry(entry);

@@ -294,7 +294,7 @@ export default defineContentScript({
 
       const video = findVideoElement();
       if (video && video.duration > 0 && video.duration < 45 && pendingVideoId) {
-        log('[JP343] Netflix: Short video detected (', Math.round(video.duration), 's) - possibly an ad');
+        log('[JP343] Netflix: Short video detected (', Math.round(video.duration), 's)');
         return true;
       }
 
@@ -353,7 +353,6 @@ export default defineContentScript({
         log('[JP343] Netflix: Ad ended');
         sendMessage('AD_END');
 
-        // Resume pending session after ad ends
         if (pendingVideoId) {
           const savedVideoId = pendingVideoId;
           debugLog('AD_STATE', 'Starting saved session', { pendingVideoId: savedVideoId });
@@ -458,7 +457,6 @@ export default defineContentScript({
         isMovie: true
       };
 
-      // "SeriesName: S1:E5 EpisodeTitle"
       const colonPattern = /^(.+?):\s*S(\d+):E(\d+)\s*(.*)$/i;
       let match = rawTitle.match(colonPattern);
       if (match) {
@@ -470,7 +468,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "SeriesName - Season 1: Episode 5"
       const longPattern = /^(.+?)\s*[-–]\s*Season\s*(\d+).*Episode\s*(\d+)(.*)$/i;
       match = rawTitle.match(longPattern);
       if (match) {
@@ -482,7 +479,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "S1 E5" or "Season 1 Episode 5" anywhere in title
       const inlinePattern = /S(\d+)\s*E(\d+)/i;
       match = rawTitle.match(inlinePattern);
       if (match) {
@@ -506,7 +502,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "SeriesName Flg. 5" (without episode title)
       const flgShortPattern = /^(.+?)\s+Flg\.\s*(\d+)$/i;
       match = rawTitle.match(flgShortPattern);
       if (match) {
@@ -526,7 +521,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "SeriesName Ep. 5 EpisodeTitle" / "Episode 5 ..."
       const epPattern = /^(.+?)\s+(?:Ep\.?|Episode)\s*(\d+)\s+(.+)$/i;
       match = rawTitle.match(epPattern);
       if (match) {
@@ -557,11 +551,9 @@ export default defineContentScript({
         const match = text.match(pattern);
         if (match) {
           if (match[2]) {
-            // Two capture groups: season + episode
             result.seasonNumber = parseInt(match[1], 10);
             result.episodeNumber = parseInt(match[2], 10);
           } else {
-            // One capture group: episode only
             result.episodeNumber = parseInt(match[1], 10);
           }
           const rest = text.replace(match[0], '').replace(/^[\s:–-]+/, '').trim();
@@ -823,7 +815,6 @@ export default defineContentScript({
         if (quickUpdateCount >= 6) clearInterval(quickTitleUpdate);
       }, 5000);
 
-      // Periodic state updates
       setInterval(() => {
         if (isCurrentlyInAd || !window.location.pathname.includes('/watch/')) {
           return;
@@ -984,7 +975,6 @@ export default defineContentScript({
       observers.push(titleObserver);
     }
 
-    // Periodic title check for first 30s
     let titleCheckCount = 0;
     const titleCheckInterval = setInterval(() => {
       titleCheckCount++;
@@ -1037,7 +1027,6 @@ export default defineContentScript({
       }
     }, 3000);
 
-    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

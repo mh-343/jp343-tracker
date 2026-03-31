@@ -46,7 +46,7 @@ export default defineContentScript({
 
       let iframeFound = false;
       let messagesSent = 0;
-      const maxMessages = 25; // 25 * 200ms = 5s
+      const maxMessages = 25;
       let ackReceived = false;
 
       const ackListener = (event: MessageEvent) => {
@@ -90,7 +90,7 @@ export default defineContentScript({
           try {
             const iframeUrl = new URL(iframe.src);
             targetOrigin = iframeUrl.origin;
-          } catch { /* fallback to Crunchyroll origin */ }
+          } catch { /* cross-origin fallback */ }
 
           iframe.contentWindow.postMessage({
             type: 'JP343_VIDEO_ID',
@@ -130,7 +130,6 @@ export default defineContentScript({
           log('[JP343] Main frame: URL change detected:', lastMainFrameUrl, '->', window.location.href);
           lastMainFrameUrl = window.location.href;
 
-          // Wait for DOM update before resending
           setTimeout(() => {
             sendVideoMetadataToIframe();
           }, 500);
@@ -251,7 +250,6 @@ export default defineContentScript({
         log('[JP343] Crunchyroll: Ad ended');
         sendMessage('AD_END');
 
-        // Resume pending session after ad ends
         if (pendingVideoId) {
           debugLog('AD_STATE', 'Starting saved session', { pendingVideoId });
           log('[JP343] Crunchyroll: Starting saved session after ad ended');
@@ -384,8 +382,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "SeriesName - ArcName (EpRange) EpisodeTitle"
-      // e.g. "One Piece - East Blue (1-61) Here Comes Luffy"
       match = rawTitle.match(/^(.+?)\s*[-–]\s*.+?\s*\(\d+[-–]\d+\)\s+(.+)$/i);
       if (match) {
         result.seriesName = match[1].trim();
@@ -403,7 +399,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "E1 - Title" (without series name)
       match = rawTitle.match(/^E(\d+)\s*[-–]\s*(.+)$/i);
       if (match) {
         result.episodeNumber = parseInt(match[1], 10);
@@ -412,7 +407,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "Season X Episode Y" anywhere in title
       match = rawTitle.match(/Season\s*(\d+)\s*Episode\s*(\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
@@ -425,7 +419,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "S1:E5" or "S1 E5"
       match = rawTitle.match(/S(\d+)[:\s]*E(\d+)/i);
       if (match) {
         result.seasonNumber = parseInt(match[1], 10);
@@ -574,7 +567,6 @@ export default defineContentScript({
               }
             }
 
-            // Send acknowledgment back to parent
             if (window.parent && event.source) {
               (event.source as Window).postMessage({
                 type: 'JP343_VIDEO_ID_ACK',
@@ -586,7 +578,7 @@ export default defineContentScript({
       });
 
       let retryCount = 0;
-      const maxRetries = 20; // 20 x 200ms = 4s
+      const maxRetries = 20;
       const videoIdChecker = setInterval(() => {
         retryCount++;
         const videoId = getVideoId();
@@ -720,7 +712,6 @@ export default defineContentScript({
         debugLog('VIDEO_SEEK', 'Seeking', { currentTime: video.currentTime });
       });
 
-      // Periodic state updates
       setInterval(() => {
         if (isCurrentlyInAd) {
           return;
@@ -730,7 +721,6 @@ export default defineContentScript({
         if (state && state.isPlaying) {
           const currentVideoId = getVideoId();
 
-          // Detect video change by ID only
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
             log('[JP343] Crunchyroll Video change (ID):', lastVideoId, '->', currentVideoId);
             lastVideoId = currentVideoId;
@@ -877,7 +867,6 @@ export default defineContentScript({
       observers.push(titleObserver);
     }
 
-    // Periodic title check for first 30s
     let titleCheckCount = 0;
     const titleCheckInterval = setInterval(() => {
       titleCheckCount++;
@@ -931,7 +920,6 @@ export default defineContentScript({
       }
     }, 3000);
 
-    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();

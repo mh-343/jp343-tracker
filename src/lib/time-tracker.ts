@@ -33,7 +33,6 @@ export class TimeTracker {
   startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
     const now = Date.now();
 
-    // Same URL: resume existing session
     if (this.session && this.session.url === videoState.url) {
       this.session.isActive = true;
       this.session.isPaused = false;
@@ -108,7 +107,6 @@ export class TimeTracker {
     }
   }
 
-  // Restore after service worker restart
   restoreSession(saved: TrackingSession): void {
     this.session = {
       ...saved,
@@ -156,7 +154,6 @@ export class TimeTracker {
 
     this.tick();
 
-    // Discard sessions shorter than 1 minute
     if (this.session.accumulatedMs < 60000) {
       log('[JP343] Session too short (<1min), discarded');
       this.session = null;
@@ -263,7 +260,6 @@ export class TimeTracker {
     const hadNoChannelId = this.session.channelId === null;
     const channelIdChanged = channelId && !hadNoChannelId && this.session.channelId !== channelId;
     const gotNewChannelId = channelId && hadNoChannelId;
-    // when user switches series and DOM was stale
     const nameOnlyCorrection = !channelId && hadNoChannelId
       && channelName && this.session.channelName
       && channelName !== this.session.channelName;

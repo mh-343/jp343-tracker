@@ -157,7 +157,6 @@ export default defineContentScript({
 
     function getVideoId(): string | null {
       const path = window.location.pathname;
-      // ASIN is typically 10 chars, but Amazon also uses longer IDs
       const asinMatch = path.match(/\/(?:detail|dp)\/([A-Z0-9]{10,})/i);
       return asinMatch ? asinMatch[1] : null;
     }
@@ -265,7 +264,6 @@ export default defineContentScript({
         isMovie: true
       };
 
-      // "SeriesName - S1:E5 - EpisodeTitle"
       const sePattern = /^(.+?)\s*[-–]\s*S(\d+):?E(\d+)\s*[-–]?\s*(.*)$/i;
       let match = rawTitle.match(sePattern);
       if (match) {
@@ -277,7 +275,6 @@ export default defineContentScript({
         return result;
       }
 
-      // "SeriesName - Season 1 Episode 5"
       const longPattern = /^(.+?)\s*[-–]\s*Season\s*(\d+).*Episode\s*(\d+)(.*)$/i;
       match = rawTitle.match(longPattern);
       if (match) {
@@ -300,7 +297,6 @@ export default defineContentScript({
         return result;
       }
 
-      // S1E5 anywhere in the title
       const inlinePattern = /S(\d+)\s*E(\d+)/i;
       match = rawTitle.match(inlinePattern);
       if (match) {
@@ -584,7 +580,6 @@ export default defineContentScript({
         sendMessage('VIDEO_ENDED');
       });
 
-      // Periodic state updates
       const updateInterval = setInterval(() => {
         if (isCurrentlyInAd || !isWatchPage()) return;
 
@@ -769,7 +764,6 @@ export default defineContentScript({
       }
     }, 3000);
 
-    // Handle pause/resume commands from popup
     browser.runtime.onMessage.addListener((message) => {
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();
