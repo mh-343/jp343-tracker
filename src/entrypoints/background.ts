@@ -9,7 +9,8 @@ import type {
   BlockedChannel,
   VideoState,
   DirectSyncResult,
-  ActivityType
+  ActivityType,
+  SpotifyContentType
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
 
@@ -47,6 +48,125 @@ export default defineBackground(() => {
       await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
     } catch (error) {
       log('[JP343] Failed to save settings:', error);
+    }
+  }
+
+  let settingsPullComplete = false;
+  let settingsLastUpdated = '';
+  let settingsLastPullTime = 0;
+
+  function mergeBlockedChannels(local: BlockedChannel[], server: BlockedChannel[]): BlockedChannel[] {
+    const map = new Map<string, BlockedChannel>();
+    for (const ch of [...local, ...server]) {
+      const existing = map.get(ch.channelId);
+      if (!existing) {
+        map.set(ch.channelId, ch);
+      } else {
+        const existingTime = new Date(existing.blockedAt).getTime();
+        const incomingTime = new Date(ch.blockedAt).getTime();
+        if (incomingTime < existingTime) map.set(ch.channelId, ch);
+      }
+    }
+    return Array.from(map.values());
+  }
+
+  async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
+    if (!settingsPullComplete) return;
+    const userState: JP343UserState | null = (
+      await browser.storage.local.get(STORAGE_KEYS.USER)
+    )[STORAGE_KEYS.USER] ?? null;
+    if (!userState?.isLoggedIn || !userState?.extApiToken) return;
+
+    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+    try {
+      const resp = await fetch(ajaxUrl, {
+        method: 'POST',
+        body: new URLSearchParams({
+          action: 'jp343_extension_push_settings',
+          ext_api_token: userState.extApiToken,
+          blocked_channels: JSON.stringify(settings.blockedChannels),
+          spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
+        }),
+      });
+      const result = await resp.json();
+      if (result.success) {
+        log('[JP343] Settings pushed to server');
+      } else {
+        log('[JP343] Settings push failed:', result.data?.message);
+      }
+    } catch (error) {
+      log('[JP343] Settings push error:', error);
+    }
+  }
+
+  async function pullAndMergeSettingsFromServer(): Promise<void> {
+    const userState: JP343UserState | null = (
+      await browser.storage.local.get(STORAGE_KEYS.USER)
+    )[STORAGE_KEYS.USER] ?? null;
+    if (!userState?.isLoggedIn || !userState?.extApiToken) {
+      settingsPullComplete = true;
+      return;
+    }
+
+    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+    try {
+      const params: Record<string, string> = {
+        action: 'jp343_extension_pull_settings',
+        ext_api_token: userState.extApiToken,
+      };
+      if (settingsLastUpdated) params.since = settingsLastUpdated;
+
+      const resp = await fetch(ajaxUrl, {
+        method: 'POST',
+        body: new URLSearchParams(params),
+      });
+      const result = await resp.json();
+      if (!result.success) {
+        log('[JP343] Settings pull failed:', result.data?.message);
+        return;
+      }
+
+      if (result.data?.changed === false) {
+        log('[JP343] Settings unchanged on server');
+        settingsPullComplete = true;
+        return;
+      }
+
+      if (result.data?.updated_at) settingsLastUpdated = result.data.updated_at;
+
+      const serverBlocked: BlockedChannel[] | null = result.data?.blocked_channels ?? null;
+      const serverSpotify: SpotifyContentType[] | null = result.data?.spotify_content_types ?? null;
+
+      const settings = await loadSettings();
+      let changed = false;
+
+      if (serverBlocked !== null) {
+        const localIds = settings.blockedChannels.map(c => c.channelId).sort().join(',');
+        const serverIds = serverBlocked.map(c => c.channelId).sort().join(',');
+        if (localIds !== serverIds) {
+          settings.blockedChannels = serverBlocked;
+          changed = true;
+        }
+      }
+
+      if (serverSpotify !== null) {
+        const localStr = [...settings.spotifyContentTypes].sort().join(',');
+        const serverStr = [...serverSpotify].sort().join(',');
+        if (localStr !== serverStr) {
+          settings.spotifyContentTypes = serverSpotify as SpotifyContentType[];
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await saveSettings(settings);
+        log('[JP343] Settings merged from server');
+      }
+      settingsPullComplete = true;
+      settingsLastPullTime = Date.now();
+    } catch (error) {
+      log('[JP343] Settings pull error:', error);
+      settingsPullComplete = true;
     }
   }
 
@@ -103,6 +223,7 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
       await triggerSync();
+      await pullAndMergeSettingsFromServer().catch(() => {});
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {
@@ -443,6 +564,13 @@ export default defineBackground(() => {
             return { success: true, skipped: true, blocked: true };
           }
 
+          if (message.state.platform === 'spotify' && message.state.contentType) {
+            if (!settings.spotifyContentTypes?.includes(message.state.contentType)) {
+              log('[JP343] Spotify content type blocked:', message.state.contentType);
+              return { success: true, skipped: true, blocked: true };
+            }
+          }
+
           const currentSession = tracker.getCurrentSession();
           if (currentSession && currentSession.url !== message.state.url) {
             const previousEntry = tracker.finalizeSession();
@@ -616,6 +744,9 @@ export default defineBackground(() => {
             await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
           }
           log('[JP343] User state updated:', merged.isLoggedIn);
+          if (merged.isLoggedIn && merged.extApiToken) {
+            await pullAndMergeSettingsFromServer().catch(() => {});
+          }
         }
         return { success: true };
       }
@@ -683,8 +814,21 @@ export default defineBackground(() => {
       }
 
       case 'GET_SETTINGS': {
+        const pullAge = Date.now() - settingsLastPullTime;
+        if (!settingsPullComplete || pullAge > 60000) {
+          await pullAndMergeSettingsFromServer().catch(() => {});
+        }
         const settings = await loadSettings();
         return { success: true, data: { settings } };
+      }
+
+      case 'UPDATE_SETTINGS': {
+        if ('settings' in message && message.settings) {
+          await saveSettings(message.settings as ExtensionSettings);
+          syncSettingsToServer(message.settings as ExtensionSettings).catch(() => {});
+          return { success: true };
+        }
+        return { success: false, error: 'No settings provided' };
       }
 
       case 'SET_ENABLED': {
@@ -721,6 +865,7 @@ export default defineBackground(() => {
             settings.blockedChannels.push(message.channel);
             await saveSettings(settings);
             log('[JP343] Channel blocked:', message.channel.channelName);
+            syncSettingsToServer(settings).catch(() => {});
           }
 
           const currentSession = tracker.getCurrentSession();
@@ -745,6 +890,7 @@ export default defineBackground(() => {
           );
           await saveSettings(settings);
           log('[JP343] Channel unblocked:', message.channelId);
+          syncSettingsToServer(settings).catch(() => {});
           return { success: true, removed: before > settings.blockedChannels.length };
         }
         return { success: false, error: 'No channelId provided' };
@@ -820,7 +966,8 @@ export default defineBackground(() => {
           /primevideo\.com/,
           /amazon\.\w+.*\/gp\/video/,
           /disneyplus\.com/,
-          /cijapanese\.com/
+          /cijapanese\.com/,
+          /open\.spotify\.com/
         ];
         const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
 
@@ -946,7 +1093,7 @@ export default defineBackground(() => {
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
 
-  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'generic'];
+  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000;
 
   function isValidSavedSession(session: unknown): session is TrackingSession {
@@ -1101,6 +1248,7 @@ export default defineBackground(() => {
         crunchyroll: /crunchyroll\.com/,
         primevideo: /primevideo\.com|amazon\.\w+/,
         disneyplus: /disneyplus\.com/,
+        spotify: /open\.spotify\.com/,
       };
       const samePlatform = platformDomains[session.platform]?.test(changeInfo.url);
       if (!samePlatform) {

@@ -1,6 +1,6 @@
 // JP343 Extension - Popup UI
 
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
 
 const DEBUG_MODE = import.meta.env.DEV;
@@ -56,6 +56,8 @@ const platformIcons: Record<Platform, string> = {
   crunchyroll: 'C',
   primevideo: 'P',
   disneyplus: 'D',
+  cijapanese: '漢',
+  spotify: '♪',
   generic: '⏵'
 };
 
@@ -104,10 +106,47 @@ async function loadAndApplySettings(): Promise<void> {
       updateToggleDisplay(settings.enabled);
       blockedChannels = settings.blockedChannels || [];
       renderBlockedList();
+      updateSpotifyFilterUI(settings);
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);
   }
+}
+
+function updateSpotifyFilterUI(settings: ExtensionSettings): void {
+  const section = document.getElementById('spotifyFilterSection');
+  if (!section) return;
+  const onSpotify = currentSession?.platform === 'spotify' || /open\.spotify\.com/.test(activeTabInfo?.url || '');
+  section.style.display = onSpotify ? 'flex' : 'none';
+  if (!onSpotify) return;
+  const types = settings.spotifyContentTypes || ['podcast', 'music', 'audiobook'];
+  section.querySelectorAll('.spotify-chip').forEach(chip => {
+    const type = chip.getAttribute('data-type') as SpotifyContentType;
+    chip.classList.toggle('active', types.includes(type));
+  });
+}
+
+function initSpotifyFilterChips(): void {
+  const section = document.getElementById('spotifyFilterSection');
+  if (!section) return;
+  section.querySelectorAll('.spotify-chip').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      const type = chip.getAttribute('data-type') as SpotifyContentType;
+      const isActive = chip.classList.contains('active');
+      const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
+      if (!response.success) return;
+      const settings = response.data.settings as ExtensionSettings;
+      let types = settings.spotifyContentTypes || ['podcast', 'music', 'audiobook'];
+      if (isActive) {
+        types = types.filter(t => t !== type);
+      } else {
+        types.push(type);
+      }
+      settings.spotifyContentTypes = types;
+      await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings });
+      chip.classList.toggle('active', !isActive);
+    });
+  });
 }
 
 // --- MANUAL TRACKING ---
@@ -120,6 +159,7 @@ async function loadActiveTabInfo(): Promise<void> {
     if (response.success && response.data) {
       activeTabInfo = response.data as ActiveTabInfo;
       updateManualTrackDisplay();
+      loadAndApplySettings();
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load tab info:', error);
@@ -244,9 +284,11 @@ function updateChannelDisplay(session: TrackingSession | null): void {
   }
 
   const hasBlocked = blockedChannels.length > 0;
-  elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
+  elements.blockedCountBadge.style.visibility = hasBlocked ? 'visible' : 'hidden';
+  elements.blockedCountBadge.style.display = 'inline';
   elements.blockedCountNumber.textContent = String(blockedChannels.length);
-  elements.btnToggleBlockedList.style.display = hasBlocked ? 'inline-block' : 'none';
+  elements.btnToggleBlockedList.style.visibility = hasBlocked ? 'visible' : 'hidden';
+  elements.btnToggleBlockedList.style.display = 'inline-block';
 
   if (!hasBlocked) {
     isBlockedListExpanded = false;
@@ -255,14 +297,44 @@ function updateChannelDisplay(session: TrackingSession | null): void {
   }
 }
 
-function renderBlockedList(filterText = ''): void {
-  elements.blockedCountNumber.textContent = String(blockedChannels.length);
-  const hasBlocked = blockedChannels.length > 0;
-  elements.blockedCountBadge.style.display = hasBlocked ? 'inline' : 'none';
-  elements.btnToggleBlockedList.style.display = hasBlocked ? 'inline-block' : 'none';
+function getBlockPlatformPrefix(): string | null {
+  const platform = currentSession?.platform;
+  if (platform === 'spotify') return 'spotify:';
+  if (platform === 'netflix') return 'netflix:';
+  if (platform === 'crunchyroll') return 'crunchyroll:';
+  if (platform === 'primevideo') return 'primevideo:';
+  if (platform === 'disneyplus') return 'disneyplus:';
+  if (platform === 'youtube') return null;
+  const url = activeTabInfo?.url || '';
+  if (/open\.spotify\.com/.test(url)) return 'spotify:';
+  if (/netflix\.com/.test(url)) return 'netflix:';
+  if (/crunchyroll\.com/.test(url)) return 'crunchyroll:';
+  if (/primevideo\.com|amazon\.\w+/.test(url)) return 'primevideo:';
+  if (/disneyplus\.com/.test(url)) return 'disneyplus:';
+  if (/youtube\.com/.test(url)) return null;
+  return undefined as unknown as string | null;
+}
 
-  // Only show search when >= 5 entries
-  elements.blockedListSearch.style.display = blockedChannels.length >= 5 ? 'block' : 'none';
+function filterBlocksByPlatform(channels: BlockedChannel[]): BlockedChannel[] {
+  const prefix = getBlockPlatformPrefix();
+  if (prefix === undefined as unknown) return channels;
+  if (prefix === null) return channels.filter(c => !c.channelId.includes(':'));
+  return channels.filter(c => c.channelId.startsWith(prefix));
+}
+
+function renderBlockedList(filterText = ''): void {
+  const platformFiltered = filterBlocksByPlatform(blockedChannels);
+  elements.blockedCountNumber.textContent = String(platformFiltered.length);
+  const hasBlocked = platformFiltered.length > 0;
+  if (hasBlocked && !currentChannelId) {
+    elements.channelSection.style.display = 'block';
+  }
+  elements.blockedCountBadge.style.visibility = hasBlocked ? 'visible' : 'hidden';
+  elements.blockedCountBadge.style.display = 'inline';
+  elements.btnToggleBlockedList.style.visibility = hasBlocked ? 'visible' : 'hidden';
+  elements.btnToggleBlockedList.style.display = 'inline-block';
+
+  elements.blockedListSearch.style.display = platformFiltered.length >= 5 ? 'block' : 'none';
 
   if (!hasBlocked) {
     isBlockedListExpanded = false;
@@ -271,8 +343,8 @@ function renderBlockedList(filterText = ''): void {
   }
 
   const filtered = filterText
-    ? blockedChannels.filter(c => c.channelName.toLowerCase().includes(filterText.toLowerCase()))
-    : blockedChannels;
+    ? platformFiltered.filter(c => c.channelName.toLowerCase().includes(filterText.toLowerCase()))
+    : platformFiltered;
 
   elements.blockedList.innerHTML = filtered.map(channel => `
     <div class="blocked-item" data-id="${escapeHtml(channel.channelId)}">
@@ -843,6 +915,7 @@ async function fetchCurrentState(): Promise<void> {
     if (response.success && response.data) {
       const { session, duration, isAd } = response.data;
 
+      const platformChanged = currentSession?.platform !== session?.platform;
       currentSession = session;
       isAdPlaying = isAd;
 
@@ -850,6 +923,9 @@ async function fetchCurrentState(): Promise<void> {
       updateSessionDisplay(session, duration, isAd);
       updateChannelDisplay(session);
       updateManualTrackDisplay();
+      if (platformChanged) {
+        loadAndApplySettings();
+      }
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load:', error);
@@ -972,6 +1048,7 @@ async function fetchAndRenderStats(): Promise<void> {
 
 // Init
 loadAndApplySettings();
+initSpotifyFilterChips();
 loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();

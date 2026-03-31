@@ -137,6 +137,24 @@ export default defineContentScript({
     }
 
     waitForUserStateAndReport();
-    provideExtensionData();
+
+    function provideExtensionDataIfLoggedIn(): void {
+      const maxWait = 6000;
+      const start = Date.now();
+      const poll = () => {
+        const state = getUserState();
+        if (state.isLoggedIn) {
+          provideExtensionData();
+          return;
+        }
+        if (Date.now() - start < maxWait && !document.documentElement.hasAttribute('data-jp343-user')) {
+          setTimeout(poll, 200);
+          return;
+        }
+        log('[JP343 Bridge] Not logged in, extension data not exposed');
+      };
+      setTimeout(poll, 300);
+    }
+    provideExtensionDataIfLoggedIn();
   }
 });
