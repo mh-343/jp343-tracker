@@ -158,9 +158,9 @@ export default defineContentScript({
         isAd: false,
         thumbnailUrl: getThumbnail(),
         videoId: videoId,
-        channelId: null,
-        channelName: null,
-        channelUrl: null
+        channelId: 'cijapanese',
+        channelName: 'CI Japanese',
+        channelUrl: 'https://cijapanese.com'
       };
     }
 

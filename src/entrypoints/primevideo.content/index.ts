@@ -28,6 +28,12 @@ export default defineContentScript({
     let lastVideoId: string | null = null;
     let bestKnownTitle: string = '';
     let isCurrentlyInAd: boolean = false;
+    let recentAdEnd: number = 0;
+    let effectiveUrl: string = window.location.href;
+    let episodeChangeCounter = 0;
+    let lastEpisodeChangeTime = 0;
+    let lastCurrentTime = 0;
+    let lastSubtitleText = '';
 
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('.dv-player-fullscreen video') as HTMLVideoElement)
@@ -84,6 +90,9 @@ export default defineContentScript({
         isCurrentlyInAd,
         lastVideoId,
         bestKnownTitle,
+        effectiveUrl,
+        episodeChangeCounter,
+        lastCurrentTime,
         adTimerVisible: !!document.querySelector('[data-testid="ad-timer"], .atvwebplayersdk-ad-timer, .adTimerText'),
         playerTitleEl: document.querySelector('[data-testid="title-text"], .atvwebplayersdk-title-text')?.textContent?.trim() || null,
         playerSubtitleEl: document.querySelector('[data-testid="subtitle-text"], .atvwebplayersdk-subtitle-text')?.textContent?.trim() || null,
@@ -207,6 +216,18 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
+      if (metadata.title === 'Prime Video Content') {
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        const ogText = ogTitle?.getAttribute('content')?.trim();
+        if (ogText && ogText.length > 1 && !isGenericTitle(ogText)) {
+          const parsed = parsePrimeTitle(ogText);
+          Object.assign(metadata, parsed);
+          if (metadata.title !== 'Prime Video Content') {
+            bestKnownTitle = metadata.title;
+          }
+        }
+      }
+
       tryExtractPlayerTitle(metadata);
       metadata.thumbnailUrl = extractThumbnail();
 
@@ -297,6 +318,17 @@ export default defineContentScript({
         return result;
       }
 
+      const deShortPattern = /^(.+?)\s*[-–]\s*Staffel\s*(\d+).*?F\.\s*(\d+)(.*)$/i;
+      match = rawTitle.match(deShortPattern);
+      if (match) {
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeNumber = parseInt(match[3], 10);
+        result.episodeTitle = match[4].replace(/^[\s:–-]+/, '').trim() || null;
+        result.isMovie = false;
+        return result;
+      }
+
       const inlinePattern = /S(\d+)\s*E(\d+)/i;
       match = rawTitle.match(inlinePattern);
       if (match) {
@@ -328,8 +360,10 @@ export default defineContentScript({
         [/S(\d+)\s*[:\s]?\s*E(\d+)/i, true],
         [/Season\s*(\d+).*Episode\s*(\d+)/i, true],
         [/Staffel\s*(\d+).*Folge\s*(\d+)/i, true],
+        [/Staffel\s*(\d+).*?F\.?\s*(\d+)/i, true],
         [/(\d+)x(\d+)/, true],
         [/Ep\.?\s*(\d+)/i, false],
+        [/\bF\.\s*(\d+)/, false],
         [/Folge\s*(\d+)/i, false],
         [/Episode\s*(\d+)/i, false]
       ];
@@ -356,24 +390,9 @@ export default defineContentScript({
 
     function extractThumbnail(): string | null {
       const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
-      if (ogImage?.content && ogImage.content.startsWith('https://')) {
+      if (ogImage?.content && ogImage.content.includes('images-amazon.com') && !ogImage.content.includes('seo-logo')) {
         return ogImage.content;
       }
-
-      const posterSelectors = [
-        '[data-testid="packshot"] img',
-        '.dv-dp-packshot img',
-        '.av-dp-packshot img',
-        '.dv-fallback-packshot img'
-      ];
-
-      for (const selector of posterSelectors) {
-        const img = document.querySelector(selector) as HTMLImageElement;
-        if (img?.src && img.src.startsWith('https://')) {
-          return img.src;
-        }
-      }
-
       return null;
     }
 
@@ -439,12 +458,53 @@ export default defineContentScript({
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
+        recentAdEnd = Date.now();
         log('[JP343] Prime Video: Ad ended');
         sendMessage('AD_END');
+        setTimeout(() => {
+          if (isCurrentlyInAd || isAdPlaying()) return;
+          const v = findVideoElement();
+          if (v && !v.paused && !v.ended) {
+            const state = getCurrentVideoState();
+            if (state) {
+              log('[JP343] Prime Video: Resuming after ad');
+              sendMessage('VIDEO_PLAY', { state });
+            }
+          }
+        }, 1000);
       }
     }
 
     intervalIds.push(setInterval(handleAdStateChange, 500));
+
+    intervalIds.push(setInterval(() => {
+      if (isCurrentlyInAd || !isWatchPage() || !lastVideoId) return;
+      const subtitle = document.querySelector('.atvwebplayersdk-subtitle-text');
+      const text = subtitle?.textContent?.trim() || '';
+      if (!text || text === lastSubtitleText) return;
+
+      if (lastSubtitleText && Date.now() - lastEpisodeChangeTime > 15000) {
+        lastEpisodeChangeTime = Date.now();
+        episodeChangeCounter++;
+        effectiveUrl = window.location.href + '#ep' + episodeChangeCounter;
+        log('[JP343] Prime Video: Episode change #' + episodeChangeCounter + ' (subtitle: "' + lastSubtitleText + '" -> "' + text + '")');
+        sendMessage('VIDEO_ENDED');
+        bestKnownTitle = '';
+        lastCurrentTime = 0;
+
+        setTimeout(() => {
+          if (isCurrentlyInAd || isAdPlaying()) return;
+          const state = getCurrentVideoState();
+          if (state) {
+            lastTitle = state.title;
+            log('[JP343] Prime Video: New episode started:', state.title);
+            sendMessage('VIDEO_PLAY', { state });
+          }
+        }, 500);
+      }
+
+      lastSubtitleText = text;
+    }, 3000));
 
     function getFormattedTitle(): string {
       const metadata = extractMetadata();
@@ -479,7 +539,7 @@ export default defineContentScript({
         currentTime: video.currentTime,
         duration: video.duration || 0,
         title: getFormattedTitle(),
-        url: window.location.href,
+        url: effectiveUrl,
         platform: 'primevideo',
         isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
@@ -528,6 +588,19 @@ export default defineContentScript({
         }
 
         const videoId = getVideoId();
+
+        if (videoId && lastVideoId && videoId === lastVideoId
+            && video.currentTime < 15 && lastCurrentTime > 120
+            && Date.now() - lastEpisodeChangeTime > 15000) {
+          lastEpisodeChangeTime = Date.now();
+          episodeChangeCounter++;
+          effectiveUrl = window.location.href + '#ep' + episodeChangeCounter;
+          log('[JP343] Prime Video: Episode change #' + episodeChangeCounter + ' (currentTime reset: ' + lastCurrentTime.toFixed(0) + 's -> ' + video.currentTime.toFixed(0) + 's)');
+          sendMessage('VIDEO_ENDED');
+          bestKnownTitle = '';
+          lastCurrentTime = 0;
+        }
+
         if (videoId && lastVideoId && videoId !== lastVideoId) {
           bestKnownTitle = '';
         }
@@ -560,6 +633,7 @@ export default defineContentScript({
 
           lastVideoId = videoId;
           lastTitle = state.title;
+          lastCurrentTime = video.currentTime;
           log('[JP343] Prime Video Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
         }
@@ -585,6 +659,9 @@ export default defineContentScript({
 
         const state = getCurrentVideoState();
         if (state && state.isPlaying) {
+          const video = findVideoElement();
+          if (video) lastCurrentTime = video.currentTime;
+
           const currentVideoId = getVideoId();
 
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
@@ -609,20 +686,6 @@ export default defineContentScript({
         }
       }, 30000);
       intervalIds.push(updateInterval);
-
-      let quickUpdateCount = 0;
-      const quickTitleUpdate = setInterval(() => {
-        quickUpdateCount++;
-        if (isCurrentlyInAd || video.paused) return;
-        const state = getCurrentVideoState();
-        if (state && state.isPlaying && !isGenericTitle(state.title) && state.title !== lastTitle) {
-          log('[JP343] Prime Video: Title update (quick #' + quickUpdateCount + '):', state.title);
-          lastTitle = state.title;
-          sendMessage('VIDEO_STATE_UPDATE', { state });
-        }
-        if (quickUpdateCount >= 6) clearInterval(quickTitleUpdate);
-      }, 5000);
-      intervalIds.push(quickTitleUpdate);
 
       log('[JP343] Prime Video: Events bound');
     }
@@ -704,6 +767,10 @@ export default defineContentScript({
         debugLog('URL_CHANGE', '=== URL CHANGED ===', { oldUrl, newUrl, wasOnWatch, isOnWatch, ...collectUIState() });
         log('[JP343] Prime Video: URL change:', oldUrl, '->', newUrl);
         lastUrl = newUrl;
+        effectiveUrl = newUrl;
+        episodeChangeCounter = 0;
+        lastEpisodeChangeTime = 0;
+        lastCurrentTime = 0;
 
         if (wasOnWatch && !isOnWatch) {
           log('[JP343] Prime Video: Left watch page');

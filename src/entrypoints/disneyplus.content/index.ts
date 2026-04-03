@@ -22,6 +22,21 @@ export default defineContentScript({
     let isCurrentlyInAd: boolean = false;
     let bestKnownSeriesName: string = '';
     let cachedMetadata: DisneyPlusMetadata | null = null;
+    let interceptedTitle: string | null = null;
+    let interceptedSubtitle: string | null = null;
+
+    let interceptedThumbnail: string | null = null;
+
+    window.addEventListener('jp343-disney-meta', ((event: CustomEvent<{ title: string; subtitle: string | null; thumbnail: string | null }>) => {
+      interceptedTitle = event.detail.title;
+      interceptedSubtitle = event.detail.subtitle;
+      if (event.detail.thumbnail) interceptedThumbnail = event.detail.thumbnail;
+      if (interceptedTitle && interceptedTitle !== bestKnownSeriesName) {
+        bestKnownSeriesName = interceptedTitle;
+        cachedMetadata = null;
+      }
+      log('[JP343] Disney+: Intercepted metadata:', interceptedTitle, interceptedSubtitle, interceptedThumbnail?.substring(0, 60));
+    }) as EventListener);
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
@@ -247,10 +262,26 @@ export default defineContentScript({
         }
       }
 
+      if (interceptedTitle) {
+        metadata.seriesName = interceptedTitle;
+        metadata.title = interceptedTitle;
+        bestKnownSeriesName = interceptedTitle;
+      }
+
       probePlayerTitle();
-      if (bestKnownSeriesName) {
+      if (!metadata.seriesName && bestKnownSeriesName) {
         metadata.seriesName = bestKnownSeriesName;
         metadata.title = bestKnownSeriesName;
+      }
+
+      if (!metadata.episodeNumber && interceptedSubtitle) {
+        const epInfo = parseEpisodeInfo(interceptedSubtitle);
+        if (epInfo.episodeNumber) {
+          metadata.seasonNumber = epInfo.seasonNumber;
+          metadata.episodeNumber = epInfo.episodeNumber;
+          metadata.episodeTitle = epInfo.episodeTitle;
+          metadata.isMovie = false;
+        }
       }
 
       if (!metadata.episodeNumber) {
@@ -287,6 +318,21 @@ export default defineContentScript({
         metadata.seriesName = bestKnownSeriesName;
       }
 
+      if (!metadata.seriesName) {
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        const ogText = ogTitle?.getAttribute('content')?.trim();
+        if (ogText && ogText.length > 1) {
+          const parsed = parseDisneyTitle(ogText);
+          if (parsed.seriesName) {
+            metadata.seriesName = parsed.seriesName;
+            if (metadata.title === 'Disney+ Content') {
+              metadata.title = parsed.title || parsed.seriesName;
+            }
+            bestKnownSeriesName = parsed.seriesName;
+          }
+        }
+      }
+
       metadata.thumbnailUrl = getThumbnail();
       cachedMetadata = metadata;
       return metadata;
@@ -312,6 +358,7 @@ export default defineContentScript({
     }
 
     function getThumbnail(): string | null {
+      if (interceptedThumbnail) return interceptedThumbnail;
       const ogImage = document.querySelector('meta[property="og:image"]') as HTMLMetaElement;
       if (ogImage?.content && ogImage.content.startsWith('https://')) {
         return ogImage.content;

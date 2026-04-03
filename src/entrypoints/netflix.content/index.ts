@@ -403,6 +403,18 @@ export default defineContentScript({
         metadata.title = bestKnownTitle;
       }
 
+      if (metadata.title === 'Netflix Content') {
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        const ogText = ogTitle?.getAttribute('content')?.trim();
+        if (ogText && ogText.length > 1 && !isGenericPageTitle(ogText)) {
+          const parsed = parseNetflixTitle(ogText);
+          Object.assign(metadata, parsed);
+          if (metadata.title !== 'Netflix Content') {
+            bestKnownTitle = metadata.title;
+          }
+        }
+      }
+
       tryExtractPlayerTitle();
 
       if (cachedPlayerTitle) {
@@ -652,13 +664,14 @@ export default defineContentScript({
       const videoId = getVideoId();
       if (!videoId) return null;
 
+      const title = getFormattedTitle();
       const metadata = cachedMetadata || extractNetflixMetadata();
 
       return {
         isPlaying: !video.paused && !video.ended,
         currentTime: video.currentTime,
         duration: video.duration || 0,
-        title: getFormattedTitle(),
+        title,
         url: window.location.href,
         platform: 'netflix',
         isAd: isCurrentlyInAd || isAdPlaying(),

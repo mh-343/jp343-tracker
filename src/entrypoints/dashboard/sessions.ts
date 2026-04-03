@@ -191,7 +191,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   } else {
     const ph = document.createElement('div');
     ph.className = 'session-thumb-placeholder';
-    ph.textContent = session.icon || '⏵';
+    ph.textContent = (session.platform && platformIcons[session.platform]) || session.icon || '⏵';
     item.appendChild(ph);
   }
 

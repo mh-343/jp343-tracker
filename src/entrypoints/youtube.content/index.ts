@@ -267,6 +267,14 @@ export default defineContentScript({
         }
       }
 
+      if (!channelName) {
+        const channelNameEl = document.querySelector('ytd-channel-name #container, ytd-channel-name');
+        const raw = channelNameEl?.textContent?.trim();
+        if (raw) {
+          channelName = raw.split('\n').map(s => s.trim()).find(s => s.length > 0) || null;
+        }
+      }
+
       if (!channelUrl) {
         const linkSelectors = [
           '#owner #channel-name a',
@@ -291,9 +299,10 @@ export default defineContentScript({
         if (channelMatch) {
           channelId = channelMatch[1];
         } else {
-          const handleMatch = channelUrl.match(/\/@([a-zA-Z0-9_-]+)/);
+          const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
           if (handleMatch) {
-            channelId = `@${handleMatch[1]}`;
+            try { channelId = `@${decodeURIComponent(handleMatch[1])}`; }
+            catch { channelId = `@${handleMatch[1]}`; }
           }
         }
       }
@@ -305,17 +314,21 @@ export default defineContentScript({
         }
       }
 
-      if (!channelId) {
+      if (!channelId || !channelName) {
         try {
           const scripts = document.querySelectorAll('script');
           for (const script of scripts) {
-            if (script.textContent?.includes('ytInitialPlayerResponse')) {
-              const match = script.textContent.match(/"channelId":"(UC[a-zA-Z0-9_-]+)"/);
-              if (match) {
-                channelId = match[1];
-                break;
-              }
+            const text = script.textContent;
+            if (!text?.includes('ytInitialPlayerResponse') && !text?.includes('ytInitialData')) continue;
+            if (!channelId) {
+              const idMatch = text.match(/"channelId":"(UC[a-zA-Z0-9_-]+)"/);
+              if (idMatch) channelId = idMatch[1];
             }
+            if (!channelName) {
+              const nameMatch = text.match(/"ownerChannelName":"([^"]+)"/);
+              if (nameMatch) channelName = nameMatch[1];
+            }
+            if (channelId && channelName) break;
           }
         } catch { /* ignore */ }
       }
