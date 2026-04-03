@@ -43,8 +43,10 @@ export default defineContentScript({
     function getArtistLink(): HTMLAnchorElement | null {
       const bar = document.querySelector('[data-testid="now-playing-widget"]');
       if (!bar) return null;
-      return bar.querySelector('[data-testid="context-item-info-artist"] a') as HTMLAnchorElement
-        || bar.querySelector('[data-testid="context-item-info-artist"]') as HTMLElement | null;
+      return bar.querySelector('[data-testid="context-item-info-subtitles"] a[href*="/artist/"]') as HTMLAnchorElement
+        || bar.querySelector('[data-testid="context-item-info-subtitles"] a[href*="/show/"]') as HTMLAnchorElement
+        || bar.querySelector('[data-testid="context-item-info-artist"] a') as HTMLAnchorElement
+        || null;
     }
 
     function getCoverArt(): string | null {
@@ -69,9 +71,15 @@ export default defineContentScript({
 
     function getArtistOrShowName(): string {
       const bar = document.querySelector('[data-testid="now-playing-widget"]');
-      if (!bar) return '';
-      const artistEl = bar.querySelector('[data-testid="context-item-info-subtitles"]');
-      return artistEl?.textContent?.trim() || '';
+      if (bar) {
+        const artistEl = bar.querySelector('[data-testid="context-item-info-subtitles"]');
+        const text = artistEl?.textContent?.trim();
+        if (text) return text;
+      }
+      const docTitle = document.title;
+      const match = docTitle.match(/^.+?\s[-\u2013]\s(.+?)(?:\s[-\u2013|]\s*Spotify.*)?$/i);
+      if (match?.[1]) return match[1].trim();
+      return '';
     }
 
     function parseTimeString(timeStr: string): number {

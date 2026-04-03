@@ -86,6 +86,20 @@ export default defineContentScript({
             || document.querySelector('h1.title');
           const episodeText = episodeHeading?.textContent?.trim() || null;
 
+          let seriesName: string | null = null;
+          let seriesUrl: string | null = null;
+          let seriesId: string | null = null;
+          const seriesLink = document.querySelector('[data-t="show-title-link"]')
+            || document.querySelector('a[href*="/series/"]');
+          if (seriesLink instanceof HTMLAnchorElement) {
+            seriesName = seriesLink.textContent?.trim() || null;
+            seriesUrl = seriesLink.href || null;
+            const seriesMatch = seriesLink.href?.match(/\/series\/([A-Z0-9]+)/i);
+            if (seriesMatch) {
+              seriesId = seriesMatch[1];
+            }
+          }
+
           let targetOrigin = 'https://www.crunchyroll.com';
           try {
             const iframeUrl = new URL(iframe.src);
@@ -98,6 +112,9 @@ export default defineContentScript({
             title: document.title,
             thumbnail: thumbnail,
             episodeText: episodeText,
+            seriesName: seriesName,
+            seriesUrl: seriesUrl,
+            seriesId: seriesId,
             watchUrl: window.location.href
           }, targetOrigin);
 
@@ -334,6 +351,13 @@ export default defineContentScript({
         }
       }
 
+      if (isIframe && cachedSeriesNameFromParent) {
+        metadata.seriesName = cachedSeriesNameFromParent;
+        if (metadata.title === 'Crunchyroll Content') {
+          metadata.title = cachedSeriesNameFromParent;
+        }
+      }
+
       if (isIframe && cachedEpisodeTextFromParent) {
         const epMatch = cachedEpisodeTextFromParent.match(/^E(\d+)\s*[-–]\s*(.+)$/i);
         if (epMatch) {
@@ -379,6 +403,15 @@ export default defineContentScript({
         if (match[3]) {
           result.episodeTitle = match[3].trim();
         }
+        return result;
+      }
+
+      match = rawTitle.match(/^(.+?)\s+(?:Staffel|Season)\s*(\d+)\s+(.+)$/i);
+      if (match) {
+        result.seriesName = match[1].trim();
+        result.title = match[1].trim();
+        result.seasonNumber = parseInt(match[2], 10);
+        result.episodeTitle = match[3].trim();
         return result;
       }
 
@@ -446,7 +479,9 @@ export default defineContentScript({
 
     function getFormattedTitle(): string {
       const metadata = extractCrunchyrollMetadata();
-      cachedMetadata = metadata;
+      if (metadata.seriesName) {
+        cachedMetadata = metadata;
+      }
 
       let formatted = metadata.title;
 
@@ -467,6 +502,9 @@ export default defineContentScript({
 
     let cachedVideoIdInIframe: string | null = null;
     let cachedTitleFromParent: string | null = null;
+    let cachedSeriesNameFromParent: string | null = null;
+    let cachedSeriesIdFromParent: string | null = null;
+    let cachedSeriesUrlFromParent: string | null = null;
     let cachedThumbnailFromParent: string | null = null;
     let cachedEpisodeTextFromParent: string | null = null;
     let cachedWatchUrlFromParent: string | null = null;
@@ -542,6 +580,18 @@ export default defineContentScript({
               cachedTitleFromParent = title;
             }
 
+            const seriesName = event.data.seriesName;
+            const seriesId = event.data.seriesId;
+            const seriesUrl = event.data.seriesUrl;
+            if (seriesName) {
+              cachedSeriesNameFromParent = seriesName;
+              if (cachedMetadata && !cachedMetadata.seriesName) {
+                cachedMetadata = null;
+              }
+            }
+            if (seriesId) cachedSeriesIdFromParent = seriesId;
+            if (seriesUrl) cachedSeriesUrlFromParent = seriesUrl;
+
             if (thumbnail) {
               cachedThumbnailFromParent = thumbnail;
             }
@@ -613,9 +663,11 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        channelId: metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null,
-        channelName: metadata.seriesName || null,
-        channelUrl: null
+        channelId: cachedSeriesIdFromParent
+          ? 'crunchyroll:' + cachedSeriesIdFromParent
+          : (metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null),
+        channelName: cachedSeriesNameFromParent || metadata.seriesName || null,
+        channelUrl: cachedSeriesUrlFromParent || null
       };
     }
 
