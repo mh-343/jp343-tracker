@@ -1,4 +1,5 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
+import { getLocalDateString } from '../lib/format-utils';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -185,6 +186,33 @@ export default defineBackground(() => {
       try {
         const pending = await loadPendingEntries();
         if (pending.some(e => e.id === entry.id)) return;
+
+        const settings = await loadSettings();
+        if (settings.mergeSameDaySessions) {
+          const entryDay = getLocalDateString(new Date(entry.date));
+          const mergeTarget = pending.find(e =>
+            e.project_id === entry.project_id &&
+            getLocalDateString(new Date(e.date)) === entryDay
+          );
+          if (mergeTarget) {
+            mergeTarget.duration_min += entry.duration_min;
+            if (!mergeTarget.thumbnail && entry.thumbnail) {
+              mergeTarget.thumbnail = entry.thumbnail;
+            }
+            if (mergeTarget.synced) {
+              mergeTarget.synced = false;
+              mergeTarget.syncedAt = null;
+              mergeTarget.syncAttempts = 0;
+              mergeTarget.lastSyncError = null;
+              mergeTarget.mergeResync = true;
+            }
+            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
+            log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
+            await updateStats(entry);
+            return;
+          }
+        }
+
         pending.push(entry);
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
         log('[JP343] Entry saved. Pending:', pending.length);
@@ -290,7 +318,8 @@ export default defineBackground(() => {
           resource_url: entry.url,
           thumbnail: entry.thumbnail || '',
           platform: entry.platform,
-          date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19)
+          date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
+          ...(entry.mergeResync ? { merge_resync: '1' } : {})
         };
 
         const response = await fetch(ajaxUrl, {
@@ -314,11 +343,11 @@ export default defineBackground(() => {
         if (result.success) {
           await withStorageLock(async () => {
             const current = await loadPendingEntries();
-            const updated = current.map(e =>
-              e.id === entry.id
-                ? { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: result.data?.entry_id ?? null }
-                : e
-            );
+            const updated = current.map(e => {
+              if (e.id !== entry.id) return e;
+              if (e.duration_min !== entry.duration_min) return e;
+              return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: result.data?.entry_id ?? null, mergeResync: false };
+            });
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
           });
           succeeded++;
@@ -1015,10 +1044,7 @@ export default defineBackground(() => {
           url: message.url as string,
           platform: 'generic',
           isAd: false,
-          thumbnailUrl: (() => {
-            try { return `https://www.google.com/s2/favicons?domain=${new URL(message.url as string).hostname}&sz=128`; }
-            catch { return null; }
-          })(),
+          thumbnailUrl: null,
           videoId: null,
           channelId: null,
           channelName: null,

@@ -70,6 +70,7 @@ export interface PendingEntry {
   channelName: string | null;
   channelUrl: string | null;
   activityType?: ActivityType;
+  mergeResync?: boolean;
 }
 
 export interface JP343UserState {
@@ -91,6 +92,7 @@ export interface ExtensionStorage {
 export interface ExtensionSettings {
   enabled: boolean;
   autoSync: boolean;
+  mergeSameDaySessions: boolean;
   minDurationMinutes: number;
   enabledPlatforms: Platform[];
   blockedChannels: BlockedChannel[];
@@ -173,6 +175,7 @@ export const DEFAULT_STATS: ExtensionStats = {
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
+  mergeSameDaySessions: true,
   minDurationMinutes: 1,
   enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify'],
   blockedChannels: [],

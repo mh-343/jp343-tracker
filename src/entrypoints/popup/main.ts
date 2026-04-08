@@ -47,7 +47,8 @@ const elements = {
   // Stats Bar
   statWeek: document.getElementById('statWeek') as HTMLElement,
   statToday: document.getElementById('statToday') as HTMLElement,
-  statStreak: document.getElementById('statStreak') as HTMLElement
+  statStreak: document.getElementById('statStreak') as HTMLElement,
+  toggleMergeSessions: document.getElementById('toggleMergeSessions') as HTMLButtonElement
 };
 
 const platformIcons: Record<Platform, string> = {
@@ -104,6 +105,7 @@ async function loadAndApplySettings(): Promise<void> {
     if (response.success && response.data?.settings) {
       const settings = response.data.settings as ExtensionSettings;
       updateToggleDisplay(settings.enabled);
+      updateMergeToggle(settings.mergeSameDaySessions !== false);
       blockedChannels = settings.blockedChannels || [];
       renderBlockedList();
       updateSpotifyFilterUI(settings);
@@ -148,6 +150,20 @@ function initSpotifyFilterChips(): void {
     });
   });
 }
+
+function updateMergeToggle(enabled: boolean): void {
+  elements.toggleMergeSessions.classList.toggle('enabled', enabled);
+}
+
+elements.toggleMergeSessions.addEventListener('click', async () => {
+  const isEnabled = elements.toggleMergeSessions.classList.contains('enabled');
+  const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
+  if (!response.success) return;
+  const settings = response.data.settings as ExtensionSettings;
+  settings.mergeSameDaySessions = !isEnabled;
+  await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings });
+  updateMergeToggle(!isEnabled);
+});
 
 // --- MANUAL TRACKING ---
 
