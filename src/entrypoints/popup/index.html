@@ -1295,6 +1295,60 @@
       color: var(--accent);
     }
 
+    .settings-row {
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .settings-row-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .toggle-mini {
+      position: relative;
+      width: 34px;
+      height: 18px;
+      background: var(--bg-tertiary);
+      border-radius: 9px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 1px solid var(--border-subtle);
+      padding: 0;
+    }
+
+    .toggle-mini.enabled {
+      background: linear-gradient(135deg, var(--accent), var(--neon));
+      border-color: transparent;
+    }
+
+    .toggle-mini::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.3s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    .toggle-mini.enabled::after {
+      transform: translateX(16px);
+    }
+
+    [data-theme="light"] .toggle-mini.enabled {
+      background: linear-gradient(135deg, #7ec8e3, #a78bda, #d4a5c9, #8ee4df);
+      background-size: 300% 300%;
+      animation: iri-shimmer 4s ease infinite;
+    }
+
     .theme-toggle-popup {
       background: none;
       border: 1px solid var(--border-subtle);
@@ -1433,6 +1487,11 @@
       <button class="spotify-chip active" data-type="podcast">Podcasts</button>
       <button class="spotify-chip active" data-type="audiobook">Audiobooks</button>
     </div>
+  </div>
+
+  <div class="settings-row" id="mergeSettingRow">
+    <span class="settings-row-label">Merge same-day sessions</span>
+    <button class="toggle-mini enabled" id="toggleMergeSessions" title="Merge repeated sessions of the same video on the same day"></button>
   </div>
 
   <div class="pending-section" id="pendingSection" style="display: none;">
