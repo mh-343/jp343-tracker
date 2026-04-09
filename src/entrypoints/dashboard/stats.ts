@@ -5,9 +5,119 @@ import type { ServerStatsResponse } from './api';
 export const CACHED_SERVER_STATS_KEY = 'jp343_cached_server_stats';
 
 let _localDailyMinutes: Record<string, number> = {};
+let _goalMinutes = 60;
 
 export function setLocalDailyMinutes(dm: Record<string, number>): void {
   _localDailyMinutes = dm;
+}
+
+export function setGoalMinutes(minutes: number): void {
+  _goalMinutes = minutes > 0 ? minutes : 60;
+}
+
+const GOAL_PRESETS = [
+  { label: '30m', minutes: 30 },
+  { label: '1h', minutes: 60 },
+  { label: '1.5h', minutes: 90 },
+  { label: '2h', minutes: 120 },
+];
+
+export function renderGoalBar(todayMinutes: number, goalMinutes: number): void {
+  const done = document.getElementById('goalDone');
+  const pct = document.getElementById('goalPct');
+  const fill = document.getElementById('goalBarFill') as HTMLDivElement | null;
+  if (!done || !pct || !fill) return;
+
+  const progress = Math.min(Math.round((todayMinutes / goalMinutes) * 100), 100);
+  done.textContent = formatStatDuration(todayMinutes);
+  pct.textContent = ` / ${formatStatDuration(goalMinutes)} (${progress}%)`;
+  fill.style.width = `${progress}%`;
+}
+
+export function setupGoalEditor(initialGoalMinutes: number): void {
+  const wrap = document.getElementById('goalBarWrap');
+  const editor = document.getElementById('goalEditor');
+  const presetsContainer = document.getElementById('goalPresets');
+  const customInput = document.getElementById('goalCustomInput') as HTMLInputElement | null;
+  const unitToggle = document.getElementById('goalUnitToggle') as HTMLButtonElement | null;
+  const saveBtn = document.getElementById('goalSaveBtn') as HTMLButtonElement | null;
+  if (!wrap || !editor || !presetsContainer || !customInput || !unitToggle || !saveBtn) return;
+
+  let useHours = false;
+
+  for (const preset of GOAL_PRESETS) {
+    const btn = document.createElement('button');
+    btn.className = 'goal-preset-btn';
+    btn.textContent = preset.label;
+    btn.type = 'button';
+    if (preset.minutes === initialGoalMinutes) btn.classList.add('active');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      presetsContainer.querySelectorAll('.goal-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      useHours = false;
+      unitToggle.textContent = 'min';
+      customInput.value = String(preset.minutes);
+    });
+    presetsContainer.appendChild(btn);
+  }
+
+  customInput.value = String(initialGoalMinutes);
+
+  unitToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    useHours = !useHours;
+    unitToggle.textContent = useHours ? 'hr' : 'min';
+    const current = parseFloat(customInput.value) || 0;
+    customInput.value = useHours ? String(+(current / 60).toFixed(1)) : String(Math.round(current * 60));
+  });
+
+  customInput.addEventListener('input', (e) => {
+    e.stopPropagation();
+    presetsContainer.querySelectorAll('.goal-preset-btn').forEach(b => b.classList.remove('active'));
+    const raw = parseFloat(customInput.value) || 0;
+    const minutes = useHours ? Math.round(raw * 60) : Math.round(raw);
+    for (let i = 0; i < GOAL_PRESETS.length; i++) {
+      if (GOAL_PRESETS[i].minutes === minutes) {
+        presetsContainer.children[i]?.classList.add('active');
+      }
+    }
+  });
+
+  saveBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const raw = parseFloat(customInput.value) || 0;
+    const newGoal = Math.max(1, useHours ? Math.round(raw * 60) : Math.round(raw));
+
+    const result = await browser.storage.local.get('jp343_extension_settings');
+    const settings = result['jp343_extension_settings'] || {};
+    settings.dailyGoalMinutes = newGoal;
+    await browser.storage.local.set({ 'jp343_extension_settings': settings });
+
+    _goalMinutes = newGoal;
+    renderGoalBar(_localDailyMinutes[getLocalDateString()] || 0, newGoal);
+    editor.classList.remove('open');
+  });
+
+  wrap.addEventListener('click', () => {
+    const isOpen = editor.classList.contains('open');
+    editor.classList.toggle('open', !isOpen);
+    if (!isOpen) {
+      useHours = false;
+      unitToggle.textContent = 'min';
+      customInput.value = String(_goalMinutes);
+      presetsContainer.querySelectorAll('.goal-preset-btn').forEach((b, i) => {
+        b.classList.toggle('active', GOAL_PRESETS[i]?.minutes === _goalMinutes);
+      });
+    }
+  });
+
+  wrap.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      wrap.click();
+    }
+  });
 }
 
 export function setText(id: string, text: string): void {

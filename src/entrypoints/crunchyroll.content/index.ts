@@ -351,6 +351,11 @@ export default defineContentScript({
         }
       }
 
+      if (!isIframe) {
+        const domSeries = getSeriesInfo();
+        if (domSeries.name) metadata.seriesName = domSeries.name;
+      }
+
       if (isIframe && cachedSeriesNameFromParent) {
         metadata.seriesName = cachedSeriesNameFromParent;
         if (metadata.title === 'Crunchyroll Content') {
@@ -498,6 +503,16 @@ export default defineContentScript({
       }
 
       return formatted;
+    }
+
+    function getSeriesInfo(): { id: string | null; name: string | null; url: string | null } {
+      const link = document.querySelector('[data-t="show-title-link"]') as HTMLAnchorElement | null
+        || document.querySelector('a[href*="/series/"]') as HTMLAnchorElement | null;
+      if (!link) return { id: null, name: null, url: null };
+      const name = link.textContent?.trim() || null;
+      const url = link.href || null;
+      const idMatch = link.href?.match(/\/series\/([A-Z0-9]+)/i);
+      return { id: idMatch?.[1] || null, name, url };
     }
 
     let cachedVideoIdInIframe: string | null = null;
@@ -650,6 +665,7 @@ export default defineContentScript({
       if (!videoId) return null;
 
       const metadata = cachedMetadata || extractCrunchyrollMetadata();
+      const seriesInfo = getSeriesInfo();
 
       const watchUrl = cachedWatchUrlFromParent || window.location.href;
 
@@ -665,9 +681,10 @@ export default defineContentScript({
         videoId: videoId,
         channelId: cachedSeriesIdFromParent
           ? 'crunchyroll:' + cachedSeriesIdFromParent
-          : (metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null),
-        channelName: cachedSeriesNameFromParent || metadata.seriesName || null,
-        channelUrl: cachedSeriesUrlFromParent || null
+          : (seriesInfo.id ? 'crunchyroll:' + seriesInfo.id
+            : (metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null)),
+        channelName: cachedSeriesNameFromParent || seriesInfo.name || metadata.seriesName || null,
+        channelUrl: cachedSeriesUrlFromParent || seriesInfo.url || null
       };
     }
 

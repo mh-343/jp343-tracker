@@ -99,6 +99,15 @@ function updateToggleDisplay(enabled: boolean): void {
   }
 }
 
+let _popupGoalMinutes = 60;
+
+function renderGoalMicroBar(todayMinutes: number): void {
+  const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
+  if (!fill) return;
+  const pct = Math.min(Math.round((todayMinutes / _popupGoalMinutes) * 100), 100);
+  fill.style.width = `${pct}%`;
+}
+
 async function loadAndApplySettings(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
@@ -109,6 +118,7 @@ async function loadAndApplySettings(): Promise<void> {
       blockedChannels = settings.blockedChannels || [];
       renderBlockedList();
       updateSpotifyFilterUI(settings);
+      _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);
@@ -1029,6 +1039,7 @@ async function fetchAndRenderStats(): Promise<void> {
       elements.statWeek.textContent = formatStatDuration(weekMinutes || 0);
       elements.statToday.textContent = formatStatDuration(todayMinutes || 0);
       elements.statStreak.textContent = `${streak || 0}d`;
+      renderGoalMicroBar(todayMinutes || 0);
       if (rawDailyMinutes) {
         renderWeekBars(rawDailyMinutes);
       }

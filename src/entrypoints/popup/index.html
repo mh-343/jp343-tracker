@@ -846,6 +846,20 @@
       color: rgba(255, 255, 255, 0.5);
     }
 
+    /* Goal micro-bar */
+    .goal-micro-bar {
+      height: 3px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+    .goal-micro-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--magenta), var(--accent, var(--cyan)));
+      transition: width 0.4s ease;
+      max-width: 100%;
+    }
+    [data-theme="light"] .goal-micro-bar { background: rgba(0, 0, 0, 0.05); }
+
     /* Mini week bars */
     .week-bars {
       display: none;
@@ -1460,6 +1474,10 @@
       <span class="stat-label">Streak</span>
       <span class="stat-value stat-streak" id="statStreak">—</span>
     </div>
+  </div>
+
+  <div class="goal-micro-bar" id="goalMicroBar" title="Daily goal progress">
+    <div class="goal-micro-fill" id="goalMicroFill" style="width:0%"></div>
   </div>
 
   <!-- Mini week bars: Mon-Sun, populated via renderWeekBars() in main.ts -->
