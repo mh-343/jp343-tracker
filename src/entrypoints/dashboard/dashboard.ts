@@ -1,9 +1,10 @@
 import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
+import { getLocalDateString } from '../../lib/format-utils';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
-import { setLocalDailyMinutes, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
+import { setLocalDailyMinutes, setGoalMinutes, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
 import { showSessionsLoading, renderSessions, renderServerSessions } from './sessions';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
@@ -13,6 +14,7 @@ interface DashboardData {
   stats: ExtensionStats;
   userState: JP343UserState | null;
   activeSession: TrackingSession | null;
+  goalMinutes: number;
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -20,14 +22,16 @@ async function loadData(): Promise<DashboardData> {
     STORAGE_KEYS.PENDING,
     STORAGE_KEYS.STATS,
     STORAGE_KEYS.USER,
-    STORAGE_KEYS.SESSION
+    STORAGE_KEYS.SESSION,
+    STORAGE_KEYS.SETTINGS
   ]);
 
   return {
     entries: result[STORAGE_KEYS.PENDING] || [],
     stats: result[STORAGE_KEYS.STATS] || DEFAULT_STATS,
     userState: result[STORAGE_KEYS.USER] || null,
-    activeSession: result[STORAGE_KEYS.SESSION] || null
+    activeSession: result[STORAGE_KEYS.SESSION] || null,
+    goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60
   };
 }
 
@@ -45,6 +49,8 @@ async function refresh(): Promise<void> {
   try {
     const data = await loadData();
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
+    setGoalMinutes(data.goalMinutes);
+    renderGoalBar(data.stats.dailyMinutes[getLocalDateString()] || 0, data.goalMinutes);
     const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
     renderHeatmap(data.stats.dailyMinutes);
@@ -53,7 +59,7 @@ async function refresh(): Promise<void> {
     renderSyncCta(data.entries, data.userState);
     renderTierBadge(data.userState);
     renderAuthUI(data.userState);
-    renderFooter();
+    renderFooter(data.userState);
 
     if (isLoggedIn) {
       await applyCachedServerStats();
@@ -84,6 +90,7 @@ async function refresh(): Promise<void> {
       }
       renderTierBadge(activeState);
       renderAuthUI(activeState);
+      renderFooter(activeState);
     } else {
       renderStats(data.stats);
       renderSessions(data.entries);
@@ -102,7 +109,11 @@ document.addEventListener('jp343:refresh', () => refresh());
 
 setupThemeToggle();
 setupAuthUI();
-refresh();
+refresh().then(async () => {
+  const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+  const goal: number = result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60;
+  setupGoalEditor(goal);
+});
 loadNews();
 
 browser.storage.onChanged.addListener((changes, area) => {
@@ -110,7 +121,8 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
-    changes[STORAGE_KEYS.USER]
+    changes[STORAGE_KEYS.USER] ||
+    changes[STORAGE_KEYS.SETTINGS]
   )) {
     refresh();
   }

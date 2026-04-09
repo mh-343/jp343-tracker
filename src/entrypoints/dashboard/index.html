@@ -857,6 +857,227 @@
       flex-shrink: 0;
     }
     .news-banner-close:hover { color: var(--text); }
+
+    /* Daily Goal Bar */
+    .goal-bar-wrap {
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 14px 20px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .goal-bar-wrap:hover { border-color: rgba(233, 30, 139, 0.35); }
+    .goal-bar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .goal-bar-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+    }
+    .goal-bar-stats { font-size: 12px; color: var(--text-dim); }
+    .goal-bar-stats .goal-done { color: var(--magenta); font-weight: 700; }
+    .goal-bar-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .goal-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--magenta), var(--cyan));
+      transition: width 0.4s ease;
+      max-width: 100%;
+    }
+    .goal-editor {
+      display: none;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .goal-editor.open { display: block; }
+    .goal-presets {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .goal-preset-btn {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .goal-preset-btn:hover,
+    .goal-preset-btn.active {
+      border-color: var(--magenta);
+      color: var(--magenta);
+      background: rgba(233, 30, 139, 0.08);
+    }
+    .goal-custom-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .goal-custom-input {
+      width: 72px;
+      padding: 5px 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      text-align: center;
+    }
+    .goal-custom-input:focus { border-color: var(--cyan); outline: none; }
+    .goal-unit-toggle {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .goal-unit-toggle:hover { border-color: var(--cyan); color: var(--cyan); }
+    .goal-save-btn {
+      background: linear-gradient(135deg, var(--magenta), var(--cyan));
+      border: none;
+      color: #fff;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-left: auto;
+    }
+    .goal-save-btn:hover { opacity: 0.88; }
+    [data-theme="light"] .goal-bar-track { background: rgba(0, 0, 0, 0.06); }
+
+    /* Feedback Modal */
+    .feedback-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .feedback-overlay.open { display: flex; }
+    .feedback-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 400px;
+      margin: 16px;
+    }
+    .feedback-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 4px;
+    }
+    .feedback-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin: 0 0 16px;
+    }
+    .feedback-label {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+    .feedback-select,
+    .feedback-textarea {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+    .feedback-textarea {
+      resize: vertical;
+      min-height: 80px;
+      max-height: 160px;
+    }
+    .feedback-select:focus,
+    .feedback-textarea:focus { border-color: var(--cyan); outline: none; }
+    .feedback-char { font-size: 11px; color: var(--text-dim); text-align: right; margin: -8px 0 12px; }
+    .feedback-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .feedback-btn-cancel {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .feedback-btn-submit {
+      background: linear-gradient(135deg, var(--magenta), var(--cyan));
+      border: none;
+      color: #fff;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .feedback-btn-submit:hover { opacity: 0.88; }
+    .feedback-btn-submit:disabled { opacity: 0.5; cursor: default; }
+    .feedback-msg {
+      font-size: 12px;
+      margin-top: 12px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    .feedback-msg.success { display: block; background: rgba(72, 187, 120, 0.15); color: #48bb78; }
+    .feedback-msg.error { display: block; background: rgba(245, 101, 101, 0.15); color: #f56565; }
+    .footer-feedback-btn {
+      background: none;
+      border: none;
+      color: var(--accent, #e84393);
+      opacity: 0.8;
+      font-family: inherit;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0;
+      transition: opacity 0.2s;
+    }
+    .footer-feedback-btn:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -937,6 +1158,28 @@
         <span class="num">0</span><span class="unit">min</span>
       </div>
       <div class="hero-label">Total Immersion</div>
+    </div>
+
+    <!-- Daily Goal Bar -->
+    <div class="goal-bar-wrap" id="goalBarWrap" role="button" tabindex="0" title="Click to set daily goal">
+      <div class="goal-bar-header">
+        <span class="goal-bar-label">Daily Goal</span>
+        <span class="goal-bar-stats">
+          <span class="goal-done" id="goalDone">0m</span>
+          <span class="goal-pct" id="goalPct"> / 1h (0%)</span>
+        </span>
+      </div>
+      <div class="goal-bar-track">
+        <div class="goal-bar-fill" id="goalBarFill" style="width:0%"></div>
+      </div>
+      <div class="goal-editor" id="goalEditor">
+        <div class="goal-presets" id="goalPresets"></div>
+        <div class="goal-custom-row">
+          <input class="goal-custom-input" type="number" id="goalCustomInput" min="1" max="1440">
+          <button class="goal-unit-toggle" id="goalUnitToggle" type="button">min</button>
+          <button class="goal-save-btn" id="goalSaveBtn" type="button">Save</button>
+        </div>
+      </div>
     </div>
 
     <!-- Quick Stats -->

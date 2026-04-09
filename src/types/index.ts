@@ -97,6 +97,7 @@ export interface ExtensionSettings {
   enabledPlatforms: Platform[];
   blockedChannels: BlockedChannel[];
   spotifyContentTypes: SpotifyContentType[];
+  dailyGoalMinutes: number;
 }
 
 export interface BlockedChannel {
@@ -146,6 +147,22 @@ export interface DirectSyncResult {
   nonceMissing: boolean;
 }
 
+export interface BatchEntryResult {
+  success: boolean;
+  session_id: string | null;
+  entry_id: number | null;
+  duplicate: boolean;
+  error: string | null;
+  error_code: string | null;
+}
+
+export interface BatchSyncResponse {
+  results: BatchEntryResult[];
+  synced: number;
+  duplicates: number;
+  failed: number;
+}
+
 export type ExtensionResponse =
   | { success: true; data?: unknown }
   | { success: false; error: string };
@@ -179,7 +196,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   minDurationMinutes: 1,
   enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify'],
   blockedChannels: [],
-  spotifyContentTypes: ['podcast', 'music', 'audiobook']
+  spotifyContentTypes: ['podcast', 'music', 'audiobook'],
+  dailyGoalMinutes: 60
 };
 
 export const STORAGE_KEYS = {

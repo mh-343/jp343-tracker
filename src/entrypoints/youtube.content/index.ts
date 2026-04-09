@@ -406,6 +406,23 @@ export default defineContentScript({
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
           sendMessage('VIDEO_PLAY', { state });
+          if (!state.channelId) {
+            const retryDelays = [2000, 4000, 8000];
+            let retryIndex = 0;
+            const recheckChannel = (): void => {
+              if (retryIndex >= retryDelays.length || !isExtensionContextValid()) return;
+              setTimeout(() => {
+                const freshState = getCurrentVideoState();
+                if (freshState?.channelId) {
+                  sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
+                } else {
+                  retryIndex++;
+                  recheckChannel();
+                }
+              }, retryDelays[retryIndex]);
+            };
+            recheckChannel();
+          }
         }
       });
 
@@ -619,6 +636,10 @@ export default defineContentScript({
 
     const videoPollingId = setInterval(() => {
       if (!isExtensionContextValid()) return;
+      if (window.location.href !== lastVideoUrl) {
+        handleUrlChange();
+        return;
+      }
       if (currentVideoElement) return;
       if (!window.location.pathname.includes('/watch')) return;
 

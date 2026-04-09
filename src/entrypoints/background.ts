@@ -10,6 +10,8 @@ import type {
   BlockedChannel,
   VideoState,
   DirectSyncResult,
+  BatchEntryResult,
+  BatchSyncResponse,
   ActivityType,
   SpotifyContentType
 } from '../types';
@@ -268,6 +270,29 @@ export default defineBackground(() => {
     }
   });
 
+  function buildEntryParams(entry: PendingEntry): Record<string, string> {
+    return {
+      project_id: entry.project_id,
+      duration_seconds: String(Math.round(entry.duration_min * 60)),
+      source: 'extension',
+      session_id: entry.id,
+      type: entry.activityType ?? 'watching',
+      notes: '',
+      project_title: entry.project,
+      project_url: entry.url,
+      project_thumbnail: entry.thumbnail || '',
+      channel_id: entry.channelId || '',
+      channel_name: entry.channelName || '',
+      channel_url: entry.channelUrl || '',
+      video_title: entry.project,
+      resource_url: entry.url,
+      thumbnail: entry.thumbnail || '',
+      platform: entry.platform,
+      date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
+      ...(entry.mergeResync ? { merge_resync: '1' } : {})
+    };
+  }
+
   async function syncEntriesDirect(): Promise<DirectSyncResult> {
     const userState: JP343UserState | null = (
       await browser.storage.local.get(STORAGE_KEYS.USER)
@@ -294,32 +319,87 @@ export default defineBackground(() => {
     let succeeded = 0;
     let failed = 0;
 
+    // Batch sync: send all entries in one request (token auth only)
+    if (hasToken) {
+      try {
+        const batchParams = new URLSearchParams({
+          action: 'jp343_extension_log_time_batch',
+          ext_api_token: userState.extApiToken!,
+          entries: JSON.stringify(unsynced.map(buildEntryParams))
+        });
+        const response = await fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'include',
+          body: batchParams
+        });
+        const responseText = await response.text();
+        log('[JP343] Batch sync response:', response.status, responseText.slice(0, 200));
+
+        // WP returns "0" for unknown actions — fall through to sequential
+        if (responseText === '0') {
+          log('[JP343] Batch endpoint not available, falling back to sequential');
+        } else {
+          let batchResult: { success: boolean; data?: BatchSyncResponse & { code?: string } };
+          try {
+            batchResult = JSON.parse(responseText);
+          } catch {
+            log('[JP343] Batch response not JSON, falling back to sequential');
+            batchResult = { success: false };
+          }
+
+          if (batchResult.success && batchResult.data?.results) {
+            const resultMap = new Map<string, BatchEntryResult>();
+            for (const r of batchResult.data.results) {
+              if (r.session_id) resultMap.set(r.session_id, r);
+            }
+            const unsyncedMap = new Map(unsynced.map(e => [e.id, e]));
+
+            await withStorageLock(async () => {
+              const current = await loadPendingEntries();
+              const updated = current.map(e => {
+                const entryResult = resultMap.get(e.id);
+                if (!entryResult) return e;
+                const original = unsyncedMap.get(e.id);
+                if (original && e.duration_min !== original.duration_min) return e;
+                if (entryResult.success) {
+                  return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: entryResult.entry_id ?? null, mergeResync: false };
+                }
+                return { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: entryResult.error || 'Server error' };
+              });
+              await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+            });
+
+            succeeded = (batchResult.data.synced || 0) + (batchResult.data.duplicates || 0);
+            failed = batchResult.data.failed || 0;
+            scheduleStatusBadgeUpdate();
+            return { attempted: unsynced.length, succeeded, failed, noAuth: false, nonceMissing: false };
+          }
+
+          // Auth error from batch endpoint
+          if (!batchResult.success && (batchResult.data?.code === 'invalid_token' || batchResult.data?.code === 'E001')) {
+            log('[JP343] Batch sync: Auth invalid, aborting');
+            scheduleStatusBadgeUpdate();
+            return { attempted: unsynced.length, succeeded: 0, failed: unsynced.length, noAuth: true, nonceMissing: false };
+          }
+
+          // Other batch error — fall through to sequential
+          log('[JP343] Batch sync failed, falling back to sequential');
+        }
+      } catch (error) {
+        log('[JP343] Batch sync network error, falling back to sequential:', error);
+      }
+    }
+
+    // Sequential fallback (nonce path or batch failure)
     for (const entry of unsynced) {
       try {
         const params: Record<string, string> = {
           action: 'jp343_extension_log_time',
           user_id: String(userState.userId || 0),
-          ...(userState.extApiToken
-            ? { ext_api_token: userState.extApiToken }
+          ...(hasToken
+            ? { ext_api_token: userState.extApiToken! }
             : { nonce: userState.nonce || '' }),
-          project_id: entry.project_id,
-          duration_seconds: String(Math.round(entry.duration_min * 60)),
-          source: 'extension',
-          session_id: entry.id,
-          type: entry.activityType ?? 'watching',
-          notes: '',
-          project_title: entry.project,
-          project_url: entry.url,
-          project_thumbnail: entry.thumbnail || '',
-          channel_id: entry.channelId || '',
-          channel_name: entry.channelName || '',
-          channel_url: entry.channelUrl || '',
-          video_title: entry.project,
-          resource_url: entry.url,
-          thumbnail: entry.thumbnail || '',
-          platform: entry.platform,
-          date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
-          ...(entry.mergeResync ? { merge_resync: '1' } : {})
+          ...buildEntryParams(entry)
         };
 
         const response = await fetch(ajaxUrl, {
