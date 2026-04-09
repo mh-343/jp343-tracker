@@ -1,4 +1,5 @@
 import type { ExtensionStats } from '../../types';
+import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
 
@@ -89,10 +90,10 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
     const raw = parseFloat(customInput.value) || 0;
     const newGoal = Math.max(1, useHours ? Math.round(raw * 60) : Math.round(raw));
 
-    const result = await browser.storage.local.get('jp343_extension_settings');
-    const settings = result['jp343_extension_settings'] || {};
+    const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+    const settings = result[STORAGE_KEYS.SETTINGS] || {};
     settings.dailyGoalMinutes = newGoal;
-    await browser.storage.local.set({ 'jp343_extension_settings': settings });
+    await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
 
     _goalMinutes = newGoal;
     renderGoalBar(_localDailyMinutes[getLocalDateString()] || 0, newGoal);
