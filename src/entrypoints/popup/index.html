@@ -718,6 +718,25 @@
       opacity: 0.9;
     }
 
+    .btn-gear {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      border-radius: 8px;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      padding: 0;
+    }
+    .btn-gear:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
     .footer-link-secondary {
       font-size: 11px;
       color: var(--text-secondary);
@@ -1265,18 +1284,12 @@
       align-items: center;
       gap: 6px;
     }
-
     .spotify-filter-label {
       font-size: 11px;
       color: var(--text-secondary);
       white-space: nowrap;
     }
-
-    .spotify-filter-chips {
-      display: flex;
-      gap: 6px;
-    }
-
+    .spotify-filter-chips { display: flex; gap: 6px; }
     .spotify-chip {
       padding: 4px 10px;
       font-size: 11px;
@@ -1287,80 +1300,17 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-
-    .spotify-chip:hover {
-      border-color: var(--accent);
-      color: var(--text-primary);
-    }
-
+    .spotify-chip:hover { border-color: var(--accent); color: var(--text-primary); }
     .spotify-chip.active {
       background: rgba(135, 90, 255, 0.25);
       border-color: var(--accent);
       color: #fff;
     }
-
-    .spotify-chip:not(.active) {
-      opacity: 0.5;
-    }
-
+    .spotify-chip:not(.active) { opacity: 0.5; }
     [data-theme="light"] .spotify-chip.active {
       background: var(--iri-gradient-subtle);
       border-color: var(--accent);
       color: var(--accent);
-    }
-
-    .settings-row {
-      padding: 8px 16px;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-subtle);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .settings-row-label {
-      font-size: 11px;
-      color: var(--text-secondary);
-    }
-
-    .toggle-mini {
-      position: relative;
-      width: 34px;
-      height: 18px;
-      background: var(--bg-tertiary);
-      border-radius: 9px;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border: 1px solid var(--border-subtle);
-      padding: 0;
-    }
-
-    .toggle-mini.enabled {
-      background: linear-gradient(135deg, var(--accent), var(--neon));
-      border-color: transparent;
-    }
-
-    .toggle-mini::after {
-      content: '';
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 14px;
-      height: 14px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.3s ease;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-
-    .toggle-mini.enabled::after {
-      transform: translateX(16px);
-    }
-
-    [data-theme="light"] .toggle-mini.enabled {
-      background: linear-gradient(135deg, #7ec8e3, #a78bda, #d4a5c9, #8ee4df);
-      background-size: 300% 300%;
-      animation: iri-shimmer 4s ease infinite;
     }
 
     .theme-toggle-popup {
@@ -1507,11 +1457,6 @@
     </div>
   </div>
 
-  <div class="settings-row" id="mergeSettingRow">
-    <span class="settings-row-label">Merge same-day sessions</span>
-    <button class="toggle-mini enabled" id="toggleMergeSessions" title="Merge repeated sessions of the same video on the same day"></button>
-  </div>
-
   <div class="pending-section" id="pendingSection" style="display: none;">
     <div class="pending-list" id="pendingList"></div>
   </div>
@@ -1519,6 +1464,7 @@
 
   <div class="footer">
     <button class="btn-dashboard" id="btnDashboard">Dashboard →</button>
+    <button class="btn-gear" id="btnSettings" title="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
     <a class="footer-link-secondary" href="https://jp343.com/my-hub/?src=p" target="_blank">jp343.com</a>
   </div>
 

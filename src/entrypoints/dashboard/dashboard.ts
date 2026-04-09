@@ -8,6 +8,7 @@ import { setLocalDailyMinutes, setGoalMinutes, renderGoalBar, setupGoalEditor, r
 import { showSessionsLoading, renderSessions, renderServerSessions } from './sessions';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
+import { setupSettings } from './settings';
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -107,12 +108,36 @@ async function refresh(): Promise<void> {
 
 document.addEventListener('jp343:refresh', () => refresh());
 
+function setupTabNav(): void {
+  const tabs = [
+    { btn: document.getElementById('tabBtnStats'), panel: document.getElementById('tabStats') },
+    { btn: document.getElementById('tabBtnBlocked'), panel: document.getElementById('tabBlocked') },
+    { btn: document.getElementById('tabBtnSettings'), panel: document.getElementById('tabSettings') }
+  ];
+  if (tabs.some(t => !t.btn || !t.panel)) return;
+
+  for (const tab of tabs) {
+    tab.btn!.addEventListener('click', () => {
+      for (const t of tabs) {
+        t.btn!.setAttribute('aria-selected', String(t === tab));
+        t.panel!.style.display = t === tab ? '' : 'none';
+      }
+    });
+  }
+
+  const urlTab = new URLSearchParams(location.search).get('tab');
+  if (urlTab === 'settings') tabs[2].btn!.click();
+  if (urlTab === 'blocked') tabs[1].btn!.click();
+}
+
 setupThemeToggle();
 setupAuthUI();
+setupTabNav();
 refresh().then(async () => {
   const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
   const goal: number = result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60;
   setupGoalEditor(goal);
+  await setupSettings();
 });
 loadNews();
 
