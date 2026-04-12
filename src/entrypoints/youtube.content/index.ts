@@ -23,7 +23,17 @@ export default defineContentScript({
       observers.length = 0;
       intervalIds.length = 0;
     }
-    window.addEventListener('pagehide', cleanup);
+    window.addEventListener('pagehide', () => {
+      if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+        sendMessage('VIDEO_ENDED');
+      }
+      cleanup();
+    });
+    window.addEventListener('beforeunload', () => {
+      if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+        sendMessage('VIDEO_ENDED');
+      }
+    });
 
     const { log, debugLog, getBuffer, clearBuffer } = createDebugLogger('youtube');
     log('[JP343] YouTube Content Script loaded');
@@ -205,10 +215,10 @@ export default defineContentScript({
       return url.searchParams.get('v');
     }
 
-    function getVideoTitle(): string {
+    function readTitleFromDOM(): string | null {
       const titleSelectors = [
-        'h1.ytd-video-primary-info-renderer yt-formatted-string',
         'h1.ytd-watch-metadata yt-formatted-string',
+        'h1.ytd-video-primary-info-renderer yt-formatted-string',
         '#title h1 yt-formatted-string',
         'ytd-watch-metadata h1 yt-formatted-string',
         '#above-the-fold #title yt-formatted-string',
@@ -221,11 +231,33 @@ export default defineContentScript({
           return element.textContent.trim();
         }
       }
+      return null;
+    }
 
-      let title = document.title;
-      title = title.replace(/^\(\d+\)\s*/, '');
-      title = title.replace(/\s*-\s*YouTube$/, '');
-      return title.trim() || 'YouTube Video';
+    let cachedTitle: string | null = null;
+    let titleVideoId: string | null = null;
+
+    function getVideoTitle(): string {
+      const currentVideoId = getVideoId();
+      if (cachedTitle && titleVideoId === currentVideoId) {
+        const freshTitle = readTitleFromDOM();
+        if (freshTitle && freshTitle !== cachedTitle) {
+          cachedTitle = freshTitle;
+        }
+        return cachedTitle;
+      }
+
+      const title = readTitleFromDOM();
+      if (title) {
+        cachedTitle = title;
+        titleVideoId = currentVideoId;
+        return title;
+      }
+
+      let fallback = document.title;
+      fallback = fallback.replace(/^\(\d+\)\s*/, '');
+      fallback = fallback.replace(/\s*-\s*YouTube$/, '');
+      return fallback.trim() || 'YouTube Video';
     }
 
     function getThumbnailUrl(): string | null {
@@ -405,7 +437,18 @@ export default defineContentScript({
         if (DEBUG_MODE) debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
+          const initialTitle = state.title;
           sendMessage('VIDEO_PLAY', { state });
+
+          setTimeout(() => {
+            if (!isExtensionContextValid()) return;
+            const freshState = getCurrentVideoState();
+            if (freshState && freshState.title !== initialTitle) {
+              log('[JP343] Title updated:', initialTitle, '->', freshState.title);
+              sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
+            }
+          }, 1500);
+
           if (!state.channelId) {
             const retryDelays = [2000, 4000, 8000];
             let retryIndex = 0;

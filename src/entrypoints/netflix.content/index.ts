@@ -30,10 +30,21 @@ export default defineContentScript({
     function cleanup(): void {
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
+      if (activePollIntervalId) clearInterval(activePollIntervalId);
       observers.length = 0;
       intervalIds.length = 0;
     }
-    window.addEventListener('pagehide', cleanup);
+    window.addEventListener('pagehide', () => {
+      if (lastVideoId) {
+        sendMessage('VIDEO_ENDED');
+      }
+      cleanup();
+    });
+    window.addEventListener('beforeunload', () => {
+      if (lastVideoId) {
+        sendMessage('VIDEO_ENDED');
+      }
+    });
 
     let cachedPlayerTitle: { series: string; episode: string | null; episodeTitle: string | null } | null = null;
 
@@ -714,11 +725,18 @@ export default defineContentScript({
       }
     }
 
+    let activePollIntervalId: ReturnType<typeof setInterval> | null = null;
+
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) {
         return;
       }
       video.setAttribute('data-jp343-tracked', 'true');
+
+      if (activePollIntervalId) {
+        clearInterval(activePollIntervalId);
+        activePollIntervalId = null;
+      }
 
       video.addEventListener('play', () => {
         if (!window.location.pathname.includes('/watch/')) {
@@ -828,7 +846,7 @@ export default defineContentScript({
         if (quickUpdateCount >= 6) clearInterval(quickTitleUpdate);
       }, 5000);
 
-      setInterval(() => {
+      activePollIntervalId = setInterval(() => {
         if (isCurrentlyInAd || !window.location.pathname.includes('/watch/')) {
           return;
         }
