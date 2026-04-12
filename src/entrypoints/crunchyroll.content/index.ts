@@ -26,7 +26,17 @@ export default defineContentScript({
       observers.length = 0;
       intervalIds.length = 0;
     }
-    window.addEventListener('pagehide', cleanup);
+    window.addEventListener('pagehide', () => {
+      if (lastVideoId) {
+        sendMessage('VIDEO_ENDED');
+      }
+      cleanup();
+    });
+    window.addEventListener('beforeunload', () => {
+      if (lastVideoId) {
+        sendMessage('VIDEO_ENDED');
+      }
+    });
 
     const logger = createDebugLogger('crunchyroll');
     const { log, debugLog } = logger;
@@ -353,7 +363,12 @@ export default defineContentScript({
 
       if (!isIframe) {
         const domSeries = getSeriesInfo();
-        if (domSeries.name) metadata.seriesName = domSeries.name;
+        if (domSeries.name) {
+          metadata.seriesName = domSeries.name;
+        } else {
+          const structured = extractSeriesFromStructuredData();
+          if (structured.name) metadata.seriesName = structured.name;
+        }
       }
 
       if (isIframe && cachedSeriesNameFromParent) {
@@ -515,6 +530,47 @@ export default defineContentScript({
       return { id: idMatch?.[1] || null, name, url };
     }
 
+    function findSeriesInNode(node: unknown): { id: string | null; name: string | null; url: string | null } | null {
+      if (!node || typeof node !== 'object') return null;
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          const r = findSeriesInNode(item);
+          if (r) return r;
+        }
+        return null;
+      }
+      const obj = node as Record<string, unknown>;
+      if (obj['@type'] === 'TVSeries' && typeof obj.name === 'string') {
+        const url = (typeof obj['@id'] === 'string' ? obj['@id'] : null)
+                 || (typeof obj.url === 'string' ? obj.url : null);
+        const idMatch = url?.match(/\/series\/([A-Z0-9]+)/i);
+        return { id: idMatch?.[1] || null, name: obj.name, url };
+      }
+      if (obj['@type'] === 'TVEpisode' || obj['@type'] === 'Episode') {
+        if (obj.partOfSeries) {
+          const r = findSeriesInNode(obj.partOfSeries);
+          if (r) return r;
+        }
+        if (obj.partOfSeason) {
+          const season = obj.partOfSeason as Record<string, unknown>;
+          if (season.partOfSeries) return findSeriesInNode(season.partOfSeries);
+        }
+      }
+      return null;
+    }
+
+    function extractSeriesFromStructuredData(): { id: string | null; name: string | null; url: string | null } {
+      const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+      for (const script of Array.from(scripts)) {
+        try {
+          const data: unknown = JSON.parse(script.textContent || '');
+          const result = findSeriesInNode(data);
+          if (result) return result;
+        } catch { /* ignore */ }
+      }
+      return { id: null, name: null, url: null };
+    }
+
     let cachedVideoIdInIframe: string | null = null;
     let cachedTitleFromParent: string | null = null;
     let cachedSeriesNameFromParent: string | null = null;
@@ -666,6 +722,7 @@ export default defineContentScript({
 
       const metadata = cachedMetadata || extractCrunchyrollMetadata();
       const seriesInfo = getSeriesInfo();
+      const structuredSeries = seriesInfo.name ? null : extractSeriesFromStructuredData();
 
       const watchUrl = cachedWatchUrlFromParent || window.location.href;
 
@@ -682,9 +739,11 @@ export default defineContentScript({
         channelId: cachedSeriesIdFromParent
           ? 'crunchyroll:' + cachedSeriesIdFromParent
           : (seriesInfo.id ? 'crunchyroll:' + seriesInfo.id
-            : (metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null)),
-        channelName: cachedSeriesNameFromParent || seriesInfo.name || metadata.seriesName || null,
-        channelUrl: cachedSeriesUrlFromParent || seriesInfo.url || null
+            : (structuredSeries?.id ? 'crunchyroll:' + structuredSeries.id
+              : (structuredSeries?.name ? 'crunchyroll:' + structuredSeries.name
+                : (metadata.seriesName ? 'crunchyroll:' + metadata.seriesName : null)))),
+        channelName: cachedSeriesNameFromParent || seriesInfo.name || structuredSeries?.name || metadata.seriesName || null,
+        channelUrl: cachedSeriesUrlFromParent || seriesInfo.url || structuredSeries?.url || null
       };
     }
 

@@ -14,7 +14,17 @@ export default defineContentScript({
       observers.length = 0;
       intervalIds.length = 0;
     }
-    window.addEventListener('pagehide', cleanup);
+    window.addEventListener('pagehide', () => {
+      if (wasPlaying) {
+        sendMessage('VIDEO_ENDED');
+      }
+      cleanup();
+    });
+    window.addEventListener('beforeunload', () => {
+      if (wasPlaying) {
+        sendMessage('VIDEO_ENDED');
+      }
+    });
 
     const logger = createDebugLogger('spotify');
     const { log, debugLog } = logger;

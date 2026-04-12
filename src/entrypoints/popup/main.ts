@@ -28,13 +28,6 @@ const elements = {
   channelLabel: document.getElementById('channelLabel') as HTMLElement,
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
-  blockedCountBadge: document.getElementById('blockedCountBadge') as HTMLElement,
-  blockedCountNumber: document.getElementById('blockedCountNumber') as HTMLElement,
-  btnToggleBlockedList: document.getElementById('btnToggleBlockedList') as HTMLButtonElement,
-  blockedListContainer: document.getElementById('blockedListContainer') as HTMLElement,
-  blockedListSearch: document.getElementById('blockedListSearch') as HTMLElement,
-  blockedSearchInput: document.getElementById('blockedSearchInput') as HTMLInputElement,
-  blockedList: document.getElementById('blockedList') as HTMLElement,
   btnEditTitle: document.getElementById('btnEditTitle') as HTMLButtonElement,
   // Manual Tracking
   manualTrackMode: document.getElementById('manualTrackMode') as HTMLElement,
@@ -70,7 +63,6 @@ let blockedChannels: BlockedChannel[] = [];
 let currentChannelId: string | null = null;
 let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
-let isBlockedListExpanded = false;
 
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
   if (toastTimeout) {
@@ -293,85 +285,6 @@ function updateChannelDisplay(session: TrackingSession | null): void {
     elements.btnBlockChannel.style.display = 'none';
   }
 
-  const hasBlocked = blockedChannels.length > 0;
-  elements.blockedCountBadge.style.visibility = hasBlocked ? 'visible' : 'hidden';
-  elements.blockedCountBadge.style.display = 'inline';
-  elements.blockedCountNumber.textContent = String(blockedChannels.length);
-  elements.btnToggleBlockedList.style.visibility = hasBlocked ? 'visible' : 'hidden';
-  elements.btnToggleBlockedList.style.display = 'inline-block';
-
-  if (!hasBlocked) {
-    isBlockedListExpanded = false;
-    elements.blockedListContainer.style.display = 'none';
-    elements.btnToggleBlockedList.classList.remove('expanded');
-  }
-}
-
-function getBlockPlatformPrefix(): string | null {
-  const platform = currentSession?.platform;
-  if (platform === 'spotify') return 'spotify:';
-  if (platform === 'netflix') return 'netflix:';
-  if (platform === 'crunchyroll') return 'crunchyroll:';
-  if (platform === 'primevideo') return 'primevideo:';
-  if (platform === 'disneyplus') return 'disneyplus:';
-  if (platform === 'youtube') return null;
-  const url = activeTabInfo?.url || '';
-  if (/open\.spotify\.com/.test(url)) return 'spotify:';
-  if (/netflix\.com/.test(url)) return 'netflix:';
-  if (/crunchyroll\.com/.test(url)) return 'crunchyroll:';
-  if (/primevideo\.com|amazon\.\w+/.test(url)) return 'primevideo:';
-  if (/disneyplus\.com/.test(url)) return 'disneyplus:';
-  if (/youtube\.com/.test(url)) return null;
-  return undefined as unknown as string | null;
-}
-
-function filterBlocksByPlatform(channels: BlockedChannel[]): BlockedChannel[] {
-  const prefix = getBlockPlatformPrefix();
-  if (prefix === undefined as unknown) return channels;
-  if (prefix === null) return channels.filter(c => !c.channelId.includes(':'));
-  return channels.filter(c => c.channelId.startsWith(prefix));
-}
-
-function renderBlockedList(filterText = ''): void {
-  const platformFiltered = filterBlocksByPlatform(blockedChannels);
-  elements.blockedCountNumber.textContent = String(platformFiltered.length);
-  const hasBlocked = platformFiltered.length > 0;
-  if (hasBlocked && !currentChannelId) {
-    elements.channelSection.style.display = 'block';
-  }
-  elements.blockedCountBadge.style.visibility = hasBlocked ? 'visible' : 'hidden';
-  elements.blockedCountBadge.style.display = 'inline';
-  elements.btnToggleBlockedList.style.visibility = hasBlocked ? 'visible' : 'hidden';
-  elements.btnToggleBlockedList.style.display = 'inline-block';
-
-  elements.blockedListSearch.style.display = platformFiltered.length >= 5 ? 'block' : 'none';
-
-  if (!hasBlocked) {
-    isBlockedListExpanded = false;
-    elements.blockedListContainer.style.display = 'none';
-    elements.btnToggleBlockedList.classList.remove('expanded');
-  }
-
-  const filtered = filterText
-    ? platformFiltered.filter(c => c.channelName.toLowerCase().includes(filterText.toLowerCase()))
-    : platformFiltered;
-
-  elements.blockedList.innerHTML = filtered.map(channel => `
-    <div class="blocked-item" data-id="${escapeHtml(channel.channelId)}">
-      <span class="blocked-item-name">${escapeHtml(channel.channelName)}</span>
-      <button class="btn-unblock" data-id="${escapeHtml(channel.channelId)}">Unblock</button>
-    </div>
-  `).join('');
-
-  elements.blockedList.querySelectorAll('.btn-unblock').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const channelId = (btn as HTMLElement).dataset.id;
-      if (channelId) {
-        await unblockChannel(channelId);
-      }
-    });
-  });
 }
 
 async function blockChannel(): Promise<void> {
@@ -388,7 +301,6 @@ async function blockChannel(): Promise<void> {
     await browser.runtime.sendMessage({ type: 'BLOCK_CHANNEL', channel });
     blockedChannels.push(channel);
     updateChannelDisplay(currentSession);
-    renderBlockedList();
     log('[JP343 Popup] Channel blocked:', channel.channelName);
   } catch (error) {
     log('[JP343 Popup] Failed to block channel:', error);
@@ -400,7 +312,6 @@ async function unblockChannel(channelId: string): Promise<void> {
     await browser.runtime.sendMessage({ type: 'UNBLOCK_CHANNEL', channelId });
     blockedChannels = blockedChannels.filter(c => c.channelId !== channelId);
     updateChannelDisplay(currentSession);
-    renderBlockedList();
     log('[JP343 Popup] Channel unblocked:', channelId);
   } catch (error) {
     log('[JP343 Popup] Failed to unblock channel:', error);
@@ -415,23 +326,6 @@ elements.btnBlockChannel.addEventListener('click', async () => {
   } else {
     await blockChannel();
   }
-});
-
-function toggleBlockedList(): void {
-  isBlockedListExpanded = !isBlockedListExpanded;
-  elements.blockedListContainer.style.display = isBlockedListExpanded ? 'block' : 'none';
-  elements.btnToggleBlockedList.classList.toggle('expanded', isBlockedListExpanded);
-  if (!isBlockedListExpanded) {
-    elements.blockedSearchInput.value = '';
-    renderBlockedList();
-  }
-}
-
-elements.btnToggleBlockedList.addEventListener('click', toggleBlockedList);
-elements.blockedCountBadge.addEventListener('click', toggleBlockedList);
-
-elements.blockedSearchInput.addEventListener('input', () => {
-  renderBlockedList(elements.blockedSearchInput.value);
 });
 
 // --- TITLE EDITING ---
