@@ -98,6 +98,7 @@ export interface ExtensionSettings {
   blockedChannels: BlockedChannel[];
   spotifyContentTypes: SpotifyContentType[];
   dailyGoalMinutes: number;
+  requireJapaneseContent: boolean;
 }
 
 export interface BlockedChannel {
@@ -197,7 +198,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify'],
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
-  dailyGoalMinutes: 60
+  dailyGoalMinutes: 60,
+  requireJapaneseContent: false
 };
 
 export const STORAGE_KEYS = {
