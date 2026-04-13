@@ -719,9 +719,9 @@
     }
 
     .btn-gear {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #fff;
       border-radius: 8px;
       width: 32px;
       height: 32px;
@@ -733,21 +733,56 @@
       padding: 0;
     }
     .btn-gear:hover {
+      background: rgba(255, 255, 255, 0.2);
       border-color: var(--accent);
       color: var(--accent);
     }
 
     .footer-link-secondary {
       font-size: 11px;
-      color: var(--text-secondary);
+      color: #fff;
       text-decoration: none;
-      opacity: 0.5;
+      opacity: 0.9;
       transition: opacity 0.2s, color 0.2s;
     }
 
     .footer-link-secondary:hover {
       opacity: 1;
       color: var(--accent);
+    }
+
+    /* JP Filter Toggle (flag button) */
+    .jp-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 26px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      cursor: pointer;
+      transition: all 0.2s;
+      padding: 0;
+    }
+    .jp-toggle:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: var(--accent);
+    }
+    .jp-toggle.active {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: #bc002d;
+      box-shadow: 0 0 8px rgba(188, 0, 45, 0.4);
+    }
+    .jp-toggle .flag-circle {
+      fill: #888;
+      transition: fill 0.2s;
+    }
+    .jp-toggle:hover .flag-circle {
+      fill: #aaa;
+    }
+    .jp-toggle.active .flag-circle {
+      fill: #bc002d;
     }
 
     /* Toggle Switch (Yomitan-style) */
@@ -1180,6 +1215,12 @@
     [data-theme="light"] .pending-entry-edit:hover { background: rgba(123, 94, 167, 0.08); color: var(--accent); }
     [data-theme="light"] .footer { background: rgba(240, 241, 248, 0.95); }
     [data-theme="light"] .footer-link { color: var(--text-secondary); }
+    [data-theme="light"] .btn-gear { background: rgba(0, 0, 0, 0.03); }
+    [data-theme="light"] .btn-gear:hover { background: rgba(0, 0, 0, 0.06); }
+    [data-theme="light"] .jp-toggle { background: rgba(0, 0, 0, 0.03); }
+    [data-theme="light"] .jp-toggle:hover { background: rgba(0, 0, 0, 0.06); }
+    [data-theme="light"] .jp-toggle .flag-circle { fill: #999; }
+    [data-theme="light"] .jp-toggle:hover .flag-circle { fill: #777; }
     [data-theme="light"] .entry-item:hover { background: rgba(123, 94, 167, 0.04); }
     [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-secondary); }
     [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(123, 94, 167, 0.25); }
@@ -1365,6 +1406,7 @@
   <div class="footer">
     <button class="btn-dashboard" id="btnDashboard">Dashboard →</button>
     <button class="btn-gear" id="btnSettings" title="Settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
+    <button class="jp-toggle" id="btnJpFilter" title="Filter: Japanese content only" style="display: none;"><svg width="28" height="19" viewBox="0 0 30 20"><rect width="30" height="20" rx="2" fill="white"/><circle class="flag-circle" cx="15" cy="10" r="5"/></svg></button>
     <a class="footer-link-secondary" href="https://jp343.com/my-hub/?src=p" target="_blank">jp343.com</a>
   </div>
 

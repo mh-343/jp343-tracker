@@ -1,5 +1,6 @@
 // JP343 Extension - Popup UI
 
+import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
 
@@ -109,10 +110,16 @@ async function loadAndApplySettings(): Promise<void> {
       renderBlockedList();
       updateSpotifyFilterUI(settings);
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
+      updateJpFilterDisplay(settings.requireJapaneseContent ?? false);
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);
   }
+}
+
+function updateJpFilterDisplay(active: boolean): void {
+  const btn = document.getElementById('btnJpFilter');
+  if (btn) btn.classList.toggle('active', active);
 }
 
 function updateSpotifyFilterUI(settings: ExtensionSettings): void {
@@ -162,6 +169,15 @@ async function loadActiveTabInfo(): Promise<void> {
       activeTabInfo = response.data as ActiveTabInfo;
       updateManualTrackDisplay();
       loadAndApplySettings();
+      if (activeTabInfo.domain?.includes('youtube.com')) {
+        const stored = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+        const jpEnabled = stored[STORAGE_KEYS.SETTINGS]?.requireJapaneseContent ?? false;
+        const jpBtn = document.getElementById('btnJpFilter');
+        if (jpBtn) {
+          (jpBtn as HTMLElement).style.display = 'flex';
+          jpBtn.classList.toggle('active', jpEnabled);
+        }
+      }
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load tab info:', error);
@@ -876,6 +892,19 @@ document.getElementById('btnSettings')?.addEventListener('click', () => {
   const settingsUrl = browser.runtime.getURL('dashboard.html') + '?tab=settings';
   browser.tabs.create({ url: settingsUrl });
   window.close();
+});
+
+document.getElementById('btnJpFilter')?.addEventListener('click', async () => {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
+    if (!response.success) return;
+    const settings = response.data.settings as ExtensionSettings;
+    settings.requireJapaneseContent = !settings.requireJapaneseContent;
+    await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings });
+    updateJpFilterDisplay(settings.requireJapaneseContent);
+  } catch (error) {
+    log('[JP343 Popup] Failed to toggle JP filter:', error);
+  }
 });
 
 // --- STATS BAR ---
