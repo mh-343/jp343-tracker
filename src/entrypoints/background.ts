@@ -194,6 +194,7 @@ export default defineBackground(() => {
           const entryDay = getLocalDateString(new Date(entry.date));
           const mergeTarget = pending.find(e =>
             e.project_id === entry.project_id &&
+            e.project === entry.project &&
             getLocalDateString(new Date(e.date)) === entryDay
           );
           if (mergeTarget) {
