@@ -51,6 +51,10 @@ npm run build        # Production build (Chrome)
 npm run build:firefox
 ```
 
+## Community
+
+- Same-day session merge — idea by [ラッキー](https://github.com/quopquai)
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
