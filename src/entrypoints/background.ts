@@ -487,6 +487,33 @@ export default defineBackground(() => {
     }
   }
 
+  async function fetchAndCacheServerStats(): Promise<void> {
+    try {
+      const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
+      const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
+      if (!userState?.isLoggedIn) return;
+
+      const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+      const params = new URLSearchParams();
+
+      if (userState.extApiToken) {
+        params.set('action', 'jp343_extension_get_time_stats');
+        params.set('ext_api_token', userState.extApiToken);
+      } else if (userState.nonce) {
+        params.set('action', 'jp343_get_time_stats');
+        params.set('nonce', userState.nonce);
+      } else {
+        return;
+      }
+
+      const response = await fetch(ajaxUrl, { method: 'POST', body: params });
+      const result = await response.json();
+      if (result.success && result.data) {
+        await browser.storage.local.set({ jp343_cached_server_stats: result.data });
+      }
+    } catch { /* server unreachable */ }
+  }
+
   async function updateStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
@@ -856,6 +883,7 @@ export default defineBackground(() => {
           log('[JP343] User state updated:', merged.isLoggedIn);
           if (merged.isLoggedIn && merged.extApiToken) {
             await pullAndMergeSettingsFromServer().catch(() => {});
+            fetchAndCacheServerStats();
           }
         }
         return { success: true };
@@ -1144,7 +1172,7 @@ export default defineBackground(() => {
         const stats = await loadStats();
 
         const now = new Date();
-        const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+        const dayOfWeek = now.getDay();
         const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
         const monday = new Date(now);
         monday.setDate(now.getDate() + mondayOffset);
@@ -1153,7 +1181,7 @@ export default defineBackground(() => {
 
         let weekMinutes = 0;
         const todayStr = now.toISOString().split('T')[0];
-        const todayMinutes = stats.dailyMinutes[todayStr] || 0;
+        let todayMinutes = stats.dailyMinutes[todayStr] || 0;
 
         for (const [dateKey, minutes] of Object.entries(stats.dailyMinutes)) {
           if (dateKey >= mondayStr) {
@@ -1171,14 +1199,52 @@ export default defineBackground(() => {
           }
         }
 
+        let totalMinutes = stats.totalMinutes;
+        let rawDailyMinutes = stats.dailyMinutes;
+
+        const cachedResult = await browser.storage.local.get('jp343_cached_server_stats');
+        const cached = cachedResult['jp343_cached_server_stats'] as {
+          total_seconds?: number;
+          week_seconds?: number;
+          today_seconds?: number;
+          streak?: number;
+          daily_minutes?: Record<string, number>;
+          timezone?: string;
+          calendar_week_seconds?: number;
+        } | undefined;
+
+        if (cached) {
+          // today_seconds: nur mergen wenn Server-TZ == Browser-TZ
+          const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const serverTz = cached.timezone;
+          const tzMatch = !serverTz || serverTz === browserTz;
+          if (cached.today_seconds !== undefined && tzMatch)
+            todayMinutes = Math.max(todayMinutes, Math.round(cached.today_seconds / 60));
+          // calendar_week_seconds bevorzugen (Mo-So), Fallback Rolling 7d
+          const serverWeekSec = cached.calendar_week_seconds ?? cached.week_seconds;
+          if (serverWeekSec !== undefined)
+            weekMinutes = Math.max(weekMinutes, Math.round(serverWeekSec / 60));
+          if (cached.streak !== undefined)
+            streak = Math.max(streak, cached.streak);
+          if (cached.total_seconds !== undefined)
+            totalMinutes = Math.max(totalMinutes, Math.round(cached.total_seconds / 60));
+          if (cached.daily_minutes) {
+            const merged: Record<string, number> = { ...rawDailyMinutes };
+            for (const [date, minutes] of Object.entries(cached.daily_minutes)) {
+              merged[date] = Math.max(merged[date] || 0, minutes);
+            }
+            rawDailyMinutes = merged;
+          }
+        }
+
         return {
           success: true,
           data: {
-            totalMinutes: stats.totalMinutes,
+            totalMinutes,
             weekMinutes,
             todayMinutes,
             streak,
-            rawDailyMinutes: stats.dailyMinutes
+            rawDailyMinutes
           }
         };
       }
@@ -1277,6 +1343,7 @@ export default defineBackground(() => {
   }
 
   recoverSession();
+  fetchAndCacheServerStats();
 
   browser.alarms.create('jp343-check', { periodInMinutes: 5 });
 

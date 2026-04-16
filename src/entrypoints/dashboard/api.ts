@@ -9,6 +9,8 @@ export interface ServerStatsResponse {
   streak?: number;
   daily_avg_seconds?: number;
   daily_minutes?: Record<string, number>;
+  timezone?: string;
+  calendar_week_seconds?: number;
 }
 
 export interface ServerSession {

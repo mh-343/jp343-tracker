@@ -254,16 +254,25 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
           cached.total_seconds -= durationSec;
           renderHeroTime(cached.total_seconds / 60);
         }
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const tzMatch = !cached.timezone || cached.timezone === browserTz;
         const sessionDate = session.date ? getLocalDateString(new Date(session.date)) : '';
         const today = getLocalDateString();
-        if (sessionDate === today && cached.today_seconds) {
+        if (sessionDate === today && cached.today_seconds && tzMatch) {
           cached.today_seconds -= durationSec;
           setText('statToday', formatStatDuration(cached.today_seconds / 60));
         }
-        const { start: weekStart, end: weekEnd } = getWeekDates();
-        if (sessionDate >= weekStart && sessionDate <= weekEnd && cached.week_seconds) {
-          cached.week_seconds -= durationSec;
-          setText('statWeek', formatStatDuration(cached.week_seconds / 60));
+        const weekDays = getWeekDates();
+        const weekStart = weekDays[0]?.date ?? '';
+        const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
+        if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {
+          if (cached.calendar_week_seconds !== undefined) {
+            cached.calendar_week_seconds -= durationSec;
+            setText('statWeek', formatStatDuration(cached.calendar_week_seconds / 60));
+          } else if (cached.week_seconds) {
+            cached.week_seconds -= durationSec;
+            setText('statWeek', formatStatDuration(cached.week_seconds / 60));
+          }
         }
         browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: cached });
       }
