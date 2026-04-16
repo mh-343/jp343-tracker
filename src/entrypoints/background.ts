@@ -73,6 +73,23 @@ export default defineBackground(() => {
     return Array.from(map.values());
   }
 
+  // Detect definitive auth failures from parsed JSON responses (not fetch exceptions)
+  function isAuthFailure(result: { success: boolean; data?: { code?: string } }): boolean {
+    if (result.success) return false;
+    const code = result.data?.code;
+    return code === 'invalid_token' || code === 'E001' || code === 'invalid_nonce';
+  }
+
+  // On auth failure: clear login state, keep pending entries as local backup
+  let authFailureHandled = false;
+  async function handleAuthFailure(): Promise<void> {
+    if (authFailureHandled) return;
+    authFailureHandled = true;
+    log('[JP343] Auth failure detected, clearing login state');
+    await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME]);
+    scheduleStatusBadgeUpdate();
+  }
+
   async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
     if (!settingsPullComplete) return;
     const userState: JP343UserState | null = (
@@ -95,6 +112,7 @@ export default defineBackground(() => {
       if (result.success) {
         log('[JP343] Settings pushed to server');
       } else {
+        if (isAuthFailure(result)) { await handleAuthFailure(); return; }
         log('[JP343] Settings push failed:', result.data?.message);
       }
     } catch (error) {
@@ -125,6 +143,7 @@ export default defineBackground(() => {
       });
       const result = await resp.json();
       if (!result.success) {
+        if (isAuthFailure(result)) { await handleAuthFailure(); return; }
         log('[JP343] Settings pull failed:', result.data?.message);
         return;
       }
@@ -377,9 +396,8 @@ export default defineBackground(() => {
           }
 
           // Auth error from batch endpoint
-          if (!batchResult.success && (batchResult.data?.code === 'invalid_token' || batchResult.data?.code === 'E001')) {
-            log('[JP343] Batch sync: Auth invalid, aborting');
-            scheduleStatusBadgeUpdate();
+          if (isAuthFailure(batchResult)) {
+            await handleAuthFailure();
             return { attempted: unsynced.length, succeeded: 0, failed: unsynced.length, noAuth: true, nonceMissing: false };
           }
 
@@ -392,6 +410,7 @@ export default defineBackground(() => {
     }
 
     // Sequential fallback (nonce path or batch failure)
+    let authFailed = false;
     for (const entry of unsynced) {
       try {
         const params: Record<string, string> = {
@@ -434,8 +453,9 @@ export default defineBackground(() => {
           succeeded++;
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
-          if (result.data?.code === 'E001' || result.data?.code === 'invalid_nonce' || result.data?.code === 'invalid_token') {
-            log('[JP343] Direct sync: Auth expired/invalid, aborting');
+          if (isAuthFailure(result)) {
+            await handleAuthFailure();
+            authFailed = true;
             failed += (unsynced.length - succeeded - failed);
             break;
           }
@@ -467,7 +487,7 @@ export default defineBackground(() => {
     }
 
     scheduleStatusBadgeUpdate();
-    return { attempted: unsynced.length, succeeded, failed, noAuth: false, nonceMissing: false };
+    return { attempted: unsynced.length, succeeded, failed, noAuth: authFailed, nonceMissing: false };
   }
 
   async function saveSessionState(session: TrackingSession | null): Promise<void> {
@@ -510,6 +530,8 @@ export default defineBackground(() => {
       const result = await response.json();
       if (result.success && result.data) {
         await browser.storage.local.set({ jp343_cached_server_stats: result.data });
+      } else if (isAuthFailure(result)) {
+        await handleAuthFailure();
       }
     } catch { /* server unreachable */ }
   }

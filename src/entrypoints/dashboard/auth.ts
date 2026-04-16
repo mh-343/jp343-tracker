@@ -51,7 +51,7 @@ export async function doLogin(email: string, password: string): Promise<{ succes
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        jp343_extension_display_name: result.data.displayName || null
+        jp343_extension_display_name: result.data.displayName || email
       });
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
@@ -95,7 +95,7 @@ export async function doRegister(email: string, password: string): Promise<{ suc
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        jp343_extension_display_name: result.data.displayName || null
+        jp343_extension_display_name: result.data.displayName || email
       });
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
@@ -172,6 +172,8 @@ export function setupAuthUI(): void {
       if (success) {
         btn.disabled = false;
         btn.textContent = 'Login';
+        emailInput.value = '';
+        passInput.value = '';
         requestRefresh();
       } else {
         if (errorEl) errorEl.textContent = error || 'Login failed';
@@ -205,6 +207,11 @@ export function setupAuthUI(): void {
     const { success, error } = await doRegister(emailInput.value, passInput.value);
 
     if (success) {
+      btn.disabled = false;
+      btn.textContent = 'Create Account';
+      emailInput.value = '';
+      passInput.value = '';
+      gdprInput.checked = false;
       requestRefresh();
     } else {
       if (errorEl) errorEl.textContent = error || 'Registration failed';
@@ -267,6 +274,7 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
   const userBar = document.getElementById('userBar');
   const authToggle = document.getElementById('authToggle');
   const loginDrawer = document.getElementById('loginDrawer');
+  const registerDrawer = document.getElementById('registerDrawer');
   const userName = document.getElementById('userName');
   const siteLinks = document.getElementById('siteLinks');
 
@@ -275,7 +283,6 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (authToggle) authToggle.style.display = 'none';
     if (siteLinks) siteLinks.style.display = 'flex';
     if (loginDrawer) { loginDrawer.style.display = 'none'; loginDrawer.classList.remove('open'); }
-    const registerDrawer = document.getElementById('registerDrawer');
     if (registerDrawer) { registerDrawer.style.display = 'none'; registerDrawer.classList.remove('open'); }
     const stored = await browser.storage.local.get(STORAGE_KEYS.DISPLAY_NAME);
     if (userName) userName.textContent = stored[STORAGE_KEYS.DISPLAY_NAME] || 'Connected';
@@ -284,5 +291,6 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (authToggle) authToggle.style.display = '';
     if (siteLinks) siteLinks.style.display = 'none';
     if (loginDrawer) loginDrawer.style.display = '';
+    if (registerDrawer) registerDrawer.style.display = '';
   }
 }
