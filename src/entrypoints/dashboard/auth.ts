@@ -229,17 +229,24 @@ export function renderSyncCta(entries: PendingEntry[], userState: JP343UserState
 
   section.style.display = '';
 
+  const totalMinutes = entries.reduce((sum, e) => sum + e.duration_min, 0);
+
   if (entries.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  if (totalMinutes < 60) {
     const p = document.createElement('p');
-    p.textContent = 'Start watching Japanese content to see your stats here.';
+    p.textContent = 'Your sessions are saved locally in this browser.';
     container.appendChild(p);
   } else {
-    const p1 = document.createElement('p');
-    p1.textContent = 'Your sessions are saved locally in this browser.';
-    container.appendChild(p1);
-    const p2 = document.createElement('p');
-    p2.textContent = 'Login to sync across devices and keep your data safe.';
-    container.appendChild(p2);
+    const hours = Math.floor(totalMinutes / 60);
+    const hoursText = hours === 1 ? '1 hour' : `${hours} hours`;
+
+    const p = document.createElement('p');
+    p.textContent = `${hoursText} tracked locally. Export a backup or create an account to keep your hours safe.`;
+    container.appendChild(p);
   }
 }
 
@@ -261,10 +268,12 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
   const authToggle = document.getElementById('authToggle');
   const loginDrawer = document.getElementById('loginDrawer');
   const userName = document.getElementById('userName');
+  const siteLinks = document.getElementById('siteLinks');
 
   if (userState?.isLoggedIn) {
     if (userBar) userBar.style.display = 'flex';
     if (authToggle) authToggle.style.display = 'none';
+    if (siteLinks) siteLinks.style.display = 'flex';
     if (loginDrawer) { loginDrawer.style.display = 'none'; loginDrawer.classList.remove('open'); }
     const registerDrawer = document.getElementById('registerDrawer');
     if (registerDrawer) { registerDrawer.style.display = 'none'; registerDrawer.classList.remove('open'); }
@@ -273,6 +282,7 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
   } else {
     if (userBar) userBar.style.display = 'none';
     if (authToggle) authToggle.style.display = '';
+    if (siteLinks) siteLinks.style.display = 'none';
     if (loginDrawer) loginDrawer.style.display = '';
   }
 }

@@ -442,11 +442,16 @@ export function applyServerStats(serverData: ServerStatsResponse): void {
   if (serverData.total_seconds !== undefined) {
     renderHeroTime(serverData.total_seconds / 60);
   }
-  if (serverData.week_seconds !== undefined) {
-    setText('statWeek', formatStatDuration(serverData.week_seconds / 60));
+  const weekSec = serverData.calendar_week_seconds ?? serverData.week_seconds;
+  if (weekSec !== undefined) {
+    setText('statWeek', formatStatDuration(weekSec / 60));
   }
   if (serverData.today_seconds !== undefined) {
-    setText('statToday', formatStatDuration(serverData.today_seconds / 60));
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzMatch = !serverData.timezone || serverData.timezone === browserTz;
+    if (tzMatch) {
+      setText('statToday', formatStatDuration(serverData.today_seconds / 60));
+    }
   }
   if (serverData.streak !== undefined) {
     setText('statStreak', `${serverData.streak}d`);
