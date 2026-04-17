@@ -1,5 +1,14 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
 import { getLocalDateString } from '../lib/format-utils';
+import { withStorageLock } from '../lib/storage-lock';
+import { isAuthFailure, handleAuthFailure } from '../lib/auth-helpers';
+import { loadPendingEntries } from '../lib/pending-entries';
+import {
+  initBadgeService,
+  scheduleStatusBadgeUpdate,
+  updateStatusBadge,
+  updateBadge,
+} from '../lib/badge-service';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -23,13 +32,6 @@ export default defineBackground(() => {
 
   log('[JP343] Background Service Worker started');
 
-
-  let storageLock = Promise.resolve();
-  function withStorageLock<T>(fn: () => Promise<T>): Promise<T> {
-    const p = storageLock.then(() => fn());
-    storageLock = p.then(() => {}, () => {});
-    return p;
-  }
 
   let cachedSettings: ExtensionSettings | null = null;
 
@@ -71,23 +73,6 @@ export default defineBackground(() => {
       }
     }
     return Array.from(map.values());
-  }
-
-  // Detect definitive auth failures from parsed JSON responses (not fetch exceptions)
-  function isAuthFailure(result: { success: boolean; data?: { code?: string } }): boolean {
-    if (result.success) return false;
-    const code = result.data?.code;
-    return code === 'invalid_token' || code === 'E001' || code === 'invalid_nonce';
-  }
-
-  // On auth failure: clear login state, keep pending entries as local backup
-  let authFailureHandled = false;
-  async function handleAuthFailure(): Promise<void> {
-    if (authFailureHandled) return;
-    authFailureHandled = true;
-    log('[JP343] Auth failure detected, clearing login state');
-    await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME]);
-    scheduleStatusBadgeUpdate();
   }
 
   async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
@@ -192,16 +177,6 @@ export default defineBackground(() => {
     }
   }
 
-  async function loadPendingEntries(): Promise<PendingEntry[]> {
-    try {
-      const result = await browser.storage.local.get(STORAGE_KEYS.PENDING);
-      return result[STORAGE_KEYS.PENDING] || [];
-    } catch (error) {
-      log('[JP343] Failed to load pending entries:', error);
-      return [];
-    }
-  }
-
   async function savePendingEntry(entry: PendingEntry): Promise<void> {
     await withStorageLock(async () => {
       try {
@@ -238,7 +213,7 @@ export default defineBackground(() => {
         pending.push(entry);
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
         log('[JP343] Entry saved. Pending:', pending.length);
-        updateBadge(pending.length);
+        updateBadge();
         await updateStats(entry);
       } catch (error) {
         log('[JP343] Failed to save entry:', error);
@@ -622,73 +597,7 @@ export default defineBackground(() => {
     }
   }
 
-  const badgeApi = browser.action ?? browser.browserAction;
-
-  type TrackingStatus = 'recording' | 'paused' | 'ad' | 'idle';
-
-  function getCurrentStatus(): TrackingStatus {
-    if (tracker.isAdPlaying()) return 'ad';
-    const session = tracker.getCurrentSession();
-    if (!session) return 'idle';
-    if (session.isPaused) return 'paused';
-    if (session.isActive) return 'recording';
-    return 'idle';
-  }
-
-  let badgeUpdateTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function scheduleStatusBadgeUpdate(): void {
-    if (badgeUpdateTimer) return;
-    badgeUpdateTimer = setTimeout(async () => {
-      badgeUpdateTimer = null;
-      await updateStatusBadge();
-    }, 500);
-  }
-
-  async function updateStatusBadge(): Promise<void> {
-    const settings = await loadSettings();
-    if (!settings.enabled) {
-      badgeApi.setBadgeText({ text: 'OFF' });
-      badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
-      badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
-      return;
-    }
-
-    const status = getCurrentStatus();
-    const pending = await loadPendingEntries();
-    const unsyncedCount = pending.filter(e => !e.synced).length;
-
-    switch (status) {
-      case 'recording':
-        badgeApi.setBadgeText({ text: '●' });
-        badgeApi.setBadgeBackgroundColor({ color: '#22c55e' });
-        badgeApi.setTitle({ title: 'jp343 - Recording...' });
-        break;
-
-      case 'paused':
-        badgeApi.setBadgeText({ text: '❚❚' });
-        badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' });
-        badgeApi.setTitle({ title: 'jp343 - Paused' });
-        break;
-
-      case 'ad':
-        badgeApi.setBadgeText({ text: 'AD' });
-        badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
-        badgeApi.setTitle({ title: 'jp343 - Ad playing (not tracking)' });
-        break;
-
-      case 'idle':
-      default:
-        badgeApi.setBadgeText({ text: '' });
-        badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
-        break;
-    }
-  }
-
-  function updateBadge(_count: number): void {
-    scheduleStatusBadgeUpdate();
-  }
-
+  initBadgeService(loadSettings);
   scheduleStatusBadgeUpdate();
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
@@ -936,8 +845,7 @@ export default defineBackground(() => {
             const deletedEntry = pending.find(e => e.id === message.entryId);
             const filtered = pending.filter(e => e.id !== message.entryId);
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
-            const unsyncedCount = filtered.filter(e => !e.synced).length;
-            updateBadge(unsyncedCount);
+            updateBadge();
             if (deletedEntry) {
               await subtractFromStats(deletedEntry);
             }
@@ -955,7 +863,7 @@ export default defineBackground(() => {
             if (!match) return { success: true, data: { found: false } };
             const filtered = pending.filter(e => e.serverEntryId !== message.serverEntryId);
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
-            updateBadge(filtered.filter(e => !e.synced).length);
+            updateBadge();
             await subtractFromStats(match);
             return { success: true, data: { found: true } };
           });
@@ -968,7 +876,7 @@ export default defineBackground(() => {
           const pending = await loadPendingEntries();
           const unsynced = pending.filter(e => !e.synced);
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: unsynced });
-          updateBadge(unsynced.length);
+          updateBadge();
           return { success: true, data: { removed: pending.length - unsynced.length } };
         });
       }
@@ -1005,9 +913,7 @@ export default defineBackground(() => {
             }
             await saveSessionState(null);
 
-            badgeApi.setBadgeText({ text: 'OFF' });
-            badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
-            badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
+            await updateStatusBadge();
           } else {
             scheduleStatusBadgeUpdate();
           }
