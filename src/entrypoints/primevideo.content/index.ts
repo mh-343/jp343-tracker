@@ -184,6 +184,12 @@ export default defineContentScript({
       return GENERIC_TITLES.has(lower);
     }
 
+    function stripSeasonSuffix(title: string): string {
+      return title
+        .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s*\d+(?:\s+(?:ansehen|anschauen))?$/i, '')
+        .trim();
+    }
+
     function extractMetadata(): PrimeVideoMetadata {
       const metadata: PrimeVideoMetadata = {
         title: 'Prime Video Content',
@@ -230,6 +236,10 @@ export default defineContentScript({
 
       tryExtractPlayerTitle(metadata);
       metadata.thumbnailUrl = extractThumbnail();
+
+      if (metadata.title) {
+        metadata.title = stripSeasonSuffix(metadata.title);
+      }
 
       return metadata;
     }
