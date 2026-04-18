@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
 
-export const CACHED_SERVER_STATS_KEY = 'jp343_cached_server_stats';
+export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
 let _localDailyMinutes: Record<string, number> = {};
 let _goalMinutes = 60;
