@@ -15,7 +15,8 @@ import {
   recordPlatformMilestone,
   recordError,
   recordBackgroundStartup,
-  buildExportReport
+  buildExportReport,
+  sendDiagnosticsReport
 } from '../lib/diagnostics';
 import type { DiagnosticsContext } from '../lib/background/diagnostics-context';
 import type {
@@ -95,12 +96,38 @@ export default defineBackground(() => {
     buildExportReport
   };
 
+  const DIAGNOSTICS_SEND_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+  async function maybeSendDiagnostics(): Promise<void> {
+    try {
+      const settings = await loadSettings();
+      if (!settings.diagnosticsEnabled) return;
+
+      const diagnostics = await getOrLoadDiagnostics();
+      const lastSent = diagnostics.lastReportSent
+        ? new Date(diagnostics.lastReportSent).getTime()
+        : 0;
+
+      if (Date.now() - lastSent < DIAGNOSTICS_SEND_INTERVAL_MS) return;
+
+      const hasPlatformData = Object.keys(diagnostics.platformHealth).length > 0;
+      if (!hasPlatformData) return;
+
+      const ok = await sendDiagnosticsReport(diagnostics);
+      if (ok) {
+        inMemoryDiagnostics = await loadDiagnostics();
+        log('[JP343] Diagnostics report sent');
+      }
+    } catch { /* best-effort */ }
+  }
+
   (async () => {
     const diagnostics = await getOrLoadDiagnostics();
     const manifest = browser.runtime.getManifest();
     recordBackgroundStartup(diagnostics, manifest.version);
     await saveDiagnostics(diagnostics);
     log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
+    maybeSendDiagnostics();
   })();
 
   let cachedSettings: ExtensionSettings | null = null;
@@ -299,11 +326,15 @@ export default defineBackground(() => {
 
   browser.alarms.create('jp343-auto-sync-retry', { periodInMinutes: 5 });
   browser.alarms.create('jp343-cleanup-synced', { periodInMinutes: 360 });
+  browser.alarms.create('jp343-diagnostics-send', { periodInMinutes: 360 });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
       await triggerSync();
       await pullAndMergeSettingsFromServer().catch(() => {});
+    }
+    if (alarm.name === 'jp343-diagnostics-send') {
+      maybeSendDiagnostics();
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {
