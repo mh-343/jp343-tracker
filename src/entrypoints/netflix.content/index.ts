@@ -56,6 +56,15 @@ export default defineContentScript({
     log('[JP343] Netflix Content Script loaded');
     setupDebugCommands(logger, 'netflix');
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'netflix' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
+
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video') as HTMLVideoElement | null;
       return {
@@ -811,6 +820,8 @@ export default defineContentScript({
           debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Netflix Play:', state.title, '(ID:', lastVideoId, ')');
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
       });
 
@@ -888,6 +899,7 @@ export default defineContentScript({
       }, 30000);
 
       log('[JP343] Netflix Video events bound');
+      sendDiagnostic('player_found');
     }
 
     const observer = new MutationObserver(() => {

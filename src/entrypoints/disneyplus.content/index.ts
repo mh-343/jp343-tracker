@@ -63,6 +63,16 @@ export default defineContentScript({
     });
 
     const { log } = createDebugLogger('disneyplus');
+    log('[JP343] Disney+ Content Script loaded');
+
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'disneyplus' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
 
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('video.hive-video') as HTMLVideoElement)
@@ -518,6 +528,8 @@ export default defineContentScript({
           lastTitle = state.title;
           log('[JP343] Disney+ Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
       });
 
@@ -576,6 +588,7 @@ export default defineContentScript({
       intervalIds.push(quickUpdate);
 
       log('[JP343] Disney+: Events bound');
+      sendDiagnostic('player_found');
     }
 
     const observer = new MutationObserver(() => {
