@@ -146,8 +146,7 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
-    changes[STORAGE_KEYS.USER] ||
-    changes[STORAGE_KEYS.SETTINGS]
+    changes[STORAGE_KEYS.USER]
   )) {
     refresh();
   }
