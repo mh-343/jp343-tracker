@@ -2,6 +2,7 @@
 
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { parseSeasonOnly } from '../../lib/title-parsing';
 
 interface NetflixMetadata {
   title: string;
@@ -554,6 +555,14 @@ export default defineContentScript({
         return result;
       }
 
+      const seasonOnly = parseSeasonOnly(rawTitle);
+      if (seasonOnly) {
+        result.title = seasonOnly.seriesName;
+        result.seasonNumber = seasonOnly.seasonNumber;
+        result.isMovie = false;
+        return result;
+      }
+
       return result;
     }
 
@@ -656,6 +665,8 @@ export default defineContentScript({
         formatted += ` S${metadata.seasonNumber}E${metadata.episodeNumber}`;
       } else if (metadata.episodeNumber) {
         formatted += ` E${metadata.episodeNumber}`;
+      } else if (metadata.seasonNumber) {
+        formatted += ` S${metadata.seasonNumber}`;
       }
       if (metadata.episodeTitle) {
         formatted += `: ${metadata.episodeTitle}`;

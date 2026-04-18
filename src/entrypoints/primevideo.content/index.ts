@@ -2,6 +2,7 @@
 
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { parseSeasonOnly } from '../../lib/title-parsing';
 
 interface PrimeVideoMetadata {
   title: string;
@@ -184,12 +185,6 @@ export default defineContentScript({
       return GENERIC_TITLES.has(lower);
     }
 
-    function stripSeasonSuffix(title: string): string {
-      return title
-        .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s*\d+(?:\s+(?:ansehen|anschauen))?$/i, '')
-        .trim();
-    }
-
     function extractMetadata(): PrimeVideoMetadata {
       const metadata: PrimeVideoMetadata = {
         title: 'Prime Video Content',
@@ -205,7 +200,6 @@ export default defineContentScript({
         const cleanTitle = docTitle
           .replace(/\s*[\|–-]\s*(?:Prime Video|Amazon Prime Video|Amazon\.?\w*).*$/i, '')
           .replace(/^(?:Amazon\.\w+:\s*)/i, '')
-          .replace(/\s*[-–]\s*(?:Staffel|Season|Temporada|Saison)\s+\d+\s+ansehen$/i, '')
           .replace(/\s+ansehen$|\s+anschauen$/i, '')
           .replace(/^(?:Watch|Ansehen|Regarder|Ver|Guarda)\s+/i, '')
           .trim();
@@ -236,10 +230,6 @@ export default defineContentScript({
 
       tryExtractPlayerTitle(metadata);
       metadata.thumbnailUrl = extractThumbnail();
-
-      if (metadata.title) {
-        metadata.title = stripSeasonSuffix(metadata.title);
-      }
 
       return metadata;
     }
@@ -348,6 +338,14 @@ export default defineContentScript({
         if (titlePart) {
           result.title = titlePart.replace(/[-–:]\s*$/, '').trim();
         }
+        result.isMovie = false;
+        return result;
+      }
+
+      const seasonOnly = parseSeasonOnly(rawTitle);
+      if (seasonOnly) {
+        result.title = seasonOnly.seriesName;
+        result.seasonNumber = seasonOnly.seasonNumber;
         result.isMovie = false;
         return result;
       }
@@ -528,6 +526,8 @@ export default defineContentScript({
         formatted += ` S${metadata.seasonNumber}E${metadata.episodeNumber}`;
       } else if (metadata.episodeNumber) {
         formatted += ` E${metadata.episodeNumber}`;
+      } else if (metadata.seasonNumber) {
+        formatted += ` S${metadata.seasonNumber}`;
       }
       if (metadata.episodeTitle) {
         formatted += `: ${metadata.episodeTitle}`;
