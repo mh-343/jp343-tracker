@@ -87,6 +87,7 @@ export interface ExtensionStorage {
   jp343_extension_user: JP343UserState | null;
   jp343_extension_settings: ExtensionSettings;
   jp343_extension_stats: ExtensionStats;
+  jp343_cached_server_stats?: Record<string, unknown>;
 }
 
 export interface ExtensionSettings {
@@ -208,5 +209,6 @@ export const STORAGE_KEYS = {
   USER: 'jp343_extension_user',
   SETTINGS: 'jp343_extension_settings',
   STATS: 'jp343_extension_stats',
-  DISPLAY_NAME: 'jp343_extension_display_name'
+  DISPLAY_NAME: 'jp343_extension_display_name',
+  CACHED_SERVER_STATS: 'jp343_cached_server_stats'
 } as const;

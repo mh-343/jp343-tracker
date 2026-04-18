@@ -6,9 +6,9 @@ import { loadPendingEntries } from '../lib/pending-entries';
 import {
   initBadgeService,
   scheduleStatusBadgeUpdate,
-  updateStatusBadge,
   updateBadge,
 } from '../lib/badge-service';
+import { createBackgroundMessageHandler } from '../lib/background/message-handler';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -17,11 +17,9 @@ import type {
   ExtensionSettings,
   ExtensionStats,
   BlockedChannel,
-  VideoState,
   DirectSyncResult,
   BatchEntryResult,
   BatchSyncResponse,
-  ActivityType,
   SpotifyContentType
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
@@ -59,21 +57,6 @@ export default defineBackground(() => {
   let settingsPullComplete = false;
   let settingsLastUpdated = '';
   let settingsLastPullTime = 0;
-
-  function mergeBlockedChannels(local: BlockedChannel[], server: BlockedChannel[]): BlockedChannel[] {
-    const map = new Map<string, BlockedChannel>();
-    for (const ch of [...local, ...server]) {
-      const existing = map.get(ch.channelId);
-      if (!existing) {
-        map.set(ch.channelId, ch);
-      } else {
-        const existingTime = new Date(existing.blockedAt).getTime();
-        const incomingTime = new Date(ch.blockedAt).getTime();
-        if (incomingTime < existingTime) map.set(ch.channelId, ch);
-      }
-    }
-    return Array.from(map.values());
-  }
 
   async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
     if (!settingsPullComplete) return;
@@ -504,7 +487,7 @@ export default defineBackground(() => {
       const response = await fetch(ajaxUrl, { method: 'POST', body: params });
       const result = await response.json();
       if (result.success && result.data) {
-        await browser.storage.local.set({ jp343_cached_server_stats: result.data });
+        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: result.data });
       } else if (isAuthFailure(result)) {
         await handleAuthFailure();
       }
@@ -597,8 +580,30 @@ export default defineBackground(() => {
     }
   }
 
+  async function ensureFreshSettings(): Promise<void> {
+    const pullAge = Date.now() - settingsLastPullTime;
+    if (!settingsPullComplete || pullAge > 60000) {
+      await pullAndMergeSettingsFromServer().catch(() => {});
+    }
+  }
+
   initBadgeService(loadSettings);
   scheduleStatusBadgeUpdate();
+
+  const handleMessage = createBackgroundMessageHandler({
+    log,
+    loadSettings,
+    saveSettings,
+    ensureFreshSettings,
+    syncSettingsToServer,
+    savePendingEntry,
+    saveSessionState,
+    loadStats,
+    subtractFromStats,
+    syncEntriesDirect,
+    pullAndMergeSettingsFromServer,
+    fetchAndCacheServerStats,
+  });
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
     handleMessage(message, sender).then(
@@ -607,590 +612,6 @@ export default defineBackground(() => {
     );
     return true;
   });
-
-  async function handleMessage(
-    message: ExtensionMessage,
-    _sender: browser.Runtime.MessageSender
-  ): Promise<unknown> {
-    if (!message || typeof message.type !== 'string') {
-      return { success: false, error: 'Invalid message format' };
-    }
-
-    try {
-    switch (message.type) {
-      case 'VIDEO_PLAY': {
-        const settings = await loadSettings();
-        if (!settings.enabled) {
-          log('[JP343] Tracking disabled - ignoring VIDEO_PLAY');
-          return { success: true, skipped: true };
-        }
-
-        if ('state' in message && message.state && typeof message.state === 'object') {
-          const channelId = message.state.channelId;
-          if (channelId && settings.blockedChannels.some(c => c.channelId === channelId)) {
-            log('[JP343] Channel blocked - ignoring VIDEO_PLAY:', channelId);
-            return { success: true, skipped: true, blocked: true };
-          }
-
-          if (message.state.platform === 'spotify' && message.state.contentType) {
-            if (!settings.spotifyContentTypes?.includes(message.state.contentType)) {
-              log('[JP343] Spotify content type blocked:', message.state.contentType);
-              return { success: true, skipped: true, blocked: true };
-            }
-          }
-
-          const currentSession = tracker.getCurrentSession();
-          if (currentSession && currentSession.url !== message.state.url) {
-            const previousEntry = tracker.finalizeSession();
-            if (previousEntry) {
-              await savePendingEntry(previousEntry);
-              log('[JP343] Previous session saved on video switch:', previousEntry.project, previousEntry.duration_min, 'min');
-            }
-          }
-
-          if (!message.state.thumbnailUrl) {
-            const pending = await loadPendingEntries();
-            for (let i = pending.length - 1; i >= 0; i--) {
-              if (pending[i].thumbnail && pending[i].url === message.state.url) {
-                message.state.thumbnailUrl = pending[i].thumbnail;
-                log('[JP343] Thumbnail carried over from previous entry');
-                break;
-              }
-            }
-          }
-
-          const tabId = ('tabId' in message ? message.tabId : undefined) || _sender.tab?.id;
-          const session = tracker.startSession(message.state, tabId);
-          await saveSessionState(session);
-          scheduleStatusBadgeUpdate();
-        }
-        return { success: true };
-      }
-
-      case 'VIDEO_PAUSE': {
-        tracker.pauseSession();
-        const session = tracker.getCurrentSession();
-        await saveSessionState(session);
-        scheduleStatusBadgeUpdate();
-        return { success: true };
-      }
-
-      case 'VIDEO_ENDED': {
-        const entry = tracker.finalizeSession();
-        if (entry) {
-          await savePendingEntry(entry);
-        }
-        await saveSessionState(null);
-        scheduleStatusBadgeUpdate();
-        return { success: true, saved: !!entry };
-      }
-
-      case 'AD_START': {
-        tracker.onAdStart();
-        scheduleStatusBadgeUpdate();
-        return { success: true };
-      }
-
-      case 'AD_END': {
-        tracker.onAdEnd();
-        scheduleStatusBadgeUpdate();
-        return { success: true };
-      }
-
-      case 'VIDEO_STATE_UPDATE': {
-        if ('state' in message && message.state && typeof message.state === 'object') {
-          if (message.state.title) {
-            tracker.updateSessionTitleFromAutoFetch(message.state.title);
-          }
-
-          if (message.state.channelName) {
-            tracker.updateSessionChannelInfo(
-              message.state.channelId || null,
-              message.state.channelName,
-              message.state.channelUrl || null
-            );
-          }
-
-          if (message.state.thumbnailUrl) {
-            tracker.updateSessionThumbnail(message.state.thumbnailUrl);
-          }
-
-          if (message.state.channelId) {
-            const settings = await loadSettings();
-            if (settings.blockedChannels.some(c => c.channelId === message.state.channelId)) {
-              log('[JP343] Channel blocked on STATE_UPDATE - stopping session:', message.state.channelId);
-              tracker.stopSession();
-              await saveSessionState(null);
-              scheduleStatusBadgeUpdate();
-              return { success: true, blocked: true };
-            }
-          }
-        }
-        const session = tracker.getCurrentSession();
-        await saveSessionState(session);
-        return { success: true };
-      }
-
-      case 'GET_CURRENT_SESSION': {
-        const session = tracker.getCurrentSession();
-        const duration = tracker.getCurrentDuration();
-        const isAd = tracker.isAdPlaying();
-        const pending = await loadPendingEntries();
-
-        return {
-          success: true,
-          data: {
-            session,
-            duration,
-            isAd,
-            pendingCount: pending.length,
-            pendingMinutes: pending.reduce((sum, e) => sum + e.duration_min, 0)
-          }
-        };
-      }
-
-      case 'STOP_SESSION': {
-        const sessionBeforeStop = tracker.getCurrentSession();
-        if (sessionBeforeStop?.tabId) {
-          try {
-            await browser.tabs.sendMessage(sessionBeforeStop.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* ignore */ }
-        }
-        const entry = tracker.stopSession();
-        if (entry) {
-          await savePendingEntry(entry);
-        }
-        await saveSessionState(null);
-        scheduleStatusBadgeUpdate();
-        return { success: true, saved: !!entry };
-      }
-
-      case 'PAUSE_SESSION': {
-        const sessionToPause = tracker.getCurrentSession();
-        if (sessionToPause?.tabId) {
-          try {
-            await browser.tabs.sendMessage(sessionToPause.tabId, { type: 'PAUSE_VIDEO' });
-          } catch { /* ignore */ }
-        }
-        tracker.pauseSession();
-        const pausedSession = tracker.getCurrentSession();
-        await saveSessionState(pausedSession);
-        scheduleStatusBadgeUpdate();
-        return { success: true };
-      }
-
-      case 'RESUME_SESSION': {
-        tracker.resumeSession();
-        const resumedSession = tracker.getCurrentSession();
-        if (resumedSession?.tabId) {
-          try {
-            await browser.tabs.sendMessage(resumedSession.tabId, { type: 'RESUME_VIDEO' });
-          } catch { /* ignore */ }
-        }
-        await saveSessionState(resumedSession);
-        scheduleStatusBadgeUpdate();
-        return { success: true };
-      }
-
-      case 'JP343_SITE_LOADED': {
-        const senderUrl = _sender?.url || _sender?.tab?.url || '';
-        if (!/^https?:\/\/(.*\.)?jp343\.com(\/|$)/i.test(senderUrl) && !senderUrl.startsWith(browser.runtime.getURL(''))) {
-          return { success: false, error: 'Unauthorized origin' };
-        }
-        if ('userState' in message) {
-          const newState = message.userState;
-          const existing = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] ?? null;
-          const merged = {
-            ...newState,
-            extApiToken: newState?.extApiToken || existing?.extApiToken || null,
-          };
-          if (!merged.isLoggedIn && merged.extApiToken) {
-            merged.isLoggedIn = true;
-          }
-          await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
-          if ('displayName' in message && message.displayName) {
-            await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
-          }
-          log('[JP343] User state updated:', merged.isLoggedIn);
-          if (merged.isLoggedIn && merged.extApiToken) {
-            await pullAndMergeSettingsFromServer().catch(() => {});
-            fetchAndCacheServerStats();
-          }
-        }
-        return { success: true };
-      }
-
-      case 'SYNC_ENTRIES_DIRECT': {
-        const result = await syncEntriesDirect();
-        return { success: true, data: result };
-      }
-
-      case 'OPEN_DASHBOARD': {
-        await browser.tabs.create({ url: browser.runtime.getURL('dashboard.html') });
-        return { success: true };
-      }
-
-      case 'GET_PENDING_ENTRIES': {
-        const pending = await loadPendingEntries();
-        return {
-          success: true,
-          data: { entries: pending }
-        };
-      }
-
-      case 'DELETE_PENDING_ENTRY': {
-        if ('entryId' in message && typeof message.entryId === 'string') {
-          return withStorageLock(async () => {
-            const pending = await loadPendingEntries();
-            const deletedEntry = pending.find(e => e.id === message.entryId);
-            const filtered = pending.filter(e => e.id !== message.entryId);
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
-            updateBadge();
-            if (deletedEntry) {
-              await subtractFromStats(deletedEntry);
-            }
-            return { success: true, data: { remaining: filtered.length } };
-          });
-        }
-        return { success: false, error: 'No entryId provided' };
-      }
-
-      case 'DELETE_PENDING_BY_SERVER_ID': {
-        if ('serverEntryId' in message && typeof message.serverEntryId === 'number') {
-          return withStorageLock(async () => {
-            const pending = await loadPendingEntries();
-            const match = pending.find(e => e.serverEntryId === message.serverEntryId);
-            if (!match) return { success: true, data: { found: false } };
-            const filtered = pending.filter(e => e.serverEntryId !== message.serverEntryId);
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
-            updateBadge();
-            await subtractFromStats(match);
-            return { success: true, data: { found: true } };
-          });
-        }
-        return { success: false, error: 'No serverEntryId provided' };
-      }
-
-      case 'CLEAR_SYNCED_ENTRIES': {
-        return withStorageLock(async () => {
-          const pending = await loadPendingEntries();
-          const unsynced = pending.filter(e => !e.synced);
-          await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: unsynced });
-          updateBadge();
-          return { success: true, data: { removed: pending.length - unsynced.length } };
-        });
-      }
-
-      case 'GET_SETTINGS': {
-        const pullAge = Date.now() - settingsLastPullTime;
-        if (!settingsPullComplete || pullAge > 60000) {
-          await pullAndMergeSettingsFromServer().catch(() => {});
-        }
-        const settings = await loadSettings();
-        return { success: true, data: { settings } };
-      }
-
-      case 'UPDATE_SETTINGS': {
-        if ('settings' in message && message.settings) {
-          await saveSettings(message.settings as ExtensionSettings);
-          syncSettingsToServer(message.settings as ExtensionSettings).catch(() => {});
-          return { success: true };
-        }
-        return { success: false, error: 'No settings provided' };
-      }
-
-      case 'SET_ENABLED': {
-        if ('enabled' in message) {
-          const settings = await loadSettings();
-          settings.enabled = message.enabled;
-          await saveSettings(settings);
-
-          if (!message.enabled) {
-            const entry = tracker.finalizeSession();
-            if (entry) {
-              await savePendingEntry(entry);
-              log('[JP343] Active session finalized on disable');
-            }
-            await saveSessionState(null);
-
-            await updateStatusBadge();
-          } else {
-            scheduleStatusBadgeUpdate();
-          }
-
-          log('[JP343] Tracking', message.enabled ? 'enabled' : 'disabled');
-          return { success: true };
-        }
-        return { success: false, error: 'No enabled value provided' };
-      }
-
-      case 'BLOCK_CHANNEL': {
-        if ('channel' in message && message.channel) {
-          const settings = await loadSettings();
-          if (!settings.blockedChannels.some(c => c.channelId === message.channel.channelId)) {
-            settings.blockedChannels.push(message.channel);
-            await saveSettings(settings);
-            log('[JP343] Channel blocked:', message.channel.channelName);
-            syncSettingsToServer(settings).catch(() => {});
-          }
-
-          const currentSession = tracker.getCurrentSession();
-          if (currentSession && currentSession.channelId === message.channel.channelId) {
-            log('[JP343] Active session stopped for blocked channel:', message.channel.channelName);
-            tracker.stopSession();
-            await saveSessionState(null);
-            scheduleStatusBadgeUpdate();
-          }
-
-          return { success: true };
-        }
-        return { success: false, error: 'No channel provided' };
-      }
-
-      case 'UNBLOCK_CHANNEL': {
-        if ('channelId' in message && message.channelId) {
-          const settings = await loadSettings();
-          const before = settings.blockedChannels.length;
-          settings.blockedChannels = settings.blockedChannels.filter(
-            c => c.channelId !== message.channelId
-          );
-          await saveSettings(settings);
-          log('[JP343] Channel unblocked:', message.channelId);
-          syncSettingsToServer(settings).catch(() => {});
-          return { success: true, removed: before > settings.blockedChannels.length };
-        }
-        return { success: false, error: 'No channelId provided' };
-      }
-
-      case 'GET_CURRENT_CHANNEL': {
-        const session = tracker.getCurrentSession();
-        if (session && session.channelId) {
-          return {
-            success: true,
-            data: {
-              channelId: session.channelId,
-              channelName: session.channelName,
-              channelUrl: session.channelUrl,
-              platform: session.platform
-            }
-          };
-        }
-        return { success: true, data: null };
-      }
-
-      case 'UPDATE_SESSION_TITLE': {
-        if ('title' in message && message.title) {
-          const updated = tracker.updateSessionTitle(message.title as string);
-          if (updated) {
-            const session = tracker.getCurrentSession();
-            await saveSessionState(session);
-            log('[JP343] Session title updated:', message.title);
-            return { success: true };
-          }
-          return { success: false, error: 'No active session' };
-        }
-        return { success: false, error: 'No title provided' };
-      }
-
-      case 'UPDATE_PENDING_ENTRY_TITLE': {
-        if ('entryId' in message && 'title' in message && typeof message.entryId === 'string' && typeof message.title === 'string' && message.title) {
-          return withStorageLock(async () => {
-            const pending = await loadPendingEntries();
-            const updated = pending.map(e => {
-              if (e.id === message.entryId) {
-                return { ...e, project: message.title as string };
-              }
-              return e;
-            });
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-            log('[JP343] Pending entry title updated:', message.title);
-            return { success: true };
-          });
-        }
-        return { success: false, error: 'No entryId or title provided' };
-      }
-
-      case 'GET_ACTIVE_TAB_INFO': {
-        const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-        const tab = tabs[0];
-        if (!tab || !tab.url || !tab.id) {
-          return { success: false, error: 'No active tab' };
-        }
-
-        if (tab.url.startsWith('chrome-extension://') ||
-            tab.url.startsWith('moz-extension://') ||
-            tab.url.startsWith('about:') ||
-            tab.url.startsWith('chrome://') ||
-            tab.url.startsWith('edge://')) {
-          return { success: false, error: 'Cannot track browser pages' };
-        }
-
-        const streamingDomains = [
-          /youtube\.com/,
-          /netflix\.com/,
-          /crunchyroll\.com/,
-          /primevideo\.com/,
-          /amazon\.\w+.*\/gp\/video/,
-          /disneyplus\.com/,
-          /cijapanese\.com/,
-          /open\.spotify\.com/
-        ];
-        const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
-
-        let domain = '';
-        try {
-          domain = new URL(tab.url).hostname.replace(/^www\./, '');
-        } catch { /* ignore */ }
-
-        return {
-          success: true,
-          data: {
-            tabId: tab.id,
-            url: tab.url,
-            title: tab.title || 'Untitled',
-            domain: domain,
-            isStreamingSite: isStreamingSite
-          }
-        };
-      }
-
-      case 'MANUAL_TRACK_START': {
-        const settings = await loadSettings();
-        if (!settings.enabled) {
-          return { success: false, error: 'Tracking disabled' };
-        }
-
-        if (!('title' in message) || !('url' in message) || !('tabId' in message)) {
-          return { success: false, error: 'Missing required fields' };
-        }
-
-        const currentSession = tracker.getCurrentSession();
-        if (currentSession) {
-          const previousEntry = tracker.finalizeSession();
-          if (previousEntry) {
-            await savePendingEntry(previousEntry);
-            log('[JP343] Previous session saved:', previousEntry.project);
-          }
-        }
-
-        const manualState: VideoState = {
-          isPlaying: true,
-          currentTime: 0,
-          duration: 0,
-          title: message.title as string,
-          url: message.url as string,
-          platform: 'generic',
-          isAd: false,
-          thumbnailUrl: null,
-          videoId: null,
-          channelId: null,
-          channelName: null,
-          channelUrl: null
-        };
-
-        const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType);
-        await saveSessionState(session);
-        scheduleStatusBadgeUpdate();
-
-        log('[JP343] Manual tracking started:', message.title);
-        return { success: true, data: { session } };
-      }
-
-      case 'GET_STATS': {
-        const stats = await loadStats();
-
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-        const monday = new Date(now);
-        monday.setDate(now.getDate() + mondayOffset);
-        monday.setHours(0, 0, 0, 0);
-        const mondayStr = monday.toISOString().split('T')[0];
-
-        let weekMinutes = 0;
-        const todayStr = now.toISOString().split('T')[0];
-        let todayMinutes = stats.dailyMinutes[todayStr] || 0;
-
-        for (const [dateKey, minutes] of Object.entries(stats.dailyMinutes)) {
-          if (dateKey >= mondayStr) {
-            weekMinutes += minutes;
-          }
-        }
-
-        let streak = stats.currentStreak;
-        if (stats.lastActiveDate) {
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = yesterday.toISOString().split('T')[0];
-          if (stats.lastActiveDate !== todayStr && stats.lastActiveDate !== yesterdayStr) {
-            streak = 0;
-          }
-        }
-
-        let totalMinutes = stats.totalMinutes;
-        let rawDailyMinutes = stats.dailyMinutes;
-
-        const cachedResult = await browser.storage.local.get('jp343_cached_server_stats');
-        const cached = cachedResult['jp343_cached_server_stats'] as {
-          total_seconds?: number;
-          week_seconds?: number;
-          today_seconds?: number;
-          streak?: number;
-          daily_minutes?: Record<string, number>;
-          timezone?: string;
-          calendar_week_seconds?: number;
-        } | undefined;
-
-        if (cached) {
-          // today_seconds: nur mergen wenn Server-TZ == Browser-TZ
-          const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          const serverTz = cached.timezone;
-          const tzMatch = !serverTz || serverTz === browserTz;
-          if (cached.today_seconds !== undefined && tzMatch)
-            todayMinutes = Math.max(todayMinutes, Math.round(cached.today_seconds / 60));
-          // calendar_week_seconds bevorzugen (Mo-So), Fallback Rolling 7d
-          const serverWeekSec = cached.calendar_week_seconds ?? cached.week_seconds;
-          if (serverWeekSec !== undefined)
-            weekMinutes = Math.max(weekMinutes, Math.round(serverWeekSec / 60));
-          if (cached.streak !== undefined)
-            streak = Math.max(streak, cached.streak);
-          if (cached.total_seconds !== undefined)
-            totalMinutes = Math.max(totalMinutes, Math.round(cached.total_seconds / 60));
-          if (cached.daily_minutes) {
-            const merged: Record<string, number> = { ...rawDailyMinutes };
-            for (const [date, minutes] of Object.entries(cached.daily_minutes)) {
-              merged[date] = Math.max(merged[date] || 0, minutes);
-            }
-            rawDailyMinutes = merged;
-          }
-        }
-
-        return {
-          success: true,
-          data: {
-            totalMinutes,
-            weekMinutes,
-            todayMinutes,
-            streak,
-            rawDailyMinutes
-          }
-        };
-      }
-
-      case 'RESET_STATS': {
-        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
-        log('[JP343] Stats reset');
-        return { success: true };
-      }
-
-      default:
-        return { success: false, error: 'Unknown message type' };
-    }
-    } catch (error) {
-      log('[JP343] Error in handleMessage:', message.type, error);
-      return { success: false, error: 'Internal error' };
-    }
-  }
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
 
