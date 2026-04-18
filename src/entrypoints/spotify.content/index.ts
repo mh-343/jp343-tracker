@@ -32,6 +32,15 @@ export default defineContentScript({
 
     setupDebugCommands(logger, 'spotify', { logStatus: true });
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'spotify' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
+
     let wasPlaying = false;
     let lastTrackTitle = '';
     let lastTrackHref = '';
@@ -222,6 +231,8 @@ export default defineContentScript({
           log('[JP343] Spotify: Play started:', state.title);
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
         wasPlaying = true;
       } else if (!playing && wasPlaying) {

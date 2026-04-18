@@ -36,6 +36,15 @@ export default defineContentScript({
     log('[JP343] CI Japanese content script loaded');
     setupDebugCommands(logger, 'cijapanese', { logStatus: false });
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'cijapanese' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
+
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
       const mediaPlayer = document.querySelector('media-player');
@@ -199,6 +208,8 @@ export default defineContentScript({
           lastTitle = state.title;
           log('[JP343] CI Japanese Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
       });
 
@@ -252,6 +263,7 @@ export default defineContentScript({
       intervalIds.push(quickUpdate);
 
       log('[JP343] CI Japanese: Events bound');
+      sendDiagnostic('player_found');
     }
 
     const observer = new MutationObserver(() => {

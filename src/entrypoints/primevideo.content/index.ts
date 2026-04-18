@@ -77,6 +77,15 @@ export default defineContentScript({
     log('[JP343] Prime Video Content Script loaded');
     setupDebugCommands(logger, 'primevideo');
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'primevideo' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
+
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
       return {
@@ -646,6 +655,8 @@ export default defineContentScript({
           lastCurrentTime = video.currentTime;
           log('[JP343] Prime Video Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
       });
 
@@ -698,6 +709,7 @@ export default defineContentScript({
       intervalIds.push(updateInterval);
 
       log('[JP343] Prime Video: Events bound');
+      sendDiagnostic('player_found');
     }
 
     const observer = new MutationObserver(() => {

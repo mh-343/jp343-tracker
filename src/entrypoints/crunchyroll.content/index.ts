@@ -42,6 +42,16 @@ export default defineContentScript({
     const { log, debugLog } = logger;
     log('[JP343] Crunchyroll Content Script loaded');
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+    const isTopFrame = window === window.top;
+    function sendDiagnostic(code: string): void {
+      if (isIncognito || !isTopFrame) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'crunchyroll' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+    sendDiagnostic('content_script_loaded');
+
     const isIframe = window !== window.top;
     const isMainFrame = !isIframe;
     log('[JP343] Context:', isIframe ? 'iframe' : 'main frame');
@@ -806,6 +816,8 @@ export default defineContentScript({
           debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Crunchyroll Play:', state.title, '(ID:', lastVideoId, ')');
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
         }
       });
 
@@ -871,6 +883,7 @@ export default defineContentScript({
       }, 30000);
 
       log('[JP343] Crunchyroll Video events bound');
+      sendDiagnostic('player_found');
     }
 
     const observer = new MutationObserver(() => {
