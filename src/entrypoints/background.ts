@@ -9,6 +9,15 @@ import {
   updateBadge,
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
+import {
+  loadDiagnostics,
+  saveDiagnostics,
+  recordPlatformMilestone,
+  recordError,
+  recordBackgroundStartup,
+  buildExportReport
+} from '../lib/diagnostics';
+import type { DiagnosticsContext } from '../lib/background/diagnostics-context';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -20,7 +29,10 @@ import type {
   DirectSyncResult,
   BatchEntryResult,
   BatchSyncResponse,
-  SpotifyContentType
+  SpotifyContentType,
+  Platform,
+  ExtensionDiagnostics,
+  PlatformHealth
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
 
@@ -30,6 +42,66 @@ export default defineBackground(() => {
 
   log('[JP343] Background Service Worker started');
 
+  let inMemoryDiagnostics: ExtensionDiagnostics | null = null;
+  let diagnosticsFlushTimeout: ReturnType<typeof setTimeout> | null = null;
+  const DIAGNOSTICS_FLUSH_DELAY_MS = 500;
+
+  async function getOrLoadDiagnostics(): Promise<ExtensionDiagnostics> {
+    if (!inMemoryDiagnostics) {
+      inMemoryDiagnostics = await loadDiagnostics();
+    }
+    return inMemoryDiagnostics;
+  }
+
+  function scheduleDiagnosticsFlush(): void {
+    if (diagnosticsFlushTimeout) {
+      clearTimeout(diagnosticsFlushTimeout);
+    }
+    diagnosticsFlushTimeout = setTimeout(async () => {
+      if (inMemoryDiagnostics) {
+        await saveDiagnostics(inMemoryDiagnostics);
+      }
+      diagnosticsFlushTimeout = null;
+    }, DIAGNOSTICS_FLUSH_DELAY_MS);
+  }
+
+  function recordDiagnosticEvent(code: string, platform?: Platform): void {
+    getOrLoadDiagnostics().then(diagnostics => {
+      if (platform) {
+        const milestoneMap: Record<string, keyof PlatformHealth> = {
+          'content_script_loaded': 'contentScriptLoaded',
+          'player_found': 'playerFound',
+          'player_missing': 'playerMissing',
+          'metadata_found': 'metadataFound',
+          'metadata_missing': 'metadataMissing',
+          'video_play_sent': 'videoPlaySent'
+        };
+        const milestone = milestoneMap[code];
+        if (milestone) {
+          recordPlatformMilestone(diagnostics, platform, milestone);
+        } else {
+          recordError(diagnostics, code, platform);
+        }
+      } else {
+        recordError(diagnostics, code);
+      }
+      scheduleDiagnosticsFlush();
+    }).catch(() => {});
+  }
+
+  const diagnosticsContext: DiagnosticsContext = {
+    recordDiagnosticEvent,
+    getDiagnostics: getOrLoadDiagnostics,
+    buildExportReport
+  };
+
+  (async () => {
+    const diagnostics = await getOrLoadDiagnostics();
+    const manifest = browser.runtime.getManifest();
+    recordBackgroundStartup(diagnostics, manifest.version);
+    await saveDiagnostics(diagnostics);
+    log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
+  })();
 
   let cachedSettings: ExtensionSettings | null = null;
 
@@ -603,7 +675,7 @@ export default defineBackground(() => {
     syncEntriesDirect,
     pullAndMergeSettingsFromServer,
     fetchAndCacheServerStats,
-  });
+  }, diagnosticsContext);
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
     handleMessage(message, sender).then(

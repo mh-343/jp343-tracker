@@ -38,6 +38,17 @@ export default defineContentScript({
     const { log, debugLog, getBuffer, clearBuffer } = createDebugLogger('youtube');
     log('[JP343] YouTube Content Script loaded');
 
+    const isIncognito = browser.extension?.inIncognitoContext ?? false;
+
+    function sendDiagnostic(code: string): void {
+      if (isIncognito) return;
+      try {
+        browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'youtube' }).catch(() => {});
+      } catch { /* best-effort */ }
+    }
+
+    sendDiagnostic('content_script_loaded');
+
     if (DEBUG_MODE) {
       window.addEventListener('message', (event) => {
         if (event.source !== window || !event.data?.type) return;
@@ -439,6 +450,12 @@ export default defineContentScript({
         if (state && !state.isAd) {
           const initialTitle = state.title;
           sendMessage('VIDEO_PLAY', { state });
+          sendDiagnostic('video_play_sent');
+          if (state.title && state.title !== 'YouTube Video') {
+            sendDiagnostic('metadata_found');
+          } else {
+            sendDiagnostic('metadata_missing');
+          }
 
           setTimeout(() => {
             if (!isExtensionContextValid()) return;
@@ -668,8 +685,11 @@ export default defineContentScript({
         disconnectObserver();
         debugLog('INIT', 'Video found', { attempts });
         log('[JP343] Video found after', attempts, 'attempts');
+        sendDiagnostic('player_found');
       } else if (attempts < 10) {
         setTimeout(() => tryInitialVideoAttach(attempts + 1), 500);
+      } else {
+        sendDiagnostic('player_missing');
       }
     }
 
@@ -691,6 +711,7 @@ export default defineContentScript({
         currentVideoElement = video;
         attachVideoEvents(video);
         startAdMonitoring();
+        sendDiagnostic('player_found');
       }
     }, 2000);
     intervalIds.push(videoPollingId);

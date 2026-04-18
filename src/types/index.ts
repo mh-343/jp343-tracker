@@ -100,6 +100,7 @@ export interface ExtensionSettings {
   spotifyContentTypes: SpotifyContentType[];
   dailyGoalMinutes: number;
   requireJapaneseContent: boolean;
+  diagnosticsEnabled: boolean;
 }
 
 export interface BlockedChannel {
@@ -139,7 +140,9 @@ export type ExtensionMessage =
   | { type: 'GET_STATS' }
   | { type: 'RESET_STATS' }
   | { type: 'SYNC_ENTRIES_DIRECT' }
-  | { type: 'OPEN_DASHBOARD' };
+  | { type: 'OPEN_DASHBOARD' }
+  | { type: 'DIAGNOSTIC_EVENT'; code: string; platform?: Platform }
+  | { type: 'GET_DIAGNOSTICS' };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -200,7 +203,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
   dailyGoalMinutes: 60,
-  requireJapaneseContent: false
+  requireJapaneseContent: false,
+  diagnosticsEnabled: true
 };
 
 export const STORAGE_KEYS = {
@@ -210,5 +214,62 @@ export const STORAGE_KEYS = {
   SETTINGS: 'jp343_extension_settings',
   STATS: 'jp343_extension_stats',
   DISPLAY_NAME: 'jp343_extension_display_name',
-  CACHED_SERVER_STATS: 'jp343_cached_server_stats'
+  CACHED_SERVER_STATS: 'jp343_cached_server_stats',
+  DIAGNOSTICS: 'jp343_extension_diagnostics'
 } as const;
+
+export interface PlatformHealth {
+  contentScriptLoaded: number;
+  playerFound: number;
+  playerMissing: number;
+  metadataFound: number;
+  metadataMissing: number;
+  videoPlaySent: number;
+}
+
+export interface SyncHealth {
+  lastSuccess: string | null;
+  lastFailure: string | null;
+  consecutiveFailures: number;
+}
+
+export interface DiagnosticError {
+  code: string;
+  timestamp: string;
+  platform?: Platform;
+}
+
+export interface ExtensionDiagnostics {
+  schemaVersion: 1;
+  extensionVersion: string;
+  lastBackgroundStartup: string | null;
+  serviceWorkerRestarts: number;
+  platformHealth: Partial<Record<Platform, PlatformHealth>>;
+  syncHealth: SyncHealth;
+  recentErrors: DiagnosticError[];
+  lastReportSent: string | null;
+}
+
+export const DEFAULT_DIAGNOSTICS: ExtensionDiagnostics = {
+  schemaVersion: 1,
+  extensionVersion: '',
+  lastBackgroundStartup: null,
+  serviceWorkerRestarts: 0,
+  platformHealth: {},
+  syncHealth: {
+    lastSuccess: null,
+    lastFailure: null,
+    consecutiveFailures: 0
+  },
+  recentErrors: [],
+  lastReportSent: null
+};
+
+export const DEFAULT_PLATFORM_HEALTH: PlatformHealth = {
+  contentScriptLoaded: 0,
+  playerFound: 0,
+  playerMissing: 0,
+  metadataFound: 0,
+  metadataMissing: 0,
+  videoPlaySent: 0
+};

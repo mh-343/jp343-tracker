@@ -336,7 +336,152 @@ function getPlatformFromChannelId(channelId: string): string {
   return 'youtube';
 }
 
-// ── Panel C: Export / Import ────────────────────────────
+
+interface DiagnosticsReport {
+  schemaVersion: 1;
+  extensionVersion: string;
+  browser: string;
+  lastBackgroundStartup: string | null;
+  serviceWorkerRestarts: number;
+  platformHealth: Record<string, { contentScriptLoaded: number; playerFound: number; playerMissing: number; metadataFound: number; metadataMissing: number; videoPlaySent: number }>;
+  syncHealth: { lastSuccess: string | null; lastFailure: string | null; consecutiveFailures: number };
+  recentErrorCodes: Array<{ code: string; count: number }>;
+}
+
+function buildDiagnosticsPanel(container: HTMLElement, settings: ExtensionSettings): void {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const title = document.createElement('div');
+  title.className = 'settings-section-title';
+  title.textContent = 'Diagnostics';
+  section.appendChild(title);
+
+  section.appendChild(createToggleRow(
+    'Anonymous diagnostics',
+    'Help detect platform changes early by sending anonymous technical data',
+    settings.diagnosticsEnabled,
+    async (val) => { await updateSettings({ diagnosticsEnabled: val }); }
+  ));
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'diagnostics-status';
+  statusRow.id = 'diagnosticsStatus';
+  statusRow.textContent = 'Loading...';
+  section.appendChild(statusRow);
+
+  const actions = document.createElement('div');
+  actions.className = 'export-import-actions';
+  actions.style.marginTop = '12px';
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'export-btn';
+  exportBtn.textContent = 'Export Diagnostics';
+  exportBtn.addEventListener('click', () => handleDiagnosticsExport(section));
+  actions.appendChild(exportBtn);
+
+  section.appendChild(actions);
+  container.appendChild(section);
+
+  loadDiagnosticsStatus();
+}
+
+async function loadDiagnosticsStatus(): Promise<void> {
+  const statusEl = document.getElementById('diagnosticsStatus');
+  if (!statusEl) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_DIAGNOSTICS' });
+    if (!response.success || !response.data) {
+      statusEl.textContent = 'No diagnostics data';
+      return;
+    }
+
+    const report = response.data as DiagnosticsReport;
+    const platforms = Object.keys(report.platformHealth || {});
+
+    statusEl.textContent = '';
+
+    if (report.lastBackgroundStartup) {
+      const startup = new Date(report.lastBackgroundStartup);
+      const row = document.createElement('div');
+      row.className = 'diag-row';
+      row.textContent = 'Last startup: ' + startup.toLocaleString();
+      statusEl.appendChild(row);
+    }
+
+    const restartRow = document.createElement('div');
+    restartRow.className = 'diag-row';
+    restartRow.textContent = 'SW restarts: ' + report.serviceWorkerRestarts;
+    statusEl.appendChild(restartRow);
+
+    if (platforms.length > 0) {
+      const platformsDiv = document.createElement('div');
+      platformsDiv.className = 'diag-platforms';
+      for (const platform of platforms) {
+        const h = report.platformHealth[platform];
+        const playerRate = h.contentScriptLoaded > 0
+          ? Math.round((h.playerFound / h.contentScriptLoaded) * 100)
+          : 0;
+        const metaRate = h.playerFound > 0
+          ? Math.round((h.metadataFound / h.playerFound) * 100)
+          : 0;
+        const pDiv = document.createElement('div');
+        pDiv.className = 'diag-platform';
+        const strong = document.createElement('strong');
+        strong.textContent = platform;
+        pDiv.appendChild(strong);
+        pDiv.appendChild(document.createTextNode(': ' + h.videoPlaySent + ' plays, player ' + playerRate + '%, metadata ' + metaRate + '%'));
+        platformsDiv.appendChild(pDiv);
+      }
+      statusEl.appendChild(platformsDiv);
+    }
+
+    if (report.syncHealth.lastSuccess) {
+      const syncDate = new Date(report.syncHealth.lastSuccess);
+      const syncRow = document.createElement('div');
+      syncRow.className = 'diag-row diag-success';
+      syncRow.textContent = 'Last sync: ' + syncDate.toLocaleString();
+      statusEl.appendChild(syncRow);
+    }
+    if (report.syncHealth.consecutiveFailures > 0) {
+      const failRow = document.createElement('div');
+      failRow.className = 'diag-row diag-error';
+      failRow.textContent = 'Consecutive sync failures: ' + report.syncHealth.consecutiveFailures;
+      statusEl.appendChild(failRow);
+    }
+
+    if (statusEl.childNodes.length === 0) {
+      statusEl.textContent = 'No data yet';
+    }
+  } catch {
+    statusEl.textContent = 'Failed to load diagnostics';
+  }
+}
+
+async function handleDiagnosticsExport(statusContainer: HTMLElement): Promise<void> {
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'GET_DIAGNOSTICS' });
+    if (!response.success || !response.data) {
+      showStatus(statusContainer, 'No diagnostics data to export', 'error');
+      return;
+    }
+
+    const json = JSON.stringify(response.data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'jp343-diagnostics-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showStatus(statusContainer, 'Diagnostics exported', 'success');
+  } catch {
+    showStatus(statusContainer, 'Export failed', 'error');
+  }
+}
+
 
 function buildExportImportPanel(container: HTMLElement): void {
   const section = document.createElement('div');
@@ -553,6 +698,7 @@ async function rebuildSettingsPanel(panel: HTMLElement): Promise<void> {
   panel.textContent = '';
   const settings = await getSettings();
   buildGeneralPanel(panel, settings);
+  buildDiagnosticsPanel(panel, settings);
   buildExportImportPanel(panel);
 }
 
