@@ -1,4 +1,4 @@
-import type { Platform, ExtensionDiagnostics, PlatformHealth } from '../types';
+import type { Platform, ExtensionDiagnostics, PlatformHealth, DiagnosticError } from '../types';
 import { STORAGE_KEYS, DEFAULT_DIAGNOSTICS, DEFAULT_PLATFORM_HEALTH } from '../types';
 
 const MAX_RECENT_ERRORS = 50;
@@ -88,6 +88,94 @@ export interface DiagnosticsExport {
     consecutiveFailures: number;
   };
   recentErrorCodes: Array<{ code: string; count: number }>;
+}
+
+interface RemotePlatformEntry {
+  platform: string;
+  counters: PlatformHealth;
+  errors: Array<{ code: string; count: number }>;
+}
+
+interface RemotePayload {
+  schemaVersion: 1;
+  extensionVersion: string;
+  browser: string;
+  browserMajor: number;
+  platforms: RemotePlatformEntry[];
+}
+
+function getBrowserMajor(): number {
+  const match = navigator.userAgent.match(/(?:Chrome|Firefox)\/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function aggregateErrorsByPlatform(
+  errors: DiagnosticError[]
+): Map<string, Map<string, number>> {
+  const byPlatform = new Map<string, Map<string, number>>();
+  for (const err of errors) {
+    const platform = err.platform || 'unknown';
+    if (!byPlatform.has(platform)) {
+      byPlatform.set(platform, new Map());
+    }
+    const counts = byPlatform.get(platform)!;
+    counts.set(err.code, (counts.get(err.code) || 0) + 1);
+  }
+  return byPlatform;
+}
+
+export function buildRemotePayload(diagnostics: ExtensionDiagnostics): RemotePayload {
+  const browserInfo = navigator.userAgent.includes('Firefox') ? 'firefox' : 'chrome';
+  const errorsByPlatform = aggregateErrorsByPlatform(diagnostics.recentErrors);
+
+  const platforms: RemotePlatformEntry[] = [];
+  for (const [platform, health] of Object.entries(diagnostics.platformHealth)) {
+    const platformErrors = errorsByPlatform.get(platform);
+    const errors: Array<{ code: string; count: number }> = [];
+    if (platformErrors) {
+      for (const [code, count] of platformErrors) {
+        errors.push({ code, count });
+      }
+    }
+    platforms.push({
+      platform,
+      counters: { ...health },
+      errors
+    });
+  }
+
+  return {
+    schemaVersion: 1,
+    extensionVersion: diagnostics.extensionVersion,
+    browser: browserInfo,
+    browserMajor: getBrowserMajor(),
+    platforms
+  };
+}
+
+const DIAGNOSTICS_ENDPOINT = 'https://jp343.com/wp-json/jp343/v1/extension/diagnostics';
+
+export async function sendDiagnosticsReport(diagnostics: ExtensionDiagnostics): Promise<boolean> {
+  const payload = buildRemotePayload(diagnostics);
+  if (payload.platforms.length === 0) return false;
+
+  try {
+    const response = await fetch(DIAGNOSTICS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) {
+      diagnostics.lastReportSent = new Date().toISOString();
+      diagnostics.platformHealth = {};
+      diagnostics.recentErrors = [];
+      await saveDiagnostics(diagnostics);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export function buildExportReport(diagnostics: ExtensionDiagnostics): DiagnosticsExport {
