@@ -1,9 +1,11 @@
 import type { ExtensionMessage } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
+import type { DiagnosticsContext } from './diagnostics-context';
 import { handlePendingMessage } from './pending-messages';
 import { handleSettingsMessage } from './settings-messages';
 import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
+import { handleDiagnosticsMessage } from './diagnostics-messages';
 
 function getMessageType(message: unknown): string {
   if (!message || typeof message !== 'object') return 'unknown';
@@ -11,7 +13,10 @@ function getMessageType(message: unknown): string {
   return typeof candidate.type === 'string' ? candidate.type : 'unknown';
 }
 
-export function createBackgroundMessageHandler(context: BackgroundMessageContext) {
+export function createBackgroundMessageHandler(
+  context: BackgroundMessageContext,
+  diagnosticsContext: DiagnosticsContext
+) {
   return async function handleMessage(
     message: ExtensionMessage,
     messageSender: browser.Runtime.MessageSender
@@ -58,6 +63,10 @@ export function createBackgroundMessageHandler(context: BackgroundMessageContext
         case 'GET_STATS':
         case 'RESET_STATS':
           return handleStatsSyncMessage(message, context);
+
+        case 'DIAGNOSTIC_EVENT':
+        case 'GET_DIAGNOSTICS':
+          return handleDiagnosticsMessage(message, diagnosticsContext);
 
         default:
           return { success: false, error: 'Unknown message type' };
