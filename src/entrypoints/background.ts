@@ -137,17 +137,6 @@ export default defineBackground(() => {
     } catch { /* best-effort */ }
   }
 
-  (async () => {
-    if (await isDiagnosticsAllowed()) {
-      const diagnostics = await getOrLoadDiagnostics();
-      const manifest = browser.runtime.getManifest();
-      recordBackgroundStartup(diagnostics, manifest.version);
-      await saveDiagnostics(diagnostics);
-      log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
-      maybeSendDiagnostics();
-    }
-  })();
-
   let cachedSettings: ExtensionSettings | null = null;
 
   async function loadSettings(): Promise<ExtensionSettings> {
@@ -174,6 +163,17 @@ export default defineBackground(() => {
   let settingsPullComplete = false;
   let settingsLastUpdated = '';
   let settingsLastPullTime = 0;
+
+  (async () => {
+    if (await isDiagnosticsAllowed()) {
+      const diagnostics = await getOrLoadDiagnostics();
+      const manifest = browser.runtime.getManifest();
+      recordBackgroundStartup(diagnostics, manifest.version);
+      await saveDiagnostics(diagnostics);
+      log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
+      maybeSendDiagnostics();
+    }
+  })().catch(() => {});
 
   async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
     if (!settingsPullComplete) return;
