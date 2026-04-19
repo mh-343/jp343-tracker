@@ -40,6 +40,10 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     sendDiagnostic('content_script_loaded');
+    setTimeout(() => {
+      const hasPlayer = !!document.querySelector('[data-testid="control-button-playpause"]');
+      sendDiagnostic(hasPlayer ? 'player_found' : 'player_missing');
+    }, 15000);
 
     let wasPlaying = false;
     let lastTrackTitle = '';
@@ -233,6 +237,8 @@ export default defineContentScript({
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
           sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
+        } else {
+          sendDiagnostic('metadata_missing');
         }
         wasPlaying = true;
       } else if (!playing && wasPlaying) {

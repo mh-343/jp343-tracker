@@ -66,8 +66,24 @@ export default defineBackground(() => {
     }, DIAGNOSTICS_FLUSH_DELAY_MS);
   }
 
+  async function isDiagnosticsAllowed(): Promise<boolean> {
+    const settings = await loadSettings();
+    if (!settings.diagnosticsEnabled) return false;
+    try {
+      const perms = await browser.permissions.getAll() as { data_collection?: string[] };
+      if (perms.data_collection && !perms.data_collection.includes('technicalAndInteraction')) {
+        return false;
+      }
+    } catch { /* Chrome/older Firefox: no data_collection field, proceed */ }
+    return true;
+  }
+
   function recordDiagnosticEvent(code: string, platform?: Platform): void {
-    getOrLoadDiagnostics().then(diagnostics => {
+    isDiagnosticsAllowed().then(allowed => {
+      if (!allowed) return;
+      return getOrLoadDiagnostics();
+    }).then(diagnostics => {
+      if (!diagnostics) return;
       if (platform) {
         const milestoneMap: Record<string, keyof PlatformHealth> = {
           'content_script_loaded': 'contentScriptLoaded',
@@ -100,8 +116,8 @@ export default defineBackground(() => {
 
   async function maybeSendDiagnostics(): Promise<void> {
     try {
-      const settings = await loadSettings();
-      if (!settings.diagnosticsEnabled) return;
+      const allowed = await isDiagnosticsAllowed();
+      if (!allowed) return;
 
       const diagnostics = await getOrLoadDiagnostics();
       const lastSent = diagnostics.lastReportSent
@@ -122,12 +138,14 @@ export default defineBackground(() => {
   }
 
   (async () => {
-    const diagnostics = await getOrLoadDiagnostics();
-    const manifest = browser.runtime.getManifest();
-    recordBackgroundStartup(diagnostics, manifest.version);
-    await saveDiagnostics(diagnostics);
-    log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
-    maybeSendDiagnostics();
+    if (await isDiagnosticsAllowed()) {
+      const diagnostics = await getOrLoadDiagnostics();
+      const manifest = browser.runtime.getManifest();
+      recordBackgroundStartup(diagnostics, manifest.version);
+      await saveDiagnostics(diagnostics);
+      log('[JP343] Diagnostics initialized, SW restarts:', diagnostics.serviceWorkerRestarts);
+      maybeSendDiagnostics();
+    }
   })();
 
   let cachedSettings: ExtensionSettings | null = null;

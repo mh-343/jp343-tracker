@@ -85,6 +85,7 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     sendDiagnostic('content_script_loaded');
+    setTimeout(() => { if (!currentVideoElement && isPlayerActive()) sendDiagnostic('player_missing'); }, 15000);
 
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
@@ -656,7 +657,7 @@ export default defineContentScript({
           log('[JP343] Prime Video Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
+          sendDiagnostic(state.title && state.title !== 'Prime Video Content' ? 'metadata_found' : 'metadata_missing');
         }
       });
 

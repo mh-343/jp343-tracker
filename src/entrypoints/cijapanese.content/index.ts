@@ -44,6 +44,9 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     sendDiagnostic('content_script_loaded');
+    if (isWatchPage()) {
+      setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
+    }
 
     function collectUIState(): Record<string, unknown> {
       const video = findVideoElement();
@@ -209,7 +212,7 @@ export default defineContentScript({
           log('[JP343] CI Japanese Play:', state.title);
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
+          sendDiagnostic(state.title && state.title !== 'CI Japanese Content' ? 'metadata_found' : 'metadata_missing');
         }
       });
 
