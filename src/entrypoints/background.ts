@@ -711,6 +711,9 @@ export default defineBackground(() => {
   initBadgeService(loadSettings);
   scheduleStatusBadgeUpdate();
 
+  let resolveRecovery: () => void;
+  const recoveryReady = new Promise<void>(r => { resolveRecovery = r; });
+
   const handleMessage = createBackgroundMessageHandler({
     log,
     loadSettings,
@@ -724,6 +727,7 @@ export default defineBackground(() => {
     syncEntriesDirect,
     pullAndMergeSettingsFromServer,
     fetchAndCacheServerStats,
+    recoveryReady,
   }, diagnosticsContext);
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
@@ -747,6 +751,9 @@ export default defineBackground(() => {
       typeof s.url === 'string' &&
       typeof s.startTime === 'number' && s.startTime > MIN_VALID_TIMESTAMP &&
       typeof s.accumulatedMs === 'number' && s.accumulatedMs >= 0 &&
+      typeof s.lastUpdate === 'number' && s.lastUpdate > MIN_VALID_TIMESTAMP &&
+      typeof s.isActive === 'boolean' &&
+      typeof s.isPaused === 'boolean' &&
       typeof s.platform === 'string' && VALID_PLATFORMS.includes(s.platform as string)
     );
   }
@@ -767,6 +774,15 @@ export default defineBackground(() => {
     const sessionAge = Date.now() - savedSession.lastUpdate;
 
     if (sessionAge < MAX_RESTORE_AGE_MS) {
+      if (
+        savedSession.platform === 'generic' &&
+        savedSession.isActive &&
+        !savedSession.isPaused &&
+        sessionAge > 0
+      ) {
+        savedSession.accumulatedMs += sessionAge;
+        log('[JP343] Recovery: Manual session gap compensation:', Math.round(sessionAge / 1000), 's');
+      }
       tracker.restoreSession(savedSession);
       log('[JP343] Recovery: Session restored (age:', Math.round(sessionAge / 1000), 's)');
       scheduleStatusBadgeUpdate();
@@ -812,7 +828,7 @@ export default defineBackground(() => {
     }
   }
 
-  recoverSession();
+  recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
 
   browser.alarms.create('jp343-check', { periodInMinutes: 5 });
