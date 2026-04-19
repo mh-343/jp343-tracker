@@ -36,6 +36,8 @@ export default defineContentScript({
     log('[JP343] CI Japanese content script loaded');
     setupDebugCommands(logger, 'cijapanese', { logStatus: false });
 
+    const IGNORE_PATHS = ['/landing', '/pricing', '/about', '/login', '/signup', '/register'];
+
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
     function sendDiagnostic(code: string): void {
       if (isIncognito) return;
@@ -98,8 +100,6 @@ export default defineContentScript({
         || (document.querySelector('[data-media-player] video') as HTMLVideoElement)
         || null;
     }
-
-    const IGNORE_PATHS = ['/landing', '/pricing', '/about', '/login', '/signup', '/register'];
 
     function isWatchPage(): boolean {
       const path = window.location.pathname.replace(/\/$/, '');
