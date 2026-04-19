@@ -165,14 +165,16 @@ export async function sendDiagnosticsReport(diagnostics: ExtensionDiagnostics): 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (response.ok) {
-      diagnostics.lastReportSent = new Date().toISOString();
-      diagnostics.platformHealth = {};
-      diagnostics.recentErrors = [];
-      await saveDiagnostics(diagnostics);
-      return true;
-    }
-    return false;
+    if (!response.ok) return false;
+
+    const result = await response.json() as { received?: number };
+    if (!result.received || result.received <= 0) return false;
+
+    diagnostics.lastReportSent = new Date().toISOString();
+    diagnostics.platformHealth = {};
+    diagnostics.recentErrors = [];
+    await saveDiagnostics(diagnostics);
+    return true;
   } catch {
     return false;
   }

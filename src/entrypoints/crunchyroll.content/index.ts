@@ -51,6 +51,9 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     sendDiagnostic('content_script_loaded');
+    if (window.location.pathname.includes('/watch/')) {
+      setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
+    }
 
     const isIframe = window !== window.top;
     const isMainFrame = !isIframe;
@@ -817,7 +820,7 @@ export default defineContentScript({
           log('[JP343] Crunchyroll Play:', state.title, '(ID:', lastVideoId, ')');
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
+          sendDiagnostic(state.title && state.title !== 'Crunchyroll Content' ? 'metadata_found' : 'metadata_missing');
         }
       });
 
