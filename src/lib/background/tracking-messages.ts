@@ -9,6 +9,7 @@ export async function handleTrackingMessage(
   messageSender: browser.Runtime.MessageSender,
   context: BackgroundMessageContext
 ): Promise<unknown> {
+  await context.recoveryReady;
   switch (message.type) {
     case 'VIDEO_PLAY': {
       const settings = await context.loadSettings();

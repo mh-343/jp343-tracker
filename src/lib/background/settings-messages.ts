@@ -12,6 +12,7 @@ export async function handleSettingsMessage(
   messageSender: browser.Runtime.MessageSender,
   context: BackgroundMessageContext
 ): Promise<unknown> {
+  await context.recoveryReady;
   switch (message.type) {
     case 'JP343_SITE_LOADED': {
       const senderUrl = messageSender?.url || messageSender?.tab?.url || '';

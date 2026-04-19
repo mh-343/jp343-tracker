@@ -19,4 +19,5 @@ export interface BackgroundMessageContext {
   syncEntriesDirect: () => Promise<DirectSyncResult>;
   pullAndMergeSettingsFromServer: () => Promise<void>;
   fetchAndCacheServerStats: () => Promise<void>;
+  recoveryReady: Promise<void>;
 }
