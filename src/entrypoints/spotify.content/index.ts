@@ -49,6 +49,7 @@ export default defineContentScript({
     let lastTrackTitle = '';
     let lastTrackHref = '';
     let isCurrentlyInAd = false;
+    let metadataMissingReported = false;
 
     function isPlaying(): boolean {
       const btn = document.querySelector('[data-testid="control-button-playpause"]');
@@ -228,23 +229,26 @@ export default defineContentScript({
       }
 
       if (playing && !wasPlaying) {
-        lastTrackHref = trackHref;
-        lastTrackTitle = trackTitle;
         const state = getCurrentState();
         if (state) {
+          lastTrackHref = trackHref;
+          lastTrackTitle = trackTitle;
           log('[JP343] Spotify: Play started:', state.title);
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
           sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
-        } else {
+          wasPlaying = true;
+          metadataMissingReported = false;
+        } else if (!metadataMissingReported) {
           sendDiagnostic('metadata_missing');
+          metadataMissingReported = true;
         }
-        wasPlaying = true;
       } else if (!playing && wasPlaying) {
         log('[JP343] Spotify: Paused');
         sendMessage('VIDEO_PAUSE');
         wasPlaying = false;
+        metadataMissingReported = false;
       }
     }
 
