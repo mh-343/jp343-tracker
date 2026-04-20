@@ -2,6 +2,11 @@
 
 Browser extension that automatically tracks your Japanese immersion time on streaming platforms.
 
+## Install
+
+- [Chrome Web Store](https://chromewebstore.google.com/detail/jp343-track-your-japanese/ogjnhhmcfdkpmllikfmjdlhjepadeigl)
+- [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jp343-immersion-tracker/)
+
 ## Supported Platforms
 
 - YouTube
@@ -9,6 +14,7 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - Crunchyroll
 - Amazon Prime Video
 - Disney+
+- Spotify
 - CI Japanese
 
 ## Features
@@ -21,11 +27,6 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - **Title editing** during or after tracking sessions
 - **Optional account sync** to [jp343.com](https://jp343.com) for cross-device stats
 - **Works offline** with local storage, no account required
-
-## Installation
-
-- **Chrome / Edge:** [Chrome Web Store](https://chromewebstore.google.com/detail/jp343-track-your-japanese/ogjnhhmcfdkpmllikfmjdlhjepadeigl)
-- **Firefox:** [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/jp343-immersion-tracker/)
 
 ## Permissions
 
