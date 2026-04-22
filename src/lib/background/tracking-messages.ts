@@ -61,6 +61,7 @@ export async function handleTrackingMessage(
     }
 
     case 'VIDEO_PAUSE': {
+      tracker.confirmPlayback();
       tracker.pauseSession();
       const session = tracker.getCurrentSession();
       await context.saveSessionState(session);
@@ -69,6 +70,7 @@ export async function handleTrackingMessage(
     }
 
     case 'VIDEO_ENDED': {
+      tracker.confirmPlayback();
       const entry = tracker.finalizeSession();
       if (entry) {
         await context.savePendingEntry(entry);
@@ -91,6 +93,7 @@ export async function handleTrackingMessage(
     }
 
     case 'VIDEO_STATE_UPDATE': {
+      tracker.confirmPlayback();
       if ('state' in message && message.state && typeof message.state === 'object') {
         if (message.state.title) {
           tracker.updateSessionTitleFromAutoFetch(message.state.title);

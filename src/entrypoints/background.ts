@@ -857,6 +857,7 @@ export default defineBackground(() => {
   });
 
   browser.tabs.onRemoved.addListener(async (tabId) => {
+    await recoveryReady;
     const session = tracker.getCurrentSession();
     if (session && session.tabId === tabId) {
       log('[JP343] Tab closed - saving session');
@@ -871,6 +872,7 @@ export default defineBackground(() => {
 
   browser.tabs.onUpdated.addListener(async (tabId, changeInfo, _tab) => {
     if (!changeInfo.url) return;
+    await recoveryReady;
 
     const session = tracker.getCurrentSession();
     if (!session || session.tabId !== tabId) return;

@@ -21,10 +21,13 @@ export function generateProjectId(platform: Platform, title: string, videoId: st
   return `ext_${platform}_${normalized}`;
 }
 
+const MAX_HEARTBEAT_GAP_MS = 45_000;
+
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
+  private pendingGapMs: number = 0;
 
   constructor() {
     this.tickInterval = setInterval(() => this.tick(), 1000);
@@ -108,11 +111,26 @@ export class TimeTracker {
   }
 
   restoreSession(saved: TrackingSession): void {
-    this.session = {
-      ...saved,
-      lastUpdate: Date.now()
-    };
-    log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
+    const now = Date.now();
+    if (saved.isActive && !saved.isPaused && saved.platform !== 'generic') {
+      this.pendingGapMs = Math.max(0, now - saved.lastUpdate);
+    } else {
+      this.pendingGapMs = 0;
+    }
+    this.session = { ...saved, lastUpdate: now };
+    log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's',
+      this.pendingGapMs > 0 ? `(pending gap: ${Math.round(this.pendingGapMs / 1000)}s)` : '');
+  }
+
+  confirmPlayback(): void {
+    if (!this.session || this.pendingGapMs <= 0) return;
+    if (this.pendingGapMs < MAX_HEARTBEAT_GAP_MS) {
+      this.session.accumulatedMs += this.pendingGapMs;
+      log('[JP343] Gap compensated:', Math.round(this.pendingGapMs / 1000), 's');
+    } else {
+      log('[JP343] Gap too large, discarded:', Math.round(this.pendingGapMs / 1000), 's');
+    }
+    this.pendingGapMs = 0;
   }
 
   onAdStart(): void {

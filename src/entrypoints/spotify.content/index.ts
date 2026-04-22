@@ -50,6 +50,8 @@ export default defineContentScript({
     let lastTrackHref = '';
     let isCurrentlyInAd = false;
     let metadataMissingReported = false;
+    let metadataMissRetries = 0;
+    const METADATA_MISS_THRESHOLD = 3;
 
     function isPlaying(): boolean {
       const btn = document.querySelector('[data-testid="control-button-playpause"]');
@@ -223,8 +225,12 @@ export default defineContentScript({
         const state = getCurrentState();
         if (state) {
           sendMessage('VIDEO_PLAY', { state });
+          wasPlaying = true;
+        } else {
+          wasPlaying = false;
+          metadataMissRetries = 0;
+          metadataMissingReported = false;
         }
-        wasPlaying = true;
         return;
       }
 
@@ -237,18 +243,23 @@ export default defineContentScript({
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
           sendMessage('VIDEO_PLAY', { state });
           sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title ? 'metadata_found' : 'metadata_missing');
+          sendDiagnostic('metadata_found');
           wasPlaying = true;
           metadataMissingReported = false;
-        } else if (!metadataMissingReported) {
-          sendDiagnostic('metadata_missing');
-          metadataMissingReported = true;
+          metadataMissRetries = 0;
+        } else {
+          metadataMissRetries++;
+          if (metadataMissRetries >= METADATA_MISS_THRESHOLD && !metadataMissingReported) {
+            sendDiagnostic('metadata_missing');
+            metadataMissingReported = true;
+          }
         }
       } else if (!playing && wasPlaying) {
         log('[JP343] Spotify: Paused');
         sendMessage('VIDEO_PAUSE');
         wasPlaying = false;
         metadataMissingReported = false;
+        metadataMissRetries = 0;
       }
     }
 
@@ -290,13 +301,6 @@ export default defineContentScript({
       bodyObserver.observe(document.body, { childList: true, subtree: true });
       observers.push(bodyObserver);
     }
-
-    setTimeout(() => {
-      if (isPlaying() && !wasPlaying) {
-        log('[JP343] Spotify: Already playing on load');
-        handlePlayStateChange();
-      }
-    }, 2000);
 
     browser.runtime.onMessage.addListener((message) => {
       const btn = document.querySelector('[data-testid="control-button-playpause"]') as HTMLElement | null;
