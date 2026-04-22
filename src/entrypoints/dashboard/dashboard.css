@@ -572,6 +572,7 @@
     .session-info { flex: 1; min-width: 0; }
 
     .session-title {
+      display: block;
       font-size: 13px;
       font-weight: 500;
       white-space: nowrap;
