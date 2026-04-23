@@ -43,6 +43,8 @@ export default defineBackground(() => {
 
   log('[JP343] Background Service Worker started');
 
+  browser.runtime.setUninstallURL('https://jp343.com/uninstall/');
+
   let inMemoryDiagnostics: ExtensionDiagnostics | null = null;
   let diagnosticsFlushTimeout: ReturnType<typeof setTimeout> | null = null;
   const DIAGNOSTICS_FLUSH_DELAY_MS = 500;
