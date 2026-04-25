@@ -9,6 +9,7 @@ import {
   updateBadge,
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
+import { initContextMenu } from '../lib/background/context-menu';
 import {
   loadDiagnostics,
   saveDiagnostics,
@@ -577,6 +578,7 @@ export default defineBackground(() => {
     } catch (error) {
       log('[JP343] Failed to save session state:', error);
     }
+    updateTrackingMenu();
   }
 
   async function loadStats(): Promise<ExtensionStats> {
@@ -738,6 +740,12 @@ export default defineBackground(() => {
       () => sendResponse({ success: false, error: 'Internal error' })
     );
     return true;
+  });
+
+  const updateTrackingMenu = initContextMenu({
+    recoveryReady,
+    saveSessionState,
+    savePendingEntry
   });
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
@@ -926,4 +934,5 @@ export default defineBackground(() => {
       }
     }
   });
+
 });
