@@ -50,8 +50,10 @@ export async function handleSettingsMessage(
 
     case 'UPDATE_SETTINGS': {
       if ('settings' in message && message.settings) {
-        await context.saveSettings(message.settings as ExtensionSettings);
-        context.syncSettingsToServer(message.settings as ExtensionSettings).catch(() => {});
+        const newSettings = message.settings as ExtensionSettings;
+        await context.saveSettings(newSettings);
+        context.syncSettingsToServer(newSettings).catch(() => {});
+
         return { success: true };
       }
       return { success: false, error: 'No settings provided' };

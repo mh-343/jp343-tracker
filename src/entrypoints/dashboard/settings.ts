@@ -93,15 +93,13 @@ function showStatus(container: HTMLElement, message: string, type: 'success' | '
   }
 }
 
-// ── Panel A: General Settings ────────────────────────────
-
-function buildGeneralPanel(container: HTMLElement, settings: ExtensionSettings): void {
+function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings): void {
   const section = document.createElement('div');
   section.className = 'settings-section';
 
   const title = document.createElement('div');
   title.className = 'settings-section-title';
-  title.textContent = 'General';
+  title.textContent = 'Tracking';
   section.appendChild(title);
 
   section.appendChild(createToggleRow(
@@ -113,6 +111,8 @@ function buildGeneralPanel(container: HTMLElement, settings: ExtensionSettings):
     }
   ));
 
+  buildGoalRow(section, settings);
+
   section.appendChild(createToggleRow(
     'Merge same-day sessions',
     'Combine repeated sessions of the same video on the same day',
@@ -120,7 +120,18 @@ function buildGeneralPanel(container: HTMLElement, settings: ExtensionSettings):
     async (val) => { await updateSettings({ mergeSameDaySessions: val }); }
   ));
 
-  buildGoalRow(section, settings);
+  container.appendChild(section);
+}
+
+function buildPlatformsPanel(container: HTMLElement, settings: ExtensionSettings): void {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const title = document.createElement('div');
+  title.className = 'settings-section-title';
+  title.textContent = 'Platforms';
+  section.appendChild(title);
+
   buildPlatformToggles(section, settings);
   buildSpotifyChips(section, settings);
 
@@ -343,7 +354,7 @@ function buildDiagnosticsPanel(container: HTMLElement, settings: ExtensionSettin
 
   const title = document.createElement('div');
   title.className = 'settings-section-title';
-  title.textContent = 'Help improve jp343';
+  title.textContent = 'Privacy';
   section.appendChild(title);
 
   section.appendChild(createToggleRow(
@@ -363,7 +374,7 @@ function buildExportImportPanel(container: HTMLElement): void {
 
   const title = document.createElement('div');
   title.className = 'settings-section-title';
-  title.textContent = 'Export / Import';
+  title.textContent = 'Backup';
   section.appendChild(title);
 
   const desc = document.createElement('div');
@@ -571,7 +582,8 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
 async function rebuildSettingsPanel(panel: HTMLElement): Promise<void> {
   panel.textContent = '';
   const settings = await getSettings();
-  buildGeneralPanel(panel, settings);
+  buildTrackingPanel(panel, settings);
+  buildPlatformsPanel(panel, settings);
   buildDiagnosticsPanel(panel, settings);
   buildExportImportPanel(panel);
 }
