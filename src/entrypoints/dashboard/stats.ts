@@ -1,15 +1,25 @@
 import type { ExtensionStats } from '../../types';
 import { STORAGE_KEYS } from '../../types';
-import { formatStatDuration, getLocalDateString, getWeekDates } from '../../lib/format-utils';
+import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
 
 export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
 let _localDailyMinutes: Record<string, number> = {};
 let _goalMinutes = 60;
+let _dayStartHour = 0;
+let _dayStartHourSynced = false;
 
 export function setLocalDailyMinutes(dm: Record<string, number>): void {
   _localDailyMinutes = dm;
+}
+
+export function setDayStartHour(hour: number): void {
+  _dayStartHour = Math.max(0, Math.min(6, hour || 0));
+}
+
+export function getDayStartHour(): number {
+  return _dayStartHour;
 }
 
 export function setGoalMinutes(minutes: number): void {
@@ -96,7 +106,7 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
     await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
 
     _goalMinutes = newGoal;
-    renderGoalBar(_localDailyMinutes[getLocalDateString()] || 0, newGoal);
+    renderGoalBar(_localDailyMinutes[getLocalDateString(new Date(), _dayStartHour)] || 0, newGoal);
     editor.classList.remove('open');
   });
 
@@ -160,14 +170,14 @@ export function renderHeroTime(totalMinutes: number): void {
 }
 
 export function renderStats(stats: ExtensionStats): void {
-  const todayStr = getLocalDateString();
+  const todayStr = getLocalDateString(new Date(), _dayStartHour);
   const todayMin = stats.dailyMinutes[todayStr] || 0;
 
-  const weekDates = getWeekDates();
+  const weekDates = getWeekDates(_dayStartHour);
   const weekMin = weekDates.reduce((sum, d) => sum + (stats.dailyMinutes[d.date] || 0), 0);
 
-  const now = new Date();
-  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const logicalNow = getLogicalNow(_dayStartHour);
+  const monthPrefix = `${logicalNow.getFullYear()}-${String(logicalNow.getMonth() + 1).padStart(2, '0')}`;
   const monthMin = Object.entries(stats.dailyMinutes)
     .filter(([date]) => date.startsWith(monthPrefix))
     .reduce((sum, [, min]) => sum + min, 0);
@@ -316,7 +326,7 @@ export function renderWeekBars(dailyMinutes: Record<string, number>): void {
   if (!container) return;
   container.textContent = '';
 
-  const days = getWeekDates();
+  const days = getWeekDates(_dayStartHour);
   const maxMin = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
   const BAR_MAX_PX = 64;
 
@@ -351,7 +361,7 @@ export function renderMonthBars(dailyMinutes: Record<string, number>): void {
   if (!container) return;
   container.textContent = '';
 
-  const now = new Date();
+  const now = getLogicalNow(_dayStartHour);
   const months: { key: string; label: string; minutes: number; isCurrent: boolean }[] = [];
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -403,13 +413,15 @@ function mergeDailyMinutes(
 ): Record<string, number> {
   const merged: Record<string, number> = { ...server };
   for (const [date, localMin] of Object.entries(local)) {
-    if (localMin > (merged[date] ?? 0)) merged[date] = localMin;
+    if (!(date in merged)) {
+      merged[date] = localMin;
+    }
   }
   return merged;
 }
 
 function applyDerivedStats(dailyMinutes: Record<string, number>): void {
-  const now = new Date();
+  const now = getLogicalNow(_dayStartHour);
   const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   let totalMin = 0;
@@ -438,7 +450,7 @@ function applyDerivedStats(dailyMinutes: Record<string, number>): void {
     setText('statMonthlyAvg', formatStatDuration(Math.round(totalMin / activeMonths.size)));
 }
 
-export function applyServerStats(serverData: ServerStatsResponse): void {
+export function applyServerStats(serverData: ServerStatsResponse, fromCache = false): void {
   if (serverData.total_seconds !== undefined) {
     renderHeroTime(serverData.total_seconds / 60);
   }
@@ -450,7 +462,25 @@ export function applyServerStats(serverData: ServerStatsResponse): void {
     const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const tzMatch = !serverData.timezone || serverData.timezone === browserTz;
     if (tzMatch) {
-      setText('statToday', formatStatDuration(serverData.today_seconds / 60));
+      const todayKey = getLocalDateString(new Date(), _dayStartHour);
+      const todayMin = Math.max(_localDailyMinutes[todayKey] || 0, serverData.today_seconds / 60);
+      _localDailyMinutes[todayKey] = todayMin;
+      setText('statToday', formatStatDuration(todayMin));
+      renderGoalBar(todayMin, _goalMinutes);
+    }
+  }
+  if (!fromCache && !_dayStartHourSynced && serverData.day_boundary_hour !== undefined) {
+    _dayStartHourSynced = true;
+    const serverHour = Math.max(0, Math.min(6, serverData.day_boundary_hour));
+    if (serverHour !== _dayStartHour) {
+      _dayStartHour = serverHour;
+      browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
+        const current = { ...result[STORAGE_KEYS.SETTINGS] };
+        if ((current.dayStartHour || 0) !== serverHour) {
+          current.dayStartHour = serverHour;
+          browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: current });
+        }
+      }).catch(() => {});
     }
   }
   if (serverData.streak !== undefined) {
@@ -472,6 +502,6 @@ export function applyServerStats(serverData: ServerStatsResponse): void {
 export async function applyCachedServerStats(): Promise<void> {
   const cached = (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
   if (cached) {
-    applyServerStats(cached);
+    applyServerStats(cached, true);
   }
 }

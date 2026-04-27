@@ -92,6 +92,7 @@ function updateToggleDisplay(enabled: boolean): void {
 }
 
 let _popupGoalMinutes = 60;
+let _popupDayStartHour = 0;
 
 function renderGoalMicroBar(todayMinutes: number): void {
   const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
@@ -110,6 +111,7 @@ async function loadAndApplySettings(): Promise<void> {
       renderBlockedList();
       updateSpotifyFilterUI(settings);
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
+      _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
       updateJpFilterDisplay(settings.requireJapaneseContent ?? false);
     }
   } catch (error) {
@@ -913,7 +915,7 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
   const container = document.getElementById('weekBars');
   if (!container) return;
 
-  const days = getWeekDates();
+  const days = getWeekDates(_popupDayStartHour);
   const maxVal = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
 
   container.replaceChildren();

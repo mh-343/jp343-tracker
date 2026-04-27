@@ -1,5 +1,5 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
-import { getLocalDateString } from '../lib/format-utils';
+import { getLocalDateString, getLogicalNow } from '../lib/format-utils';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure, handleAuthFailure } from '../lib/auth-helpers';
 import { loadPendingEntries } from '../lib/pending-entries';
@@ -142,11 +142,19 @@ export default defineBackground(() => {
 
   let cachedSettings: ExtensionSettings | null = null;
 
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
+      cachedSettings = null;
+    }
+  });
+
   async function loadSettings(): Promise<ExtensionSettings> {
     if (cachedSettings) return { ...cachedSettings };
     try {
       const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
-      cachedSettings = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
+      const raw = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
+      raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
+      cachedSettings = raw;
       return { ...cachedSettings };
     } catch (error) {
       log('[JP343] Failed to load settings:', error);
@@ -194,6 +202,7 @@ export default defineBackground(() => {
           ext_api_token: userState.extApiToken,
           blocked_channels: JSON.stringify(settings.blockedChannels),
           spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
+          day_boundary_hour: String(settings.dayStartHour || 0),
         }),
       });
       const result = await resp.json();
@@ -288,11 +297,12 @@ export default defineBackground(() => {
 
         const settings = await loadSettings();
         if (settings.mergeSameDaySessions) {
-          const entryDay = getLocalDateString(new Date(entry.date));
+          const dsh = settings.dayStartHour || 0;
+          const entryDay = getLocalDateString(new Date(entry.date), dsh);
           const mergeTarget = pending.find(e =>
             e.project_id === entry.project_id &&
             e.project === entry.project &&
-            getLocalDateString(new Date(e.date)) === entryDay
+            getLocalDateString(new Date(e.date), dsh) === entryDay
           );
           if (mergeTarget) {
             mergeTarget.duration_min += entry.duration_min;
@@ -622,14 +632,17 @@ export default defineBackground(() => {
   async function updateStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
-      const entryDate = getLocalDateString(new Date(entry.date));
-      const today = getLocalDateString();
+      const settings = await loadSettings();
+      const dsh = settings.dayStartHour || 0;
+      const entryDate = getLocalDateString(new Date(entry.date), dsh);
+      const logicalNow = getLogicalNow(dsh);
+      const today = getLocalDateString(logicalNow);
 
       stats.totalMinutes += entry.duration_min;
       stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
 
       if (stats.lastActiveDate !== today) {
-        const yesterday = new Date();
+        const yesterday = new Date(logicalNow);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = getLocalDateString(yesterday);
 
@@ -657,9 +670,9 @@ export default defineBackground(() => {
     }
   }
 
-  function recalculateStreak(dailyMinutes: Record<string, number>): number {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  function recalculateStreak(dailyMinutes: Record<string, number>, dayStartHour = 0): number {
+    const today = getLogicalNow(dayStartHour);
+    today.setHours(12, 0, 0, 0);
 
     let streak = 0;
     const checkDate = new Date(today);
@@ -682,7 +695,8 @@ export default defineBackground(() => {
   async function subtractFromStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
-      const entryDate = getLocalDateString(new Date(entry.date));
+      const settings = await loadSettings();
+      const entryDate = getLocalDateString(new Date(entry.date), settings.dayStartHour || 0);
 
       stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
       if (stats.dailyMinutes[entryDate]) {
@@ -692,7 +706,7 @@ export default defineBackground(() => {
         }
       }
 
-      stats.currentStreak = recalculateStreak(stats.dailyMinutes);
+      stats.currentStreak = recalculateStreak(stats.dailyMinutes, settings.dayStartHour || 0);
 
 
       const dates = Object.keys(stats.dailyMinutes).sort();
