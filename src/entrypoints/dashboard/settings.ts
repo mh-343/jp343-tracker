@@ -113,6 +113,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
   ));
 
   buildGoalRow(section, settings);
+  buildDayStartRow(section, settings);
 
   section.appendChild(createToggleRow(
     'Merge same-day sessions',
@@ -185,6 +186,47 @@ function buildGoalRow(container: HTMLElement, settings: ExtensionSettings): void
   row.appendChild(unitBtn);
   row.appendChild(saveBtn);
   container.appendChild(row);
+}
+
+function buildDayStartRow(container: HTMLElement, settings: ExtensionSettings): void {
+  const row = document.createElement('div');
+  row.className = 'settings-goal-row';
+
+  const label = document.createElement('div');
+  label.className = 'settings-goal-label';
+  label.textContent = 'Day starts at';
+  row.appendChild(label);
+
+  const select = document.createElement('select');
+  select.className = 'settings-goal-input';
+  select.style.width = '120px';
+  for (let h = 0; h <= 6; h++) {
+    const opt = document.createElement('option');
+    opt.value = String(h);
+    opt.textContent = h === 0 ? '00:00 (default)' : `${String(h).padStart(2, '0')}:00`;
+    if (h === (settings.dayStartHour || 0)) opt.selected = true;
+    select.appendChild(opt);
+  }
+  row.appendChild(select);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'settings-goal-save';
+  saveBtn.textContent = 'Save';
+  saveBtn.addEventListener('click', async () => {
+    const hour = Math.max(0, Math.min(6, parseInt(select.value, 10) || 0));
+    await updateSettings({ dayStartHour: hour });
+    showStatus(container, 'Day start updated', 'success');
+  });
+  row.appendChild(saveBtn);
+
+  const desc = document.createElement('div');
+  desc.className = 'settings-description';
+  desc.textContent = 'Sessions before this hour count toward the previous day.';
+  desc.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:4px;padding:0 4px;';
+
+  container.appendChild(row);
+  container.appendChild(desc);
 }
 
 function buildPlatformToggles(container: HTMLElement, settings: ExtensionSettings): void {
@@ -539,7 +581,9 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
     };
 
     if (includeSettings && data.data.settings) {
-      updates[STORAGE_KEYS.SETTINGS] = { ...DEFAULT_SETTINGS, ...data.data.settings };
+      const imported = { ...DEFAULT_SETTINGS, ...data.data.settings };
+      imported.dayStartHour = Math.max(0, Math.min(6, imported.dayStartHour || 0));
+      updates[STORAGE_KEYS.SETTINGS] = imported;
     }
 
     await browser.storage.local.set(updates);

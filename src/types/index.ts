@@ -99,6 +99,7 @@ export interface ExtensionSettings {
   blockedChannels: BlockedChannel[];
   spotifyContentTypes: SpotifyContentType[];
   dailyGoalMinutes: number;
+  dayStartHour: number;
   requireJapaneseContent: boolean;
   diagnosticsEnabled: boolean;
 }
@@ -203,6 +204,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
   dailyGoalMinutes: 60,
+  dayStartHour: 0,
   requireJapaneseContent: false,
   diagnosticsEnabled: true
 };

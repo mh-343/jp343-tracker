@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { ajaxPost } from './api';
 import type { ServerSession, ServerStatsResponse } from './api';
+import { getDayStartHour } from './stats';
 import { setText, renderHeroTime, CACHED_SERVER_STATS_KEY } from './stats';
 
 let sessionDisplayCount = 20;
@@ -256,13 +257,14 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
         }
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const tzMatch = !cached.timezone || cached.timezone === browserTz;
-        const sessionDate = session.date ? getLocalDateString(new Date(session.date)) : '';
-        const today = getLocalDateString();
+        const dsh = getDayStartHour();
+        const sessionDate = session.date ? getLocalDateString(new Date(session.date), dsh) : '';
+        const today = getLocalDateString(new Date(), dsh);
         if (sessionDate === today && cached.today_seconds && tzMatch) {
           cached.today_seconds -= durationSec;
           setText('statToday', formatStatDuration(cached.today_seconds / 60));
         }
-        const weekDays = getWeekDates();
+        const weekDays = getWeekDates(dsh);
         const weekStart = weekDays[0]?.date ?? '';
         const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
         if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {

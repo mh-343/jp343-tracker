@@ -1,6 +1,6 @@
 import type { ExtensionMessage } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
-import { getLocalDateString } from '../format-utils';
+import { getLocalDateString, getLogicalNow } from '../format-utils';
 import type { BackgroundMessageContext } from './message-context';
 
 interface CachedServerStats {
@@ -11,6 +11,7 @@ interface CachedServerStats {
   daily_minutes?: Record<string, number>;
   timezone?: string;
   calendar_week_seconds?: number;
+  day_boundary_hour?: number;
 }
 
 export async function handleStatsSyncMessage(
@@ -30,13 +31,15 @@ export async function handleStatsSyncMessage(
 
     case 'GET_STATS': {
       const stats = await context.loadStats();
+      const settings = await context.loadSettings();
+      const dsh = settings.dayStartHour || 0;
 
-      const now = new Date();
+      const now = getLogicalNow(dsh);
       const dayOfWeek = now.getDay();
       const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
       const monday = new Date(now);
       monday.setDate(now.getDate() + mondayOffset);
-      monday.setHours(0, 0, 0, 0);
+      monday.setHours(12, 0, 0, 0);
       const mondayStr = getLocalDateString(monday);
 
       let weekMinutes = 0;
@@ -51,7 +54,7 @@ export async function handleStatsSyncMessage(
 
       let streak = stats.currentStreak;
       if (stats.lastActiveDate) {
-        const yesterday = new Date();
+        const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = getLocalDateString(yesterday);
         if (stats.lastActiveDate !== todayStr && stats.lastActiveDate !== yesterdayStr) {

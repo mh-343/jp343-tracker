@@ -43,15 +43,28 @@ export function formatSessionDate(isoDate: string): string {
   }
 }
 
-export function getLocalDateString(date: Date = new Date()): string {
+export function getLogicalNow(dayStartHour = 0): Date {
+  const now = new Date();
+  if (dayStartHour > 0 && now.getHours() < dayStartHour) {
+    now.setDate(now.getDate() - 1);
+  }
+  return now;
+}
+
+export function getLocalDateString(date: Date = new Date(), dayStartHour = 0): string {
+  if (dayStartHour > 0 && date.getHours() < dayStartHour) {
+    const shifted = new Date(date);
+    shifted.setDate(shifted.getDate() - 1);
+    date = shifted;
+  }
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-export function getWeekDates(): { date: string; label: string; isToday: boolean }[] {
-  const now = new Date();
+export function getWeekDates(dayStartHour = 0): { date: string; label: string; isToday: boolean }[] {
+  const now = getLogicalNow(dayStartHour);
   const dayOfWeek = now.getDay();
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   const todayStr = getLocalDateString(now);

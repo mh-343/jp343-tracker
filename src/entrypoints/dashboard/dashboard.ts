@@ -4,7 +4,7 @@ import { getLocalDateString } from '../../lib/format-utils';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
-import { setLocalDailyMinutes, setGoalMinutes, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
+import { setLocalDailyMinutes, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
 import { showSessionsLoading, renderSessions, renderServerSessions } from './sessions';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
@@ -16,6 +16,7 @@ interface DashboardData {
   userState: JP343UserState | null;
   activeSession: TrackingSession | null;
   goalMinutes: number;
+  dayStartHour: number;
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -32,7 +33,8 @@ async function loadData(): Promise<DashboardData> {
     stats: result[STORAGE_KEYS.STATS] || DEFAULT_STATS,
     userState: result[STORAGE_KEYS.USER] || null,
     activeSession: result[STORAGE_KEYS.SESSION] || null,
-    goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60
+    goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60,
+    dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0))
   };
 }
 
@@ -51,7 +53,8 @@ async function refresh(): Promise<void> {
     const data = await loadData();
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
     setGoalMinutes(data.goalMinutes);
-    renderGoalBar(data.stats.dailyMinutes[getLocalDateString()] || 0, data.goalMinutes);
+    setDayStartHour(data.dayStartHour);
+    renderGoalBar(data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0, data.goalMinutes);
     const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
     renderHeatmap(data.stats.dailyMinutes);
@@ -146,7 +149,8 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && (
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
-    changes[STORAGE_KEYS.USER]
+    changes[STORAGE_KEYS.USER] ||
+    changes[STORAGE_KEYS.SETTINGS]
   )) {
     refresh();
   }
