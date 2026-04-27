@@ -622,8 +622,8 @@ export default defineBackground(() => {
   async function updateStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
-      const entryDate = new Date(entry.date).toISOString().split('T')[0];
-      const today = new Date().toISOString().split('T')[0];
+      const entryDate = getLocalDateString(new Date(entry.date));
+      const today = getLocalDateString();
 
       stats.totalMinutes += entry.duration_min;
       stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
@@ -631,7 +631,7 @@ export default defineBackground(() => {
       if (stats.lastActiveDate !== today) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const yesterdayStr = getLocalDateString(yesterday);
 
         if (stats.lastActiveDate === yesterdayStr) {
           stats.currentStreak += 1;
@@ -643,7 +643,7 @@ export default defineBackground(() => {
 
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const cutoffStr = getLocalDateString(cutoff);
       for (const dateKey of Object.keys(stats.dailyMinutes)) {
         if (dateKey < cutoffStr) {
           delete stats.dailyMinutes[dateKey];
@@ -665,7 +665,7 @@ export default defineBackground(() => {
     const checkDate = new Date(today);
 
     for (let i = 0; i < 365; i++) {
-      const dateStr = checkDate.toISOString().split('T')[0];
+      const dateStr = getLocalDateString(checkDate);
       if ((dailyMinutes[dateStr] || 0) > 0) {
         streak++;
         checkDate.setDate(checkDate.getDate() - 1);
@@ -682,7 +682,7 @@ export default defineBackground(() => {
   async function subtractFromStats(entry: PendingEntry): Promise<void> {
     try {
       const stats = await loadStats();
-      const entryDate = new Date(entry.date).toISOString().split('T')[0];
+      const entryDate = getLocalDateString(new Date(entry.date));
 
       stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
       if (stats.dailyMinutes[entryDate]) {

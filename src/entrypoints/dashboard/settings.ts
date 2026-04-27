@@ -1,5 +1,6 @@
 import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from '../../types';
+import { getLocalDateString } from '../../lib/format-utils';
 
 interface ExportData {
   exportVersion: 1;
@@ -436,7 +437,7 @@ async function handleExport(statusContainer: HTMLElement): Promise<void> {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `jp343-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `jp343-backup-${getLocalDateString()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showStatus(statusContainer, 'Export downloaded', 'success');
