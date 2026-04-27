@@ -189,7 +189,7 @@ export function renderStats(stats: ExtensionStats): void {
         const d = new Date(date + 'T00:00:00');
         const weekStart = new Date(d);
         weekStart.setDate(d.getDate() - d.getDay());
-        activeWeeks.add(weekStart.toISOString().slice(0, 10));
+        activeWeeks.add(getLocalDateString(weekStart));
       }
     }
     if (activeWeeks.size > 0) {

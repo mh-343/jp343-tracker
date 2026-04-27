@@ -1,5 +1,6 @@
 import type { ExtensionMessage } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
+import { getLocalDateString } from '../format-utils';
 import type { BackgroundMessageContext } from './message-context';
 
 interface CachedServerStats {
@@ -36,10 +37,10 @@ export async function handleStatsSyncMessage(
       const monday = new Date(now);
       monday.setDate(now.getDate() + mondayOffset);
       monday.setHours(0, 0, 0, 0);
-      const mondayStr = monday.toISOString().split('T')[0];
+      const mondayStr = getLocalDateString(monday);
 
       let weekMinutes = 0;
-      const todayStr = now.toISOString().split('T')[0];
+      const todayStr = getLocalDateString(now);
       let todayMinutes = stats.dailyMinutes[todayStr] || 0;
 
       for (const [dateKey, minutes] of Object.entries(stats.dailyMinutes)) {
@@ -52,7 +53,7 @@ export async function handleStatsSyncMessage(
       if (stats.lastActiveDate) {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const yesterdayStr = getLocalDateString(yesterday);
         if (stats.lastActiveDate !== todayStr && stats.lastActiveDate !== yesterdayStr) {
           streak = 0;
         }
