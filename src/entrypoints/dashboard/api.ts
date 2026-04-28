@@ -64,11 +64,19 @@ export async function fetchServerStats(userState: JP343UserState): Promise<Serve
   return null;
 }
 
+function normalizeServerDate(raw: string): string {
+  if (!raw) return raw;
+  if (/T.*[Z+\-]\d/.test(raw)) return raw;
+  const repaired = raw.replace(' ', 'T');
+  if (!isNaN(new Date(repaired).getTime())) return repaired;
+  return raw;
+}
+
 function normalizeServerSessions(raw: ServerSession[]): ServerSession[] {
   return raw.map(s => ({
     ...s,
     title: s.title || s.project_name || 'Session',
-    date: s.date || s.logged_at || '',
+    date: normalizeServerDate(s.date || s.logged_at || ''),
     duration_seconds: s.duration_seconds ?? (s.duration_minutes ?? s.minutes ?? 0) * 60,
     url: s.resource_url || s.url || undefined,
   }));

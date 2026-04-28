@@ -107,7 +107,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     }
 
     const dateEl = document.createElement('span');
-    dateEl.textContent = formatSessionDate(entry.date);
+    dateEl.textContent = formatSessionDate(entry.date, getDayStartHour());
     meta.appendChild(dateEl);
 
     info.appendChild(meta);
@@ -228,7 +228,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   }
 
   const dateEl = document.createElement('span');
-  dateEl.textContent = formatSessionDate(session.date);
+  dateEl.textContent = formatSessionDate(session.date, getDayStartHour());
   meta.appendChild(dateEl);
   info.appendChild(meta);
 

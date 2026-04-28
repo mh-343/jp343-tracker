@@ -233,7 +233,8 @@ export default defineContentScript({
         '#title h1 yt-formatted-string',
         'ytd-watch-metadata h1 yt-formatted-string',
         '#above-the-fold #title yt-formatted-string',
-        'h1.style-scope.ytd-watch-metadata'
+        'h1.style-scope.ytd-watch-metadata',
+        'ytm-slim-video-metadata-section-renderer h2'
       ];
 
       for (const selector of titleSelectors) {
@@ -296,7 +297,9 @@ export default defineContentScript({
         '#channel-name a',
         'ytd-channel-name a',
         '.ytd-video-owner-renderer a',
-        '#owner a'
+        '#owner a',
+        'h3.slim-owner-channel-name span',
+        '.slim-owner-channel-name span'
       ];
 
       for (const selector of channelNameSelectors) {
@@ -323,7 +326,8 @@ export default defineContentScript({
           '#owner #channel-name a',
           '#owner ytd-channel-name a',
           'ytd-video-owner-renderer #channel-name a',
-          '#owner a.yt-simple-endpoint'
+          '#owner a.yt-simple-endpoint',
+          'a.slim-owner-icon-and-title[href*="/@"]'
         ];
         for (const selector of linkSelectors) {
           const link = document.querySelector(selector) as HTMLAnchorElement | null;

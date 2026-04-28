@@ -33,39 +33,43 @@ export async function updateStatusBadge(): Promise<void> {
   if (!loadSettingsFn) return;
   const settings = await loadSettingsFn();
   if (!settings.enabled) {
-    badgeApi.setBadgeText({ text: 'OFF' });
-    badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
-    badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
+    try {
+      badgeApi.setBadgeText({ text: 'OFF' });
+      badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
+      badgeApi.setTitle({ title: 'jp343 - Tracking disabled' });
+    } catch { /* badge unavailable on mobile */ }
     return;
   }
 
   const status = getCurrentStatus();
 
-  switch (status) {
-    case 'recording':
-      badgeApi.setBadgeText({ text: '●' });
-      badgeApi.setBadgeBackgroundColor({ color: '#22c55e' });
-      badgeApi.setTitle({ title: 'jp343 - Recording...' });
-      break;
+  try {
+    switch (status) {
+      case 'recording':
+        badgeApi.setBadgeText({ text: '●' });
+        badgeApi.setBadgeBackgroundColor({ color: '#22c55e' });
+        badgeApi.setTitle({ title: 'jp343 - Recording...' });
+        break;
 
-    case 'paused':
-      badgeApi.setBadgeText({ text: '❚❚' });
-      badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' });
-      badgeApi.setTitle({ title: 'jp343 - Paused' });
-      break;
+      case 'paused':
+        badgeApi.setBadgeText({ text: '❚❚' });
+        badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' });
+        badgeApi.setTitle({ title: 'jp343 - Paused' });
+        break;
 
-    case 'ad':
-      badgeApi.setBadgeText({ text: 'AD' });
-      badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
-      badgeApi.setTitle({ title: 'jp343 - Ad playing (not tracking)' });
-      break;
+      case 'ad':
+        badgeApi.setBadgeText({ text: 'AD' });
+        badgeApi.setBadgeBackgroundColor({ color: '#6b7280' });
+        badgeApi.setTitle({ title: 'jp343 - Ad playing (not tracking)' });
+        break;
 
-    case 'idle':
-    default:
-      badgeApi.setBadgeText({ text: '' });
-      badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
-      break;
-  }
+      case 'idle':
+      default:
+        badgeApi.setBadgeText({ text: '' });
+        badgeApi.setTitle({ title: 'jp343 Streaming Tracker' });
+        break;
+    }
+  } catch { /* badge unavailable on mobile */ }
 }
 
 export function updateBadge(): void {

@@ -574,7 +574,7 @@ function renderPendingList(entries: PendingEntry[]): void {
 
     const sessionDetails = group.entries.map(e => `
       <div class="session-detail" data-id="${escapeHtml(e.id)}">
-        <span class="session-detail-date">${formatSessionDate(e.date)}</span>
+        <span class="session-detail-date">${formatSessionDate(e.date, _popupDayStartHour)}</span>
         <span class="session-detail-duration">${formatDuration(e.duration_min)}</span>
         <button class="session-detail-delete" data-id="${escapeHtml(e.id)}" title="Delete this session">×</button>
       </div>

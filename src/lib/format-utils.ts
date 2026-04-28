@@ -27,20 +27,22 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
-export function formatSessionDate(isoDate: string): string {
-  try {
-    const date = new Date(isoDate);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+export function formatSessionDate(isoDate: string, dayStartHour = 0): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return '';
 
-    if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
+  const sessionDay = getLocalDateString(date, dayStartHour);
+  const todayDay = getLocalDateString(new Date(), dayStartHour);
 
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  } catch {
-    return '';
-  }
+  const diffDays = Math.round(
+    (new Date(todayDay).getTime() - new Date(sessionDay).getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diffDays <= 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export function getLogicalNow(dayStartHour = 0): Date {
