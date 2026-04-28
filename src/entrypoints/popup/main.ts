@@ -3,6 +3,7 @@
 import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
+import { initThemeToggle } from '../../lib/theme';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -966,27 +967,7 @@ async function fetchAndRenderStats(): Promise<void> {
 
 
 // Theme Toggle
-(function setupPopupTheme() {
-  const btn = document.getElementById('themeTogglePopup');
-  if (!btn) return;
-  const saved = localStorage.getItem('jp343_theme');
-  if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-    btn.textContent = '\u2600';
-  }
-  btn.addEventListener('click', () => {
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-    if (isLight) {
-      document.documentElement.removeAttribute('data-theme');
-      localStorage.setItem('jp343_theme', 'dark');
-      btn.textContent = '\u263E';
-    } else {
-      document.documentElement.setAttribute('data-theme', 'light');
-      localStorage.setItem('jp343_theme', 'light');
-      btn.textContent = '\u2600';
-    }
-  });
-})();
+initThemeToggle('themeTogglePopup');
 
 // Init
 loadAndApplySettings();
