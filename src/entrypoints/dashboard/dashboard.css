@@ -23,16 +23,16 @@
       --bg-input: #e8e9f4;
       --text: #2a2545;
       --text-dim: #6b6490;
-      --magenta: #7b5ea7;
-      --magenta-glow: rgba(123, 94, 167, 0.06);
-      --cyan: #7b5ea7;
-      --purple: #9a7ec4;
+      --magenta: #c4167a;
+      --magenta-glow: rgba(196, 22, 122, 0.06);
+      --cyan: #c4167a;
+      --purple: #d4247a;
       --green: #5a9a6e;
       --orange: #a67c3d;
       --red: #b04040;
-      --gradient: linear-gradient(135deg, #7ec8e3 0%, #a78bda 30%, #d4a5c9 60%, #8ee4df 100%);
-      --border: rgba(123, 94, 167, 0.10);
-      --iri-gradient-subtle: linear-gradient(135deg, rgba(126,200,227,0.15), rgba(167,139,218,0.15), rgba(212,165,201,0.15), rgba(142,228,223,0.12));
+      --gradient: linear-gradient(135deg, #7ec8e3 0%, #d4a5c9 40%, #e891b8 70%, #8ee4df 100%);
+      --border: rgba(196, 22, 122, 0.10);
+      --iri-gradient-subtle: linear-gradient(135deg, rgba(126,200,227,0.15), rgba(212,165,201,0.15), rgba(233,30,139,0.10), rgba(142,228,223,0.12));
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -89,7 +89,7 @@
     }
 
     .header-discord {
-      color: var(--accent, #e84393);
+      color: var(--magenta);
       opacity: 0.7;
       transition: opacity 0.2s;
       display: flex;
@@ -779,11 +779,11 @@
     [data-theme="light"] .hero-time .unit { color: var(--text-dim); opacity: 0.6; }
     [data-theme="light"] .qs-value.dim { color: var(--purple); }
     [data-theme="light"] .user-name {
-      background: linear-gradient(90deg, #7b5ea7, #3a9ab8);
+      background: linear-gradient(90deg, #c4167a, #3a9ab8);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    [data-theme="light"] .heatmap-cell { background: rgba(123, 94, 167, 0.08); border: 1px solid rgba(123, 94, 167, 0.06); }
+    [data-theme="light"] .heatmap-cell { background: rgba(196, 22, 122, 0.08); border: 1px solid rgba(196, 22, 122, 0.06); }
     [data-theme="light"] .heatmap-cell[data-level="1"] { background: rgba(126, 200, 227, 0.25); }
     [data-theme="light"] .heatmap-cell[data-level="2"] { background: rgba(167, 139, 218, 0.35); }
     [data-theme="light"] .heatmap-cell[data-level="3"] { background: rgba(167, 139, 218, 0.55); }
@@ -800,9 +800,9 @@
       animation: iri-shimmer 3s ease infinite;
     }
     [data-theme="light"] .session-thumb { background: var(--iri-gradient-subtle); }
-    [data-theme="light"] .session-thumb-placeholder { background: var(--iri-gradient-subtle); color: #7b5ea7; }
-    [data-theme="light"] .session-platform { background: var(--iri-gradient-subtle); color: #7b5ea7; }
-    [data-theme="light"] .session-activity-type { background: var(--iri-gradient-subtle); color: #7b5ea7; }
+    [data-theme="light"] .session-thumb-placeholder { background: var(--iri-gradient-subtle); color: #c4167a; }
+    [data-theme="light"] .session-platform { background: var(--iri-gradient-subtle); color: #c4167a; }
+    [data-theme="light"] .session-activity-type { background: var(--iri-gradient-subtle); color: #c4167a; }
     [data-theme="light"] .skeleton {
       background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
       background-size: 200% 100%;
@@ -811,7 +811,7 @@
     [data-theme="light"] .hero,
     [data-theme="light"] .qs-card,
     [data-theme="light"] .user-bar {
-      box-shadow: 0 1px 4px rgba(42, 37, 69, 0.05), 0 0 0 1px rgba(123, 94, 167, 0.06);
+      box-shadow: 0 1px 4px rgba(42, 37, 69, 0.05), 0 0 0 1px rgba(196, 22, 122, 0.06);
     }
     [data-theme="light"] .btn-login,
     [data-theme="light"] .btn-register,
@@ -820,7 +820,7 @@
       background-size: 300% 300%;
       animation: iri-shimmer 4s ease infinite;
     }
-    [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(123, 94, 167, 0.25); }
+    [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(196, 22, 122, 0.25); }
 
     /* Theme Toggle */
     .theme-toggle {
@@ -1083,7 +1083,7 @@
     .footer-feedback-btn {
       background: none;
       border: none;
-      color: var(--accent, #e84393);
+      color: var(--magenta);
       opacity: 0.8;
       font-family: inherit;
       font-size: 11px;
@@ -1209,7 +1209,7 @@
       color: var(--cyan);
     }
     [data-theme="light"] .settings-section {
-      box-shadow: 0 1px 4px rgba(42, 37, 69, 0.05), 0 0 0 1px rgba(123, 94, 167, 0.06);
+      box-shadow: 0 1px 4px rgba(42, 37, 69, 0.05), 0 0 0 1px rgba(196, 22, 122, 0.06);
     }
 
     /* Goal input in settings */
