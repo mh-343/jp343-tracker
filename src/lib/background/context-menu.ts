@@ -9,6 +9,10 @@ interface ContextMenuDeps {
 }
 
 export function initContextMenu(deps: ContextMenuDeps): () => void {
+  if (!browser.contextMenus) {
+    return () => {};
+  }
+
   browser.contextMenus.create({
     id: 'jp343-toggle-pause',
     title: 'Pause Tracking',
