@@ -61,6 +61,18 @@ export default defineContentScript({
         sendMessage('VIDEO_ENDED');
       }
     });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        if (!isWatchPage()) return;
+        const video = findVideoElement();
+        if (video && !video.paused && !video.ended) {
+          const state = getCurrentVideoState();
+          if (state && !state.isAd) {
+            sendMessage('VIDEO_PLAY', { state });
+          }
+        }
+      }
+    });
 
     const { log } = createDebugLogger('disneyplus');
     log('[JP343] Disney+ Content Script loaded');
@@ -550,6 +562,19 @@ export default defineContentScript({
         lastVideoId = null;
       });
 
+      video.addEventListener('waiting', () => {
+        if (!isCurrentlyInAd) {
+          sendMessage('VIDEO_PAUSE');
+        }
+      });
+
+      video.addEventListener('playing', () => {
+        const state = getCurrentVideoState();
+        if (state && !state.isAd) {
+          sendMessage('VIDEO_PLAY', { state });
+        }
+      });
+
       const updateInterval = setInterval(() => {
         if (isCurrentlyInAd || !isWatchPage()) return;
 
@@ -744,6 +769,16 @@ export default defineContentScript({
       }
       if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
         currentVideoElement.play();
+      }
+      if (message?.type === 'TAB_ACTIVATED') {
+        if (!isWatchPage()) return;
+        const video = findVideoElement();
+        if (video && !video.paused && !video.ended) {
+          const state = getCurrentVideoState();
+          if (state && !state.isAd) {
+            sendMessage('VIDEO_PLAY', { state });
+          }
+        }
       }
     });
   }
