@@ -10,6 +10,10 @@ export async function handleTrackingMessage(
   context: BackgroundMessageContext
 ): Promise<unknown> {
   await context.recoveryReady;
+  const senderTabId = messageSender.tab?.id;
+  const activeSession = tracker.getCurrentSession();
+  const isWrongTab = activeSession && senderTabId && activeSession.tabId !== senderTabId;
+
   switch (message.type) {
     case 'VIDEO_PLAY': {
       const settings = await context.loadSettings();
@@ -61,6 +65,7 @@ export async function handleTrackingMessage(
     }
 
     case 'VIDEO_PAUSE': {
+      if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
       tracker.pauseSession();
       const session = tracker.getCurrentSession();
@@ -70,6 +75,7 @@ export async function handleTrackingMessage(
     }
 
     case 'VIDEO_ENDED': {
+      if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
       const entry = tracker.finalizeSession();
       if (entry) {
@@ -81,18 +87,21 @@ export async function handleTrackingMessage(
     }
 
     case 'AD_START': {
+      if (isWrongTab) return { success: true };
       tracker.onAdStart();
       scheduleStatusBadgeUpdate();
       return { success: true };
     }
 
     case 'AD_END': {
+      if (isWrongTab) return { success: true };
       tracker.onAdEnd();
       scheduleStatusBadgeUpdate();
       return { success: true };
     }
 
     case 'VIDEO_STATE_UPDATE': {
+      if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
       if ('state' in message && message.state && typeof message.state === 'object') {
         if (message.state.title) {

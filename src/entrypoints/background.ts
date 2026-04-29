@@ -949,4 +949,21 @@ export default defineBackground(() => {
     }
   });
 
+  browser.tabs.onActivated.addListener(async (activeInfo) => {
+    await recoveryReady;
+    const session = tracker.getCurrentSession();
+    if (!session) return;
+    if (session.tabId === activeInfo.tabId) return;
+
+    try {
+      await browser.tabs.sendMessage(activeInfo.tabId, { type: 'TAB_ACTIVATED' });
+    } catch {
+      setTimeout(async () => {
+        try {
+          await browser.tabs.sendMessage(activeInfo.tabId, { type: 'TAB_ACTIVATED' });
+        } catch { /* no content script */ }
+      }, 2000);
+    }
+  });
+
 });

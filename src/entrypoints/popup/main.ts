@@ -172,7 +172,7 @@ async function loadActiveTabInfo(): Promise<void> {
       activeTabInfo = response.data as ActiveTabInfo;
       updateManualTrackDisplay();
       loadAndApplySettings();
-      if (activeTabInfo.domain?.includes('youtube.com')) {
+      if (activeTabInfo.domain?.includes('youtube.com') && !activeTabInfo.url?.includes('m.youtube.com')) {
         const stored = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
         const jpEnabled = stored[STORAGE_KEYS.SETTINGS]?.requireJapaneseContent ?? false;
         const jpBtn = document.getElementById('btnJpFilter');

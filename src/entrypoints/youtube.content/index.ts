@@ -34,6 +34,18 @@ export default defineContentScript({
         sendMessage('VIDEO_ENDED');
       }
     });
+    document.addEventListener('visibilitychange', () => {
+      if (!extensionContextValid) return;
+      if (!document.hidden) {
+        const video = findVideoElement();
+        if (video && !video.paused && !video.ended) {
+          const state = getCurrentVideoState();
+          if (state && !state.isAd) {
+            sendMessage('VIDEO_PLAY', { state });
+          }
+        }
+      }
+    });
 
     const { log, debugLog, getBuffer, clearBuffer } = createDebugLogger('youtube');
     log('[JP343] YouTube Content Script loaded');
@@ -502,6 +514,21 @@ export default defineContentScript({
         sendMessage('VIDEO_ENDED');
       });
 
+      video.addEventListener('waiting', () => {
+        if (!isExtensionContextValid()) return;
+        if (!isCurrentlyAd) {
+          sendMessage('VIDEO_PAUSE');
+        }
+      });
+
+      video.addEventListener('playing', () => {
+        if (!isExtensionContextValid()) return;
+        const state = getCurrentVideoState();
+        if (state && !state.isAd) {
+          sendMessage('VIDEO_PLAY', { state });
+        }
+      });
+
       if (!stateUpdateInterval) {
         stateUpdateInterval = setInterval(() => {
           if (!isExtensionContextValid()) {
@@ -736,6 +763,16 @@ export default defineContentScript({
       }
       if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
         currentVideoElement.play();
+      }
+      if (message?.type === 'TAB_ACTIVATED') {
+        if (!extensionContextValid) return;
+        const video = findVideoElement();
+        if (video && !video.paused && !video.ended) {
+          const state = getCurrentVideoState();
+          if (state && !state.isAd) {
+            sendMessage('VIDEO_PLAY', { state });
+          }
+        }
       }
     });
 
