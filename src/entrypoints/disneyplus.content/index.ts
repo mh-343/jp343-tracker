@@ -568,6 +568,12 @@ export default defineContentScript({
         }
       });
 
+      video.addEventListener('emptied', () => {
+        if (document.hidden && video.paused && video.readyState === 0) {
+          sendMessage('VIDEO_PAUSE');
+        }
+      });
+
       video.addEventListener('playing', () => {
         const state = getCurrentVideoState();
         if (state && !state.isAd) {

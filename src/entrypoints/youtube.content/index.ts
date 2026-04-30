@@ -38,11 +38,15 @@ export default defineContentScript({
       if (!extensionContextValid) return;
       if (!document.hidden) {
         const video = findVideoElement();
-        if (video && !video.paused && !video.ended) {
+        if (video && video.ended) {
+          sendMessage('VIDEO_ENDED');
+        } else if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
             sendMessage('VIDEO_PLAY', { state });
           }
+        } else if (video && video.paused) {
+          sendMessage('VIDEO_PAUSE');
         }
       }
     });
@@ -521,6 +525,13 @@ export default defineContentScript({
         }
       });
 
+      video.addEventListener('emptied', () => {
+        if (!isExtensionContextValid()) return;
+        if (document.hidden && video.paused && video.readyState === 0) {
+          sendMessage('VIDEO_PAUSE');
+        }
+      });
+
       video.addEventListener('playing', () => {
         if (!isExtensionContextValid()) return;
         const state = getCurrentVideoState();
@@ -767,11 +778,15 @@ export default defineContentScript({
       if (message?.type === 'TAB_ACTIVATED') {
         if (!extensionContextValid) return;
         const video = findVideoElement();
-        if (video && !video.paused && !video.ended) {
+        if (video && video.ended) {
+          sendMessage('VIDEO_ENDED');
+        } else if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
             sendMessage('VIDEO_PLAY', { state });
           }
+        } else if (video && video.paused) {
+          sendMessage('VIDEO_PAUSE');
         }
       }
     });

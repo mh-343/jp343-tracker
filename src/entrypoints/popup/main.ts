@@ -181,6 +181,9 @@ async function loadActiveTabInfo(): Promise<void> {
           jpBtn.classList.toggle('active', jpEnabled);
         }
       }
+      if (activeTabInfo.tabId) {
+        browser.tabs.sendMessage(activeTabInfo.tabId, { type: 'TAB_ACTIVATED' }).catch(() => {});
+      }
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load tab info:', error);
