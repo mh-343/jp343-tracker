@@ -3,7 +3,7 @@
 import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
-import { initThemeToggle } from '../../lib/theme';
+import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -109,6 +109,7 @@ async function loadAndApplySettings(): Promise<void> {
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
       _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
       updateJpFilterDisplay(settings.requireJapaneseContent ?? false);
+      applyColorTheme(settings.colorTheme ?? 'magenta');
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);

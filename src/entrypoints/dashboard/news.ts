@@ -9,6 +9,7 @@ interface NewsResponse {
   min_version?: string;
   link_url?: string;
   link_text?: string;
+  image_url?: string;
 }
 
 export async function loadNews(): Promise<void> {
@@ -52,6 +53,17 @@ export async function loadNews(): Promise<void> {
       if (data.type === 'warning') (iconEl as HTMLElement).style.color = 'var(--orange)';
       if (data.type === 'critical') (iconEl as HTMLElement).style.color = 'var(--red)';
     }
+    if (data.image_url) {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'news-banner-image';
+      const img = document.createElement('img');
+      img.src = data.image_url;
+      img.alt = '';
+      img.loading = 'lazy';
+      imgWrap.appendChild(img);
+      banner.appendChild(imgWrap);
+    }
+
     banner.style.display = '';
     closeBtn.addEventListener('click', () => {
       banner.style.display = 'none';

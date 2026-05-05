@@ -10,6 +10,7 @@ import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
 import { applyDashboardBackground } from '../../lib/background-image';
+import { applyColorTheme } from '../../lib/theme';
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -137,17 +138,15 @@ function setupTabNav(): void {
 setupThemeToggle();
 setupAuthUI();
 setupTabNav();
-refresh().then(async () => {
-  const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+
+browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
   const settings = result[STORAGE_KEYS.SETTINGS];
-  const goal: number = settings?.dailyGoalMinutes ?? 60;
-  setupGoalEditor(goal);
-  await setupSettings();
-  applyDashboardBackground(
-    settings?.backgroundEnabled ?? false,
-    settings?.backgroundOpacity ?? 75
-  );
+  applyDashboardBackground(settings?.backgroundEnabled ?? false, settings?.backgroundOpacity ?? 75);
+  setupGoalEditor(settings?.dailyGoalMinutes ?? 60);
+  applyColorTheme(settings?.colorTheme ?? 'magenta');
 });
+setupSettings();
+refresh();
 loadNews();
 
 browser.storage.onChanged.addListener((changes, area) => {
@@ -163,6 +162,9 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
     const oldSettings = changes[STORAGE_KEYS.SETTINGS].oldValue;
     const newSettings = changes[STORAGE_KEYS.SETTINGS].newValue;
+    if (oldSettings?.colorTheme !== newSettings?.colorTheme) {
+      applyColorTheme(newSettings?.colorTheme ?? 'magenta');
+    }
     if (oldSettings?.backgroundEnabled !== newSettings?.backgroundEnabled ||
         oldSettings?.backgroundOpacity !== newSettings?.backgroundOpacity) {
       applyDashboardBackground(
