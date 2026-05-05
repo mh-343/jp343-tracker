@@ -1,6 +1,7 @@
 import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
+import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 
 interface ExportData {
   exportVersion: 1;
@@ -92,6 +93,135 @@ function showStatus(container: HTMLElement, message: string, type: 'success' | '
   if (type === 'success') {
     setTimeout(() => { el!.className = 'settings-status'; }, 3000);
   }
+}
+
+function buildAppearancePanel(container: HTMLElement, settings: ExtensionSettings): void {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const title = document.createElement('div');
+  title.className = 'settings-section-title';
+  title.textContent = 'Appearance';
+  section.appendChild(title);
+
+  const uploadRow = document.createElement('div');
+  uploadRow.className = 'bg-upload-row';
+
+  const fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*';
+  fileInput.style.display = 'none';
+
+  const uploadBtn = document.createElement('button');
+  uploadBtn.className = 'export-btn';
+  uploadBtn.textContent = 'Upload';
+  uploadBtn.addEventListener('click', () => fileInput.click());
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'import-label';
+  removeBtn.textContent = 'Remove';
+  removeBtn.style.display = settings.backgroundEnabled ? '' : 'none';
+
+  const preview = document.createElement('div');
+  preview.className = 'bg-no-preview';
+  preview.textContent = 'No image';
+
+  async function showPreview(): Promise<void> {
+    const blob = await loadBackground();
+    if (blob) {
+      const img = document.createElement('img');
+      img.className = 'bg-preview';
+      img.src = URL.createObjectURL(blob);
+      img.alt = '';
+      preview.replaceWith(img);
+      removeBtn.style.display = '';
+    }
+  }
+
+  showPreview();
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    uploadBtn.textContent = '...';
+    const resized = await resizeImage(file);
+    await saveBackground(resized);
+    await updateSettings({ backgroundEnabled: true });
+    await applyDashboardBackground(true, settings.backgroundOpacity ?? 75);
+    uploadBtn.textContent = 'Upload';
+    removeBtn.style.display = '';
+
+    const existing = section.querySelector('.bg-preview, .bg-no-preview');
+    if (existing) {
+      const img = document.createElement('img');
+      img.className = 'bg-preview';
+      img.src = URL.createObjectURL(resized);
+      img.alt = '';
+      existing.replaceWith(img);
+    }
+    fileInput.value = '';
+  });
+
+  removeBtn.addEventListener('click', async () => {
+    clearBackgroundDom();
+    removeBtn.style.display = 'none';
+
+    const existing = section.querySelector('.bg-preview');
+    if (existing) {
+      const ph = document.createElement('div');
+      ph.className = 'bg-no-preview';
+      ph.textContent = 'No image';
+      existing.replaceWith(ph);
+    }
+
+    removeBackground();
+    updateSettings({ backgroundEnabled: false });
+  });
+
+  uploadRow.appendChild(fileInput);
+  uploadRow.appendChild(uploadBtn);
+  uploadRow.appendChild(removeBtn);
+  uploadRow.appendChild(preview);
+  section.appendChild(uploadRow);
+
+  const sliderRow = document.createElement('div');
+  sliderRow.className = 'settings-slider-row';
+
+  const sliderLabel = document.createElement('div');
+  sliderLabel.className = 'settings-row-label';
+  sliderLabel.textContent = 'Overlay Opacity';
+  sliderLabel.style.flex = '0 0 auto';
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'settings-slider';
+  slider.min = '10';
+  slider.max = '95';
+  slider.step = '5';
+  slider.value = String(settings.backgroundOpacity ?? 75);
+
+  const valueLabel = document.createElement('span');
+  valueLabel.className = 'settings-slider-value';
+  valueLabel.textContent = `${settings.backgroundOpacity ?? 75}%`;
+
+  slider.addEventListener('input', () => {
+    valueLabel.textContent = `${slider.value}%`;
+  });
+
+  slider.addEventListener('change', async () => {
+    const opacity = Number(slider.value);
+    await updateSettings({ backgroundOpacity: opacity });
+    if (settings.backgroundEnabled) {
+      await applyDashboardBackground(true, opacity);
+    }
+  });
+
+  sliderRow.appendChild(sliderLabel);
+  sliderRow.appendChild(slider);
+  sliderRow.appendChild(valueLabel);
+  section.appendChild(sliderRow);
+
+  container.appendChild(section);
 }
 
 function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings): void {
@@ -627,6 +757,7 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
 async function rebuildSettingsPanel(panel: HTMLElement): Promise<void> {
   panel.textContent = '';
   const settings = await getSettings();
+  buildAppearancePanel(panel, settings);
   buildTrackingPanel(panel, settings);
   buildPlatformsPanel(panel, settings);
   buildDiagnosticsPanel(panel, settings);

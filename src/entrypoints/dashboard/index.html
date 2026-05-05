@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jp343 Dashboard</title>
   <link rel="stylesheet" href="./dashboard.css">
 </head>
 <body>
 <script>try{var t=localStorage.getItem('jp343_theme');if(t&&t!=='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
-  <div class="header">
+  <header class="header">
     <div class="header-inner">
       <div style="display:flex;align-items:center;gap:10px;">
         <span class="header-logo">jp343</span>
@@ -30,7 +30,7 @@
         <button class="theme-toggle" id="themeToggle" title="Toggle theme">&#9790;</button>
       </div>
     </div>
-  </div>
+  </header>
 
   <div id="newsBanner" class="news-banner" style="display: none;">
     <div class="news-banner-inner">
@@ -40,7 +40,7 @@
     </div>
   </div>
 
-  <div class="wrap">
+  <main class="wrap">
     <!-- User Bar (eingeloggt) -->
     <div class="user-bar" id="userBar" style="display: none;">
       <div>Logged in as<span class="user-name" id="userName"></span></div>
@@ -220,9 +220,9 @@
     <div class="tab-panel" id="tabSettings" role="tabpanel" aria-labelledby="tabBtnSettings" style="display:none">
     </div>
 
-  </div>
+  </main>
 
-  <div class="footer" id="dashboardFooter"></div>
+  <footer class="footer" id="dashboardFooter"></footer>
 
   <script type="module" src="./dashboard.ts"></script>
 </body>

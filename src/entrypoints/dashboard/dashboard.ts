@@ -9,6 +9,7 @@ import { showSessionsLoading, renderSessions, renderServerSessions } from './ses
 import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
+import { applyDashboardBackground } from '../../lib/background-image';
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -138,9 +139,14 @@ setupAuthUI();
 setupTabNav();
 refresh().then(async () => {
   const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
-  const goal: number = result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60;
+  const settings = result[STORAGE_KEYS.SETTINGS];
+  const goal: number = settings?.dailyGoalMinutes ?? 60;
   setupGoalEditor(goal);
   await setupSettings();
+  applyDashboardBackground(
+    settings?.backgroundEnabled ?? false,
+    settings?.backgroundOpacity ?? 75
+  );
 });
 loadNews();
 
@@ -153,5 +159,16 @@ browser.storage.onChanged.addListener((changes, area) => {
     changes[STORAGE_KEYS.SETTINGS]
   )) {
     refresh();
+  }
+  if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
+    const oldSettings = changes[STORAGE_KEYS.SETTINGS].oldValue;
+    const newSettings = changes[STORAGE_KEYS.SETTINGS].newValue;
+    if (oldSettings?.backgroundEnabled !== newSettings?.backgroundEnabled ||
+        oldSettings?.backgroundOpacity !== newSettings?.backgroundOpacity) {
+      applyDashboardBackground(
+        newSettings?.backgroundEnabled ?? false,
+        newSettings?.backgroundOpacity ?? 75
+      );
+    }
   }
 });
