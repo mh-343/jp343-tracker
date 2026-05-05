@@ -23,7 +23,7 @@ const elements = {
   btnStop: document.getElementById('btnStop') as HTMLButtonElement,
   pendingSection: document.getElementById('pendingSection') as HTMLElement,
   pendingList: document.getElementById('pendingList') as HTMLElement,
-  toggleEnabled: document.getElementById('toggleEnabled') as HTMLButtonElement,
+  toggleEnabled: document.getElementById('toggleEnabled') as HTMLInputElement,
   toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
   channelSection: document.getElementById('channelSection') as HTMLElement,
@@ -83,13 +83,8 @@ function updateToggleDisplay(enabled: boolean): void {
   isEnabled = enabled;
   elements.toggleLabel.textContent = enabled ? 'ON' : 'OFF';
   elements.toggleLabel.classList.toggle('on', enabled);
-  if (enabled) {
-    elements.toggleEnabled.classList.add('enabled');
-    elements.sessionCard.classList.remove('disabled');
-  } else {
-    elements.toggleEnabled.classList.remove('enabled');
-    elements.sessionCard.classList.add('disabled');
-  }
+  elements.toggleEnabled.checked = enabled;
+  elements.sessionCard.classList.toggle('disabled', !enabled);
 }
 
 let _popupGoalMinutes = 60;

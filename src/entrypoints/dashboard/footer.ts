@@ -8,23 +8,19 @@ export function renderFooter(userState: JP343UserState | null): void {
   version.textContent = `jp343 Extension v${browser.runtime.getManifest().version}`;
 
   const links = document.createElement('div');
-  links.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;';
+  links.className = 'footer-links';
 
   const site = document.createElement('a');
   site.href = 'https://jp343.com/?src=d';
   site.target = '_blank';
   site.textContent = 'jp343.com';
-  site.style.cssText = 'color:var(--accent, #e84393);opacity:0.8;font-size:11px;text-decoration:none;transition:opacity 0.2s;';
-  site.onmouseover = () => { site.style.opacity = '1'; };
-  site.onmouseout = () => { site.style.opacity = '0.8'; };
+  site.className = 'footer-link';
 
   const github = document.createElement('a');
   github.href = 'https://github.com/mh-343/jp343-tracker';
   github.target = '_blank';
   github.title = 'Source code on GitHub';
-  github.style.cssText = 'color:var(--accent, #e84393);opacity:0.8;transition:opacity 0.2s;display:flex;align-items:center;';
-  github.onmouseover = () => { github.style.opacity = '1'; };
-  github.onmouseout = () => { github.style.opacity = '0.5'; };
+  github.className = 'footer-link-icon';
   const ghSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   ghSvg.setAttribute('width', '16');
   ghSvg.setAttribute('height', '16');
@@ -68,10 +64,7 @@ export function renderFooter(userState: JP343UserState | null): void {
 
 function openFeedbackModal(userState: JP343UserState | null): void {
   const existing = document.getElementById('feedbackOverlay');
-  if (existing) {
-    existing.classList.add('open');
-    return;
-  }
+  if (existing) existing.remove();
 
   const isLoggedIn = !!userState?.extApiToken;
   const overlay = document.createElement('div');
@@ -94,7 +87,7 @@ function openFeedbackModal(userState: JP343UserState | null): void {
 
   if (!isLoggedIn) {
     const loginMsg = document.createElement('p');
-    loginMsg.style.cssText = 'font-size:13px;color:var(--text-dim);margin:0 0 16px;';
+    loginMsg.className = 'feedback-login-msg';
     loginMsg.textContent = 'Log in to send feedback directly, or join our Discord:';
     card.appendChild(loginMsg);
 
@@ -102,13 +95,14 @@ function openFeedbackModal(userState: JP343UserState | null): void {
     discordLink.href = 'https://discord.gg/WxGtd5eNH9';
     discordLink.target = '_blank';
     discordLink.textContent = 'Join Discord';
-    discordLink.style.cssText = 'display:inline-block;padding:8px 16px;background:linear-gradient(135deg,var(--magenta),var(--cyan));color:#fff;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;';
+    discordLink.className = 'feedback-discord-link';
     card.appendChild(discordLink);
 
     const closeBtn = document.createElement('button');
     closeBtn.className = 'feedback-btn-cancel';
     closeBtn.textContent = 'Close';
-    closeBtn.style.cssText += 'margin-top:12px;display:block;';
+    closeBtn.style.marginTop = '12px';
+    closeBtn.style.display = 'block';
     closeBtn.addEventListener('click', () => overlay.classList.remove('open'));
     card.appendChild(closeBtn);
   } else {

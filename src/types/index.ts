@@ -102,6 +102,8 @@ export interface ExtensionSettings {
   dayStartHour: number;
   requireJapaneseContent: boolean;
   diagnosticsEnabled: boolean;
+  backgroundEnabled: boolean;
+  backgroundOpacity: number;
 }
 
 export interface BlockedChannel {
@@ -206,7 +208,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   dailyGoalMinutes: 60,
   dayStartHour: 0,
   requireJapaneseContent: false,
-  diagnosticsEnabled: true
+  diagnosticsEnabled: true,
+  backgroundEnabled: false,
+  backgroundOpacity: 75
 };
 
 export const STORAGE_KEYS = {
@@ -217,7 +221,8 @@ export const STORAGE_KEYS = {
   STATS: 'jp343_extension_stats',
   DISPLAY_NAME: 'jp343_extension_display_name',
   CACHED_SERVER_STATS: 'jp343_cached_server_stats',
-  DIAGNOSTICS: 'jp343_extension_diagnostics'
+  DIAGNOSTICS: 'jp343_extension_diagnostics',
+  BACKGROUND_IMAGE: 'jp343_extension_bg_image'
 } as const;
 
 export interface PlatformHealth {
