@@ -4,6 +4,14 @@ export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking';
 
 export type SpotifyContentType = 'music' | 'podcast' | 'audiobook';
 
+export type ColorTheme = 'magenta' | 'matcha' | 'ocean';
+
+export const COLOR_THEMES: Record<ColorTheme, { label: string; swatch: string }> = {
+  magenta: { label: 'Magenta', swatch: '#e91e8b' },
+  matcha:  { label: 'Matcha',  swatch: '#4caf50' },
+  ocean:   { label: 'Ocean',   swatch: '#2196f3' }
+};
+
 export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   youtube: 'watching',
   netflix: 'watching',
@@ -104,6 +112,7 @@ export interface ExtensionSettings {
   diagnosticsEnabled: boolean;
   backgroundEnabled: boolean;
   backgroundOpacity: number;
+  colorTheme: ColorTheme;
 }
 
 export interface BlockedChannel {
@@ -210,7 +219,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   requireJapaneseContent: false,
   diagnosticsEnabled: true,
   backgroundEnabled: false,
-  backgroundOpacity: 75
+  backgroundOpacity: 75,
+  colorTheme: 'magenta' as ColorTheme
 };
 
 export const STORAGE_KEYS = {

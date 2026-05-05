@@ -1,7 +1,24 @@
+import type { ColorTheme } from '../types';
+import { COLOR_THEMES } from '../types';
+
 const THEME_KEY = 'jp343_theme';
 const THEMES = ['dark', 'light'] as const;
 type Theme = typeof THEMES[number];
 const ICONS: Record<Theme, string> = { dark: '\u263E', light: '\u2600' };
+
+const COLOR_THEME_KEY = 'jp343_color_theme';
+const VALID_COLOR_THEMES = Object.keys(COLOR_THEMES) as ColorTheme[];
+
+export function applyColorTheme(theme: ColorTheme): void {
+  const valid = VALID_COLOR_THEMES.includes(theme) ? theme : 'magenta';
+  if (valid === 'magenta') {
+    document.documentElement.removeAttribute('data-color-theme');
+    localStorage.removeItem(COLOR_THEME_KEY);
+  } else {
+    document.documentElement.setAttribute('data-color-theme', valid);
+    localStorage.setItem(COLOR_THEME_KEY, valid);
+  }
+}
 
 export function getCurrentTheme(): Theme {
   const stored = localStorage.getItem(THEME_KEY);

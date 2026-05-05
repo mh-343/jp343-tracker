@@ -6,6 +6,7 @@ const BG_KEY = 'dashboard-background';
 
 let currentObjectUrl: string | null = null;
 let cachedBlob: Blob | null = null;
+let loadGeneration = 0;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -130,6 +131,7 @@ export function resizeImage(file: File, maxW = 1920, maxH = 1080, quality = 0.80
 }
 
 export async function applyDashboardBackground(enabled: boolean, opacity: number): Promise<void> {
+  const thisGeneration = ++loadGeneration;
   const existingLayer = document.querySelector('.bg-layer') as HTMLElement | null;
   const existingOverlay = document.querySelector('.bg-overlay') as HTMLElement | null;
 
@@ -144,6 +146,7 @@ export async function applyDashboardBackground(enabled: boolean, opacity: number
   }
 
   const blob = cachedBlob ?? await loadBackground();
+  if (thisGeneration !== loadGeneration) return;
   if (!blob) {
     clearBackgroundDom();
     const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);

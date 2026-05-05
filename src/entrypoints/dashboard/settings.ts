@@ -1,7 +1,8 @@
-import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats } from '../../types';
-import { STORAGE_KEYS, DEFAULT_SETTINGS } from '../../types';
+import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
+import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
+import { applyColorTheme } from '../../lib/theme';
 
 interface ExportData {
   exportVersion: 1;
@@ -103,6 +104,34 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
   title.className = 'settings-section-title';
   title.textContent = 'Appearance';
   section.appendChild(title);
+
+  const themeLabel = document.createElement('div');
+  themeLabel.className = 'settings-row-label';
+  themeLabel.textContent = 'Color Theme';
+  section.appendChild(themeLabel);
+
+  const themeSelector = document.createElement('div');
+  themeSelector.className = 'theme-selector';
+  for (const [id, theme] of Object.entries(COLOR_THEMES)) {
+    const btn = document.createElement('button');
+    btn.className = 'theme-btn' + (settings.colorTheme === id ? ' active' : '');
+    btn.dataset.theme = id;
+
+    const swatch = document.createElement('span');
+    swatch.className = 'theme-swatch';
+    swatch.style.background = theme.swatch;
+    btn.appendChild(swatch);
+    btn.appendChild(document.createTextNode(theme.label));
+
+    btn.addEventListener('click', () => {
+      for (const b of themeSelector.querySelectorAll('.theme-btn')) b.classList.remove('active');
+      btn.classList.add('active');
+      applyColorTheme(id as ColorTheme);
+      updateSettings({ colorTheme: id as ColorTheme });
+    });
+    themeSelector.appendChild(btn);
+  }
+  section.appendChild(themeSelector);
 
   const uploadRow = document.createElement('div');
   uploadRow.className = 'bg-upload-row';
@@ -754,9 +783,8 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
 
 // ── Setup ────────────────────────────────────────────────
 
-async function rebuildSettingsPanel(panel: HTMLElement): Promise<void> {
+function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): void {
   panel.textContent = '';
-  const settings = await getSettings();
   buildAppearancePanel(panel, settings);
   buildTrackingPanel(panel, settings);
   buildPlatformsPanel(panel, settings);
@@ -764,9 +792,8 @@ async function rebuildSettingsPanel(panel: HTMLElement): Promise<void> {
   buildExportImportPanel(panel);
 }
 
-async function rebuildBlockedPanel(panel: HTMLElement): Promise<void> {
+function rebuildBlockedPanel(panel: HTMLElement, settings: ExtensionSettings): void {
   panel.textContent = '';
-  const settings = await getSettings();
   buildBlockedPanel(panel, settings);
 }
 
@@ -775,6 +802,8 @@ export async function setupSettings(): Promise<void> {
   const blockedPanel = document.getElementById('tabBlocked');
   if (!settingsPanel || !blockedPanel) return;
 
-  await rebuildSettingsPanel(settingsPanel);
-  await rebuildBlockedPanel(blockedPanel);
+  const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+  const settings: ExtensionSettings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEYS.SETTINGS] || {}) };
+  rebuildSettingsPanel(settingsPanel, settings);
+  rebuildBlockedPanel(blockedPanel, settings);
 }
