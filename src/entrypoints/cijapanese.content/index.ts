@@ -50,7 +50,7 @@ export default defineContentScript({
     const logger = createDebugLogger('cijapanese');
     const { log, debugLog } = logger;
     log('[JP343] CI Japanese content script loaded');
-    setupDebugCommands(logger, 'cijapanese', { logStatus: false });
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'cijapanese', { logStatus: false }); }
 
     const IGNORE_PATHS = ['/landing', '/pricing', '/about', '/login', '/signup', '/register'];
 

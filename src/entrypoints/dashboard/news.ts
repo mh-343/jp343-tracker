@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from '../../types';
 import type { JP343UserState } from '../../types';
+import { isValidImageUrl } from '../../lib/format-utils';
 
 interface NewsResponse {
   id?: string;
@@ -53,7 +54,7 @@ export async function loadNews(): Promise<void> {
       if (data.type === 'warning') (iconEl as HTMLElement).style.color = 'var(--orange)';
       if (data.type === 'critical') (iconEl as HTMLElement).style.color = 'var(--red)';
     }
-    if (data.image_url) {
+    if (data.image_url && isValidImageUrl(data.image_url)) {
       const imgWrap = document.createElement('div');
       imgWrap.className = 'news-banner-image';
       const img = document.createElement('img');

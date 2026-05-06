@@ -51,7 +51,7 @@ export async function doLogin(email: string, password: string): Promise<{ succes
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        jp343_extension_display_name: result.data.displayName || email
+        [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
       });
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
@@ -95,7 +95,7 @@ export async function doRegister(email: string, password: string): Promise<{ suc
       };
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        jp343_extension_display_name: result.data.displayName || email
+        [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
       });
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});

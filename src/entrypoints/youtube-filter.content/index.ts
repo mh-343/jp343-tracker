@@ -2,6 +2,7 @@
 // Hides non-Japanese videos from the YouTube feed, fetches original titles via oEmbed
 
 import { isJapaneseContent } from '../../lib/language-detection';
+import { STORAGE_KEYS } from '../../types';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -212,8 +213,8 @@ export default defineContentScript({
 
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (changes.jp343_extension_settings?.newValue) {
-        const enabled = changes.jp343_extension_settings.newValue.requireJapaneseContent ?? false;
+      if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
+        const enabled = changes[STORAGE_KEYS.SETTINGS].newValue.requireJapaneseContent ?? false;
         if (enabled !== filterEnabled) {
           filterEnabled = enabled;
           if (filterEnabled) {

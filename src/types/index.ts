@@ -129,7 +129,7 @@ export type ExtensionMessage =
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
-  | { type: 'JP343_SITE_LOADED'; userState: JP343UserState }
+  | { type: 'JP343_SITE_LOADED'; userState: JP343UserState; displayName?: string }
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
   | { type: 'GET_PENDING_ENTRIES' }
@@ -180,10 +180,6 @@ export interface BatchSyncResponse {
   failed: number;
 }
 
-export type ExtensionResponse =
-  | { success: true; data?: unknown }
-  | { success: false; error: string };
-
 export interface ActiveTabInfo {
   tabId: number;
   url: string;
@@ -232,7 +228,8 @@ export const STORAGE_KEYS = {
   DISPLAY_NAME: 'jp343_extension_display_name',
   CACHED_SERVER_STATS: 'jp343_cached_server_stats',
   DIAGNOSTICS: 'jp343_extension_diagnostics',
-  BACKGROUND_IMAGE: 'jp343_extension_bg_image'
+  BACKGROUND_IMAGE: 'jp343_extension_bg_image',
+  ACTIVITY_PREFS: 'jp343_extension_activity_prefs'
 } as const;
 
 export interface PlatformHealth {
