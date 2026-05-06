@@ -185,7 +185,7 @@ export default defineContentScript({
     let isCurrentlyInAd: boolean = false;
     let pendingVideoId: string | null = null;
 
-    setupDebugCommands(logger, 'crunchyroll');
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'crunchyroll'); }
 
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video') as HTMLVideoElement | null;

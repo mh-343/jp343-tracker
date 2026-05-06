@@ -75,7 +75,7 @@ export default defineContentScript({
     const logger = createDebugLogger('primevideo');
     const { log, debugLog } = logger;
     log('[JP343] Prime Video Content Script loaded');
-    setupDebugCommands(logger, 'primevideo');
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'primevideo'); }
 
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
     function sendDiagnostic(code: string): void {

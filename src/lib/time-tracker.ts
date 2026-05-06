@@ -268,10 +268,6 @@ export class TimeTracker {
     return true;
   }
 
-  isTitleManuallyEdited(): boolean {
-    return this.session?.titleManuallyEdited || false;
-  }
-
   updateSessionChannelInfo(channelId: string | null, channelName: string | null, channelUrl: string | null): boolean {
     if (!this.session) return false;
 
@@ -318,12 +314,6 @@ export class TimeTracker {
     return false;
   }
 
-  destroy(): void {
-    if (this.tickInterval) {
-      clearInterval(this.tickInterval);
-      this.tickInterval = null;
-    }
-  }
 }
 
 export const tracker = new TimeTracker();

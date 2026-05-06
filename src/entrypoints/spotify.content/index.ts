@@ -1,5 +1,5 @@
 import type { VideoState, SpotifyContentType } from '../../types';
-import { createDebugLogger, setupDebugCommands } from '../../lib/debug-logger';
+import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 
 export default defineContentScript({
   matches: ['*://open.spotify.com/*'],
@@ -30,7 +30,7 @@ export default defineContentScript({
     const { log, debugLog } = logger;
     log('[JP343] Spotify Content Script loaded');
 
-    setupDebugCommands(logger, 'spotify', { logStatus: true });
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'spotify', { logStatus: true }); }
 
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
     function sendDiagnostic(code: string): void {

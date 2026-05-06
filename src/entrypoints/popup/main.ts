@@ -223,8 +223,8 @@ function updateManualTrackDisplay(): void {
 
 async function loadActivityTypePreference(domain: string): Promise<void> {
   try {
-    const result = await browser.storage.local.get('jp343_extension_activity_prefs');
-    const prefs = result['jp343_extension_activity_prefs'] as Record<string, ActivityType> | undefined;
+    const result = await browser.storage.local.get(STORAGE_KEYS.ACTIVITY_PREFS);
+    const prefs = result[STORAGE_KEYS.ACTIVITY_PREFS] as Record<string, ActivityType> | undefined;
     elements.activityTypeSelect.value = prefs?.[domain] ?? 'watching';
   } catch {
     elements.activityTypeSelect.value = 'watching';
@@ -233,10 +233,10 @@ async function loadActivityTypePreference(domain: string): Promise<void> {
 
 async function saveActivityTypePreference(domain: string, activityType: ActivityType): Promise<void> {
   try {
-    const result = await browser.storage.local.get('jp343_extension_activity_prefs');
-    const prefs = (result['jp343_extension_activity_prefs'] as Record<string, ActivityType>) ?? {};
+    const result = await browser.storage.local.get(STORAGE_KEYS.ACTIVITY_PREFS);
+    const prefs = (result[STORAGE_KEYS.ACTIVITY_PREFS] as Record<string, ActivityType>) ?? {};
     prefs[domain] = activityType;
-    await browser.storage.local.set({ 'jp343_extension_activity_prefs': prefs });
+    await browser.storage.local.set({ [STORAGE_KEYS.ACTIVITY_PREFS]: prefs });
   } catch { /* non-critical */ }
 }
 
@@ -474,26 +474,6 @@ function updateSessionDisplay(
 
 function updatePendingDisplay(entries: PendingEntry[]): void {
   elements.pendingSection.style.display = entries.length > 0 ? 'block' : 'none';
-}
-
-function getStatusBadge(entry: PendingEntry): string {
-  if (entry.synced) {
-    return '<span class="pending-entry-status synced">✓</span>';
-  }
-  if (entry.lastSyncError) {
-    return `<span class="pending-entry-status failed" title="${escapeHtml(entry.lastSyncError)}">!</span>`;
-  }
-  return '<span class="pending-entry-status pending">●</span>';
-}
-
-function getGroupStatusBadge(group: GroupedEntry): string {
-  if (group.allSynced) {
-    return '<span class="pending-entry-status synced">✓</span>';
-  }
-  if (group.hasError) {
-    return '<span class="pending-entry-status failed" title="Sync error">!</span>';
-  }
-  return '<span class="pending-entry-status pending">●</span>';
 }
 
 // Grouped entry for popup display
@@ -775,31 +755,6 @@ function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
-}
-
-function isSameVideo(url1: string, url2: string): boolean {
-  if (!url1 || !url2) return false;
-  if (url1 === url2) return true;
-
-  try {
-    const u1 = new URL(url1);
-    const u2 = new URL(url2);
-
-    // YouTube: compare video ID
-    if (u1.hostname.includes('youtube') && u2.hostname.includes('youtube')) {
-      const v1 = u1.searchParams.get('v');
-      const v2 = u2.searchParams.get('v');
-      if (v1 && v2) return v1 === v2;
-    }
-
-    if (u1.hostname.includes('netflix') && u2.hostname.includes('netflix')) {
-      return u1.pathname === u2.pathname;
-    }
-
-    return u1.hostname === u2.hostname && u1.pathname === u2.pathname;
-  } catch {
-    return false;
-  }
 }
 
 async function deleteEntry(entryId: string): Promise<void> {

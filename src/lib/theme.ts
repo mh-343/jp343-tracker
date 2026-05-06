@@ -20,12 +20,12 @@ export function applyColorTheme(theme: ColorTheme): void {
   }
 }
 
-export function getCurrentTheme(): Theme {
+function getCurrentTheme(): Theme {
   const stored = localStorage.getItem(THEME_KEY);
   return THEMES.includes(stored as Theme) ? (stored as Theme) : 'dark';
 }
 
-export function applyTheme(theme: Theme): void {
+function applyTheme(theme: Theme): void {
   if (theme === 'dark') {
     document.documentElement.removeAttribute('data-theme');
   } else {
@@ -33,7 +33,7 @@ export function applyTheme(theme: Theme): void {
   }
 }
 
-export function cycleTheme(): Theme {
+function cycleTheme(): Theme {
   const current = getCurrentTheme();
   const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length];
   localStorage.setItem(THEME_KEY, next);
@@ -41,7 +41,7 @@ export function cycleTheme(): Theme {
   return next;
 }
 
-export function getThemeIcon(theme: Theme): string {
+function getThemeIcon(theme: Theme): string {
   return ICONS[theme];
 }
 

@@ -54,7 +54,7 @@ export default defineContentScript({
     const logger = createDebugLogger('netflix');
     const { log, debugLog } = logger;
     log('[JP343] Netflix Content Script loaded');
-    setupDebugCommands(logger, 'netflix');
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'netflix'); }
 
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
     function sendDiagnostic(code: string): void {
