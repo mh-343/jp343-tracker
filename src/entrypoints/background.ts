@@ -94,7 +94,9 @@ export default defineBackground(() => {
           'player_missing': 'playerMissing',
           'metadata_found': 'metadataFound',
           'metadata_missing': 'metadataMissing',
-          'video_play_sent': 'videoPlaySent'
+          'video_play_sent': 'videoPlaySent',
+          'heartbeat_resume': 'heartbeatResume',
+          'ad_state_recovered': 'adStateRecovered'
         };
         const milestone = milestoneMap[code];
         if (milestone) {

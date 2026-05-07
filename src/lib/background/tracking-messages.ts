@@ -7,7 +7,8 @@ import type { BackgroundMessageContext } from './message-context';
 export async function handleTrackingMessage(
   message: ExtensionMessage,
   messageSender: browser.Runtime.MessageSender,
-  context: BackgroundMessageContext
+  context: BackgroundMessageContext,
+  recordDiagnostic?: (code: string, platform?: string) => void
 ): Promise<unknown> {
   await context.recoveryReady;
   const senderTabId = messageSender.tab?.id;
@@ -104,6 +105,13 @@ export async function handleTrackingMessage(
       if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
       if ('state' in message && message.state && typeof message.state === 'object') {
+        if (message.state.isPlaying) {
+          const session = tracker.getCurrentSession();
+          if (session && session.isPaused) {
+            tracker.resumeSession();
+            recordDiagnostic?.('heartbeat_resume', message.platform);
+          }
+        }
         if (message.state.title) {
           tracker.updateSessionTitleFromAutoFetch(message.state.title);
         }

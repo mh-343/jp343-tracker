@@ -7,8 +7,11 @@ import { getDayStartHour } from './stats';
 import { setText, renderHeroTime, CACHED_SERVER_STATS_KEY } from './stats';
 
 let sessionDisplayCount = 20;
-let serverSessionsCache: ServerSession[] | null = null;
+let rawServerCache: ServerSession[] | null = null;
+let cacheTimestamp = 0;
+let serverSessionsExpanded = false;
 const INITIAL_SERVER_SESSIONS = 5;
+const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
 const platformIcons: Record<string, string> = {
   youtube: '▶',
@@ -27,6 +30,31 @@ function requestRefresh(): void {
 
 export function resetSessionDisplayCount(): void {
   sessionDisplayCount = 20;
+}
+
+export function hasValidSessionCache(): boolean {
+  return rawServerCache !== null && (Date.now() - cacheTimestamp) < CACHE_MAX_AGE_MS;
+}
+
+export function getCachedServerSessions(): ServerSession[] | null {
+  if (!hasValidSessionCache()) return null;
+  return rawServerCache;
+}
+
+export function cacheServerSessions(sessions: ServerSession[]): void {
+  rawServerCache = sessions;
+  cacheTimestamp = Date.now();
+}
+
+export function clearRawCache(): void {
+  rawServerCache = null;
+  cacheTimestamp = 0;
+}
+
+export function invalidateSessionCache(): void {
+  rawServerCache = null;
+  cacheTimestamp = 0;
+  serverSessionsExpanded = false;
 }
 
 export function showSessionsLoading(): void {
@@ -246,6 +274,9 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   delBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     item.remove();
+    if (rawServerCache) {
+      rawServerCache = rawServerCache.filter(s => String(s.id) !== String(session.id));
+    }
     const durationSec = session.duration_seconds || 0;
     if (durationSec > 0) {
       const cached: ServerStatsResponse | undefined =
@@ -319,8 +350,6 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
   const merged = [...deduped, ...sessions].sort(
     (a, b) => new Date(b.date || '').getTime() - new Date(a.date || '').getTime()
   );
-  serverSessionsCache = merged;
-
   if (merged.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
@@ -336,8 +365,8 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
     return;
   }
 
-  const display = merged.slice(0, INITIAL_SERVER_SESSIONS);
-  const remaining = merged.length - INITIAL_SERVER_SESSIONS;
+  const display = serverSessionsExpanded ? merged : merged.slice(0, INITIAL_SERVER_SESSIONS);
+  const remaining = serverSessionsExpanded ? 0 : merged.length - INITIAL_SERVER_SESSIONS;
 
   for (const session of display) {
     container.appendChild(createServerSessionItem(session));
@@ -350,6 +379,7 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
     showMore.style.marginTop = '12px';
     showMore.textContent = `Show ${remaining} more`;
     showMore.addEventListener('click', () => {
+      serverSessionsExpanded = true;
       showMore.remove();
       for (const session of merged.slice(INITIAL_SERVER_SESSIONS)) {
         container.appendChild(createServerSessionItem(session));

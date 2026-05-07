@@ -5,7 +5,7 @@ import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
 import { setLocalDailyMinutes, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
-import { showSessionsLoading, renderSessions, renderServerSessions } from './sessions';
+import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
@@ -69,27 +69,36 @@ async function refresh(): Promise<void> {
 
     if (isLoggedIn) {
       await applyCachedServerStats();
-      if (!initialLoadDone) showSessionsLoading();
 
       const activeState = data.userState!.extApiToken
         ? data.userState!
         : (await tryRefreshNonce(data.userState!)) || data.userState!;
 
       if (activeState.nonce || activeState.extApiToken) {
-        const [serverStats, serverSessions] = await Promise.all([
-          fetchServerStats(activeState),
-          fetchServerSessions(activeState)
-        ]);
-        if (serverStats) {
-          applyServerStats(serverStats);
-        }
-        if (serverSessions) {
+        const cached = getCachedServerSessions();
+        if (cached) {
           const freshPending: PendingEntry[] =
             (await browser.storage.local.get(STORAGE_KEYS.PENDING))[STORAGE_KEYS.PENDING] || [];
           const unsynced = freshPending.filter(e => !e.synced);
-          renderServerSessions(serverSessions, unsynced);
+          renderServerSessions(cached, unsynced);
+          const serverStats = await fetchServerStats(activeState);
+          if (serverStats) applyServerStats(serverStats);
         } else {
-          renderSessions(data.entries);
+          if (!initialLoadDone) showSessionsLoading();
+          const [serverStats, serverSessions] = await Promise.all([
+            fetchServerStats(activeState),
+            fetchServerSessions(activeState)
+          ]);
+          if (serverStats) applyServerStats(serverStats);
+          if (serverSessions) {
+            cacheServerSessions(serverSessions);
+            const freshPending: PendingEntry[] =
+              (await browser.storage.local.get(STORAGE_KEYS.PENDING))[STORAGE_KEYS.PENDING] || [];
+            const unsynced = freshPending.filter(e => !e.synced);
+            renderServerSessions(serverSessions, unsynced);
+          } else {
+            renderSessions(data.entries);
+          }
         }
       } else {
         renderSessions(data.entries);
@@ -157,6 +166,7 @@ browser.storage.onChanged.addListener((changes, area) => {
     changes[STORAGE_KEYS.USER] ||
     changes[STORAGE_KEYS.SETTINGS]
   )) {
+    if (changes[STORAGE_KEYS.PENDING]) clearRawCache();
     refresh();
   }
   if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {

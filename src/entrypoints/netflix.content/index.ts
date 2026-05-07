@@ -63,6 +63,11 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'netflix' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(isGenericPageTitle(state.title) ? 'metadata_missing' : 'metadata_found');
+    }
     sendDiagnostic('content_script_loaded');
     if (window.location.pathname.includes('/watch/')) {
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
@@ -343,14 +348,14 @@ export default defineContentScript({
               lastVideoId = videoId;
               lastTitle = retryState.title;
               log('[JP343] Netflix: Good title after ad retry #' + retryCount + ':', retryState.title);
-              sendMessage('VIDEO_PLAY', { state: retryState });
+              sendVideoPlay(retryState);
             } else if (retryCount >= 5) {
               clearInterval(titleRetry);
               if (retryState && retryState.isPlaying && !isCurrentlyInAd) {
                 lastVideoId = videoId;
                 lastTitle = retryState.title;
                 log('[JP343] Netflix: Starting after ad timeout with title:', retryState.title);
-                sendMessage('VIDEO_PLAY', { state: retryState });
+                sendVideoPlay(retryState);
               }
             }
           }, 2000);
@@ -358,7 +363,7 @@ export default defineContentScript({
           lastVideoId = videoId;
           lastTitle = state.title;
           log('[JP343] Netflix: Session started after ad:', state.title);
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       }, 500);
     }
@@ -804,7 +809,7 @@ export default defineContentScript({
                 lastTitle = retryState.title;
                 pendingVideoId = null;
                 log('[JP343] Netflix: Good title found after retry #' + retryCount + ':', retryState.title);
-                sendMessage('VIDEO_PLAY', { state: retryState });
+                sendVideoPlay(retryState);
               } else if (retryCount >= 5) {
                 clearInterval(titleRetry);
                 if (retryState && retryState.isPlaying && !isCurrentlyInAd) {
@@ -812,7 +817,7 @@ export default defineContentScript({
                   lastTitle = retryState.title;
                   pendingVideoId = null;
                   log('[JP343] Netflix: Starting tracking after timeout with title:', retryState.title);
-                  sendMessage('VIDEO_PLAY', { state: retryState });
+                  sendVideoPlay(retryState);
                 }
               }
             }, 2000);
@@ -822,15 +827,19 @@ export default defineContentScript({
           lastTitle = state.title;
           debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Netflix Play:', state.title, '(ID:', lastVideoId, ')');
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title && state.title !== 'Netflix Content' ? 'metadata_found' : 'metadata_missing');
+          sendVideoPlay(state);
         }
       });
 
       video.addEventListener('pause', () => {
         debugLog('VIDEO_PAUSE', '=== VIDEO PAUSE EVENT ===', collectUIState());
         sendMessage('VIDEO_PAUSE');
+      });
+
+      video.addEventListener('waiting', () => {
+        if (!isCurrentlyInAd) {
+          sendMessage('VIDEO_PAUSE');
+        }
       });
 
       video.addEventListener('ended', () => {
@@ -872,7 +881,20 @@ export default defineContentScript({
       }, 5000);
 
       activePollIntervalId = setInterval(() => {
-        if (isCurrentlyInAd || !window.location.pathname.includes('/watch/')) {
+        if (isCurrentlyInAd) {
+          if (!isAdPlaying()) {
+            const v = findVideoElement();
+            if (v && !v.paused && !v.ended) {
+              log('[JP343] Netflix: Ad state recovered (video playing, no ad detected)');
+              isCurrentlyInAd = false;
+              sendMessage('AD_END');
+              sendDiagnostic('ad_state_recovered');
+            }
+          }
+          return;
+        }
+
+        if (!window.location.pathname.includes('/watch/')) {
           return;
         }
 
@@ -889,7 +911,7 @@ export default defineContentScript({
             setTimeout(() => {
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying && !isCurrentlyInAd) {
-                sendMessage('VIDEO_PLAY', { state: newState });
+                sendVideoPlay(newState);
               }
             }, 500);
           } else {
@@ -931,7 +953,7 @@ export default defineContentScript({
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -962,7 +984,7 @@ export default defineContentScript({
           lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
           if (state) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }
@@ -1076,7 +1098,7 @@ export default defineContentScript({
           log('[JP343] Netflix: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       } else if (video && !video.paused && (adPlaying || isCurrentlyInAd) && videoId) {
         log('[JP343] Netflix: Video playing during ad - tracking paused');

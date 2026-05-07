@@ -28,9 +28,10 @@ export function ensurePlatformHealth(
   diagnostics: ExtensionDiagnostics,
   platform: Platform
 ): PlatformHealth {
-  if (!diagnostics.platformHealth[platform]) {
-    diagnostics.platformHealth[platform] = { ...DEFAULT_PLATFORM_HEALTH };
-  }
+  diagnostics.platformHealth[platform] = {
+    ...DEFAULT_PLATFORM_HEALTH,
+    ...diagnostics.platformHealth[platform]
+  };
   return diagnostics.platformHealth[platform]!;
 }
 

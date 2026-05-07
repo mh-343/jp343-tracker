@@ -66,6 +66,7 @@ export class TimeTracker {
     }
 
     if (this.session) {
+      this.confirmPlayback();
       this.finalizeSession();
     }
 
