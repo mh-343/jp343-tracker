@@ -3,6 +3,7 @@ import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
+import { invalidateSessionCache } from './sessions';
 
 interface ExportData {
   exportVersion: 1;
@@ -746,6 +747,7 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
     }
 
     await browser.storage.local.set(updates);
+    invalidateSessionCache();
     document.dispatchEvent(new CustomEvent('jp343:refresh'));
 
     const preview = statusContainer.querySelector('.import-preview');

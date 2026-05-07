@@ -1,6 +1,7 @@
 import type { JP343UserState, PendingEntry } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { ajaxPost, AJAX_URL } from './api';
+import { invalidateSessionCache } from './sessions';
 
 export async function tryRefreshNonce(userState: JP343UserState): Promise<JP343UserState | null> {
   try {
@@ -53,6 +54,7 @@ export async function doLogin(email: string, password: string): Promise<{ succes
         [STORAGE_KEYS.USER]: userState,
         [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
       });
+      invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
 
@@ -97,6 +99,7 @@ export async function doRegister(email: string, password: string): Promise<{ suc
         [STORAGE_KEYS.USER]: userState,
         [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
       });
+      invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
 
@@ -126,6 +129,7 @@ export async function doLogout(): Promise<void> {
     await r.text();
   } catch { /* server unreachable is fine, clear local state anyway */ }
   await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME]);
+  invalidateSessionCache();
   isLoggingOut = false;
   requestRefresh();
 }

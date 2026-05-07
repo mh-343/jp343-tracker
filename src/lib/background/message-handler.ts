@@ -1,4 +1,4 @@
-import type { ExtensionMessage } from '../../types';
+import type { ExtensionMessage, Platform } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { DiagnosticsContext } from './diagnostics-context';
 import { handlePendingMessage } from './pending-messages';
@@ -41,7 +41,8 @@ export function createBackgroundMessageHandler(
         case 'UPDATE_SESSION_TITLE':
         case 'GET_ACTIVE_TAB_INFO':
         case 'MANUAL_TRACK_START':
-          return handleTrackingMessage(message, messageSender, context);
+          return handleTrackingMessage(message, messageSender, context,
+            (code: string, platform?: string) => diagnosticsContext.recordDiagnosticEvent(code, platform as Platform));
 
         case 'GET_PENDING_ENTRIES':
         case 'DELETE_PENDING_ENTRY':

@@ -239,6 +239,8 @@ export interface PlatformHealth {
   metadataFound: number;
   metadataMissing: number;
   videoPlaySent: number;
+  heartbeatResume: number;
+  adStateRecovered: number;
 }
 
 export interface SyncHealth {
@@ -285,5 +287,7 @@ export const DEFAULT_PLATFORM_HEALTH: PlatformHealth = {
   playerMissing: 0,
   metadataFound: 0,
   metadataMissing: 0,
-  videoPlaySent: 0
+  videoPlaySent: 0,
+  heartbeatResume: 0,
+  adStateRecovered: 0
 };
