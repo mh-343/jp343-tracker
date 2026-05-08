@@ -29,7 +29,11 @@ export default defineContentScript({
       'ytd-reel-item-renderer',
       'yt-lockup-view-model',
       'ytd-playlist-video-renderer',
-      'ytd-movie-renderer'
+      'ytd-movie-renderer',
+      'ytm-rich-item-renderer',
+      'ytm-compact-video-renderer',
+      'ytm-video-with-context-renderer',
+      'ytm-reel-item-renderer'
     ].join(',');
 
     const TITLE_SELECTORS = [
@@ -108,18 +112,23 @@ export default defineContentScript({
 
     async function processVideo(element: Element): Promise<void> {
       if (element.hasAttribute(PROCESSED_ATTR)) return;
+      if (element.closest(`[${PROCESSED_ATTR}]`)) return;
+
+      const domTitle = getVideoTitle(element);
+      const videoId = getVideoId(element);
+
+      if (!domTitle && !videoId) return;
+
       element.setAttribute(PROCESSED_ATTR, '1');
 
       const htmlEl = element as HTMLElement;
       htmlEl.classList.add(HIDDEN_CLASS);
 
-      const domTitle = getVideoTitle(element);
       if (domTitle && isJapaneseContent(domTitle)) {
         htmlEl.classList.remove(HIDDEN_CLASS);
         return;
       }
 
-      const videoId = getVideoId(element);
       if (videoId) {
         const originalTitle = await getOriginalTitle(videoId);
         if (originalTitle && isJapaneseContent(originalTitle)) {

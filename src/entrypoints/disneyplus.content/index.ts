@@ -68,7 +68,7 @@ export default defineContentScript({
         if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }
@@ -84,6 +84,12 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'disneyplus' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(state.title && state.title !== 'Disney+ Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
     sendDiagnostic('content_script_loaded');
     if (window.location.pathname.includes('/play/')) {
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
@@ -426,7 +432,7 @@ export default defineContentScript({
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
             log('[JP343] Disney+: Auto-tracking after ad:', state.title);
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }
@@ -542,9 +548,7 @@ export default defineContentScript({
           lastVideoId = videoId;
           lastTitle = state.title;
           log('[JP343] Disney+ Play:', state.title);
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title && state.title !== 'Disney+ Content' ? 'metadata_found' : 'metadata_missing');
+          sendVideoPlay(state);
         }
       });
 
@@ -577,7 +581,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       });
 
@@ -597,7 +601,7 @@ export default defineContentScript({
             setTimeout(() => {
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying && !isCurrentlyInAd) {
-                sendMessage('VIDEO_PLAY', { state: newState });
+                sendVideoPlay(newState);
               }
             }, 500);
           } else {
@@ -647,7 +651,7 @@ export default defineContentScript({
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -674,7 +678,7 @@ export default defineContentScript({
             const state = getCurrentVideoState();
             if (state) {
               log('[JP343] Disney+: Initial video playing');
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -729,7 +733,7 @@ export default defineContentScript({
                   lastTitle = getFormattedTitle();
                   const state = getCurrentVideoState();
                   if (state) {
-                    sendMessage('VIDEO_PLAY', { state });
+                    sendVideoPlay(state);
                   }
                 }
               }
@@ -764,7 +768,7 @@ export default defineContentScript({
         lastTitle = getFormattedTitle();
         const state = getCurrentVideoState();
         if (state) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       }
     }, 3000);
@@ -782,7 +786,7 @@ export default defineContentScript({
         if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }

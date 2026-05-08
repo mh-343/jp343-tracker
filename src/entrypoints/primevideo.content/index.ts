@@ -84,6 +84,12 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'primevideo' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(state.title && state.title !== 'Prime Video Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
     sendDiagnostic('content_script_loaded');
     setTimeout(() => { if (!currentVideoElement && isPlayerActive()) sendDiagnostic('player_missing'); }, 15000);
 
@@ -486,7 +492,7 @@ export default defineContentScript({
             const state = getCurrentVideoState();
             if (state) {
               log('[JP343] Prime Video: Resuming after ad');
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }, 1000);
@@ -516,7 +522,7 @@ export default defineContentScript({
           if (state) {
             lastTitle = state.title;
             log('[JP343] Prime Video: New episode started:', state.title);
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }, 500);
       }
@@ -638,13 +644,13 @@ export default defineContentScript({
                 lastVideoId = videoId;
                 lastTitle = retryState.title;
                 log('[JP343] Prime Video: Good title after retry #' + retryCount + ':', retryState.title);
-                sendMessage('VIDEO_PLAY', { state: retryState });
+                sendVideoPlay(retryState);
               } else if (retryCount >= 5) {
                 clearInterval(titleRetry);
                 if (retryState && retryState.isPlaying && !isCurrentlyInAd) {
                   lastVideoId = videoId;
                   lastTitle = retryState.title;
-                  sendMessage('VIDEO_PLAY', { state: retryState });
+                  sendVideoPlay(retryState);
                 }
               }
             }, 2000);
@@ -655,9 +661,7 @@ export default defineContentScript({
           lastTitle = state.title;
           lastCurrentTime = video.currentTime;
           log('[JP343] Prime Video Play:', state.title);
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title && state.title !== 'Prime Video Content' ? 'metadata_found' : 'metadata_missing');
+          sendVideoPlay(state);
         }
       });
 
@@ -696,7 +700,7 @@ export default defineContentScript({
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying && !isCurrentlyInAd) {
                 lastTitle = newState.title;
-                sendMessage('VIDEO_PLAY', { state: newState });
+                sendVideoPlay(newState);
               }
             }, 500);
           } else {
@@ -745,7 +749,7 @@ export default defineContentScript({
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -772,7 +776,7 @@ export default defineContentScript({
             const state = getCurrentVideoState();
             if (state) {
               log('[JP343] Prime Video: Initial video playing');
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -849,7 +853,7 @@ export default defineContentScript({
           log('[JP343] Prime Video: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       }
     }, 3000);

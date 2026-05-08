@@ -50,6 +50,12 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'crunchyroll' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(state.title && state.title !== 'Crunchyroll Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
     sendDiagnostic('content_script_loaded');
     if (window.location.pathname.includes('/watch/')) {
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
@@ -298,7 +304,7 @@ export default defineContentScript({
             if (state && state.isPlaying && !isAdPlaying()) {
               lastVideoId = pendingVideoId;
               lastTitle = state.title;
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
             pendingVideoId = null;
           }, 500);
@@ -818,9 +824,7 @@ export default defineContentScript({
           lastTitle = state.title;
           debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Crunchyroll Play:', state.title, '(ID:', lastVideoId, ')');
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title && state.title !== 'Crunchyroll Content' ? 'metadata_found' : 'metadata_missing');
+          sendVideoPlay(state);
         }
       });
 
@@ -873,7 +877,7 @@ export default defineContentScript({
             setTimeout(() => {
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying && !isCurrentlyInAd) {
-                sendMessage('VIDEO_PLAY', { state: newState });
+                sendVideoPlay(newState);
               }
             }, 500);
           } else {
@@ -913,7 +917,7 @@ export default defineContentScript({
             lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
-              sendMessage('VIDEO_PLAY', { state });
+              sendVideoPlay(state);
             }
           }
         }
@@ -944,7 +948,7 @@ export default defineContentScript({
           lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
           if (state) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }
@@ -1056,7 +1060,7 @@ export default defineContentScript({
           log('[JP343] Crunchyroll: Starting delayed tracking');
           lastVideoId = videoId;
           lastTitle = state.title;
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       } else if (video && !video.paused && (adPlaying || isCurrentlyInAd) && videoId) {
         log('[JP343] Crunchyroll: Video playing during ad - tracking paused');
