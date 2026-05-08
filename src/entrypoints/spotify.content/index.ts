@@ -39,6 +39,12 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'spotify' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic('metadata_found');
+    }
+
     sendDiagnostic('content_script_loaded');
     setTimeout(() => {
       const hasPlayer = !!document.querySelector('[data-testid="control-button-playpause"]');
@@ -224,7 +230,7 @@ export default defineContentScript({
         lastTrackTitle = trackTitle;
         const state = getCurrentState();
         if (state) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
           wasPlaying = true;
         } else {
           wasPlaying = false;
@@ -241,9 +247,7 @@ export default defineContentScript({
           lastTrackTitle = trackTitle;
           log('[JP343] Spotify: Play started:', state.title);
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic('metadata_found');
+          sendVideoPlay(state);
           wasPlaying = true;
           metadataMissingReported = false;
           metadataMissRetries = 0;

@@ -39,7 +39,7 @@ export default defineContentScript({
         } else if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         } else if (video && video.paused) {
           sendMessage('VIDEO_PAUSE');
@@ -61,6 +61,12 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'cijapanese' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function sendVideoPlay(state: VideoState): void {
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(state.title && state.title !== 'CI Japanese Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
     sendDiagnostic('content_script_loaded');
     if (isWatchPage()) {
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
@@ -226,9 +232,7 @@ export default defineContentScript({
           lastVideoId = videoId;
           lastTitle = state.title;
           log('[JP343] CI Japanese Play:', state.title);
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          sendDiagnostic(state.title && state.title !== 'CI Japanese Content' ? 'metadata_found' : 'metadata_missing');
+          sendVideoPlay(state);
         }
       });
 
@@ -256,7 +260,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         const state = getCurrentVideoState();
         if (state) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       });
 
@@ -272,7 +276,7 @@ export default defineContentScript({
             setTimeout(() => {
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying) {
-                sendMessage('VIDEO_PLAY', { state: newState });
+                sendVideoPlay(newState);
               }
             }, 500);
           } else {
@@ -316,7 +320,7 @@ export default defineContentScript({
           lastTitle = getTitle();
           const state = getCurrentVideoState();
           if (state) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }
@@ -337,7 +341,7 @@ export default defineContentScript({
         lastTitle = getTitle();
         const state = getCurrentVideoState();
         if (state) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       }
     }
@@ -371,7 +375,7 @@ export default defineContentScript({
               lastTitle = getTitle();
               const state = getCurrentVideoState();
               if (state) {
-                sendMessage('VIDEO_PLAY', { state });
+                sendVideoPlay(state);
               }
             }
           }
@@ -389,7 +393,7 @@ export default defineContentScript({
         lastTitle = getTitle();
         const state = getCurrentVideoState();
         if (state) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       }
     }, 3000);
@@ -409,7 +413,7 @@ export default defineContentScript({
         } else if (video && !video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         } else if (video && video.paused) {
           sendMessage('VIDEO_PAUSE');

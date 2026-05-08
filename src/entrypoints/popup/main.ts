@@ -104,7 +104,6 @@ async function loadAndApplySettings(): Promise<void> {
       const settings = response.data.settings as ExtensionSettings;
       updateToggleDisplay(settings.enabled);
       blockedChannels = settings.blockedChannels || [];
-      renderBlockedList();
       updateSpotifyFilterUI(settings);
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
       _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
@@ -168,7 +167,7 @@ async function loadActiveTabInfo(): Promise<void> {
       activeTabInfo = response.data as ActiveTabInfo;
       updateManualTrackDisplay();
       loadAndApplySettings();
-      if (activeTabInfo.domain?.includes('youtube.com') && !activeTabInfo.url?.includes('m.youtube.com')) {
+      if (activeTabInfo.domain?.includes('youtube.com')) {
         const stored = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
         const jpEnabled = stored[STORAGE_KEYS.SETTINGS]?.requireJapaneseContent ?? false;
         const jpBtn = document.getElementById('btnJpFilter');

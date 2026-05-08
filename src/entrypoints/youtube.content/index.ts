@@ -14,6 +14,10 @@ export default defineContentScript({
     let adCheckInterval: ReturnType<typeof setInterval> | null = null;
     let stateUpdateInterval: ReturnType<typeof setInterval> | null = null;
     let extensionContextValid = true;
+    let lastVideoPlayTime = 0;
+    let lastVideoPauseTime = 0;
+    let pendingRetryTimeouts: ReturnType<typeof setTimeout>[] = [];
+    const DEDUP_WINDOW_MS = 200;
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
@@ -37,16 +41,17 @@ export default defineContentScript({
     document.addEventListener('visibilitychange', () => {
       if (!extensionContextValid) return;
       if (!document.hidden) {
-        const video = findVideoElement();
-        if (video && video.ended) {
+        const video = currentVideoElement;
+        if (!video) return;
+        if (video.ended) {
           sendMessage('VIDEO_ENDED');
-        } else if (video && !video.paused && !video.ended) {
+        } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
-        } else if (video && video.paused) {
-          sendMessage('VIDEO_PAUSE');
+        } else if (video.paused) {
+          sendVideoPause();
         }
       }
     });
@@ -61,6 +66,22 @@ export default defineContentScript({
       try {
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'youtube' }).catch(() => {});
       } catch { /* best-effort */ }
+    }
+
+    function sendVideoPlay(state: VideoState): void {
+      const now = Date.now();
+      if (now - lastVideoPlayTime < DEDUP_WINDOW_MS) return;
+      lastVideoPlayTime = now;
+      sendMessage('VIDEO_PLAY', { state });
+      sendDiagnostic('video_play_sent');
+      sendDiagnostic(state.title && state.title !== 'YouTube Video' ? 'metadata_found' : 'metadata_missing');
+    }
+
+    function sendVideoPause(): void {
+      const now = Date.now();
+      if (now - lastVideoPauseTime < DEDUP_WINDOW_MS) return;
+      lastVideoPauseTime = now;
+      sendMessage('VIDEO_PAUSE');
     }
 
     sendDiagnostic('content_script_loaded');
@@ -465,33 +486,28 @@ export default defineContentScript({
 
       video.addEventListener('play', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
           const initialTitle = state.title;
-          sendMessage('VIDEO_PLAY', { state });
-          sendDiagnostic('video_play_sent');
-          if (state.title && state.title !== 'YouTube Video') {
-            sendDiagnostic('metadata_found');
-          } else {
-            sendDiagnostic('metadata_missing');
-          }
+          sendVideoPlay(state);
 
-          setTimeout(() => {
+          pendingRetryTimeouts.push(setTimeout(() => {
             if (!isExtensionContextValid()) return;
             const freshState = getCurrentVideoState();
             if (freshState && freshState.title !== initialTitle) {
               log('[JP343] Title updated:', initialTitle, '->', freshState.title);
               sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
             }
-          }, 1500);
+          }, 1500));
 
           if (!state.channelId) {
             const retryDelays = [2000, 4000, 8000];
             let retryIndex = 0;
             const recheckChannel = (): void => {
               if (retryIndex >= retryDelays.length || !isExtensionContextValid()) return;
-              setTimeout(() => {
+              pendingRetryTimeouts.push(setTimeout(() => {
                 const freshState = getCurrentVideoState();
                 if (freshState?.channelId) {
                   sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
@@ -499,7 +515,7 @@ export default defineContentScript({
                   retryIndex++;
                   recheckChannel();
                 }
-              }, retryDelays[retryIndex]);
+              }, retryDelays[retryIndex]));
             };
             recheckChannel();
           }
@@ -508,35 +524,40 @@ export default defineContentScript({
 
       video.addEventListener('pause', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_PAUSE', '=== VIDEO PAUSE EVENT ===', collectUIState());
-        sendMessage('VIDEO_PAUSE');
+        sendVideoPause();
       });
 
       video.addEventListener('ended', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
         sendMessage('VIDEO_ENDED');
       });
 
       video.addEventListener('waiting', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         if (!isCurrentlyAd) {
-          sendMessage('VIDEO_PAUSE');
+          sendVideoPause();
         }
       });
 
       video.addEventListener('emptied', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         if (document.hidden && video.paused && video.readyState === 0) {
-          sendMessage('VIDEO_PAUSE');
+          sendVideoPause();
         }
       });
 
       video.addEventListener('playing', () => {
         if (!isExtensionContextValid()) return;
+        if (video !== currentVideoElement) return;
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
-          sendMessage('VIDEO_PLAY', { state });
+          sendVideoPlay(state);
         }
       });
 
@@ -564,7 +585,7 @@ export default defineContentScript({
           if (state && !state.isAd) {
             if (DEBUG_MODE) debugLog('VIDEO_PLAY', 'Video already playing - starting tracking', collectUIState());
             log('[JP343] Video already playing - starting tracking');
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
         }
       }, 500);
@@ -647,6 +668,8 @@ export default defineContentScript({
 
         stopAdMonitoring();
         stopStateUpdates();
+        pendingRetryTimeouts.forEach(clearTimeout);
+        pendingRetryTimeouts = [];
 
         if (currentVideoElement) {
           currentVideoElement.removeAttribute('data-jp343-tracked');
@@ -777,16 +800,17 @@ export default defineContentScript({
       }
       if (message?.type === 'TAB_ACTIVATED') {
         if (!extensionContextValid) return;
-        const video = findVideoElement();
-        if (video && video.ended) {
+        const video = currentVideoElement;
+        if (!video) return;
+        if (video.ended) {
           sendMessage('VIDEO_ENDED');
-        } else if (video && !video.paused && !video.ended) {
+        } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
-            sendMessage('VIDEO_PLAY', { state });
+            sendVideoPlay(state);
           }
-        } else if (video && video.paused) {
-          sendMessage('VIDEO_PAUSE');
+        } else if (video.paused) {
+          sendVideoPause();
         }
       }
     });
