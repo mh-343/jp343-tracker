@@ -22,16 +22,23 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
+async function bumpRevision(): Promise<void> {
+  await browser.storage.local.set({ [STORAGE_KEYS.BG_IMAGE_REVISION]: Date.now() });
+}
+
 export async function saveBackground(blob: Blob): Promise<void> {
   cachedBlob = blob;
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       tx.objectStore(STORE_NAME).put(blob, BG_KEY);
       tx.oncomplete = () => { db.close(); resolve(); };
       tx.onerror = () => { db.close(); reject(tx.error); };
     });
+    await browser.storage.local.remove(STORAGE_KEYS.BACKGROUND_IMAGE);
+    await bumpRevision();
+    return;
   } catch {
     const reader = new FileReader();
     const base64 = await new Promise<string>((resolve, reject) => {
@@ -40,6 +47,7 @@ export async function saveBackground(blob: Blob): Promise<void> {
       reader.readAsDataURL(blob);
     });
     await browser.storage.local.set({ [STORAGE_KEYS.BACKGROUND_IMAGE]: base64 });
+    await bumpRevision();
   }
 }
 
@@ -79,6 +87,7 @@ export async function removeBackground(): Promise<void> {
     // IndexedDB unavailable
   }
   await browser.storage.local.remove(STORAGE_KEYS.BACKGROUND_IMAGE);
+  await bumpRevision();
 }
 
 export function clearBackgroundDom(): void {

@@ -229,7 +229,9 @@ export const STORAGE_KEYS = {
   CACHED_SERVER_STATS: 'jp343_cached_server_stats',
   DIAGNOSTICS: 'jp343_extension_diagnostics',
   BACKGROUND_IMAGE: 'jp343_extension_bg_image',
-  ACTIVITY_PREFS: 'jp343_extension_activity_prefs'
+  BG_IMAGE_REVISION: 'jp343_bg_image_revision',
+  ACTIVITY_PREFS: 'jp343_extension_activity_prefs',
+  MIGRATED_HUB_BG: 'jp343_migrated_hub_bg_to_server'
 } as const;
 
 export interface PlatformHealth {

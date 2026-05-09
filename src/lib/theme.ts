@@ -7,7 +7,7 @@ type Theme = typeof THEMES[number];
 const ICONS: Record<Theme, string> = { dark: '\u263E', light: '\u2600' };
 
 const COLOR_THEME_KEY = 'jp343_color_theme';
-const VALID_COLOR_THEMES = Object.keys(COLOR_THEMES) as ColorTheme[];
+export const VALID_COLOR_THEMES = Object.keys(COLOR_THEMES) as ColorTheme[];
 
 export function applyColorTheme(theme: ColorTheme): void {
   const valid = VALID_COLOR_THEMES.includes(theme) ? theme : 'magenta';

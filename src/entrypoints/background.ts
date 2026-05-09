@@ -2,6 +2,7 @@ import { tracker, generateProjectId } from '../lib/time-tracker';
 import { getLocalDateString, getLogicalNow } from '../lib/format-utils';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure, handleAuthFailure } from '../lib/auth-helpers';
+import { VALID_COLOR_THEMES } from '../lib/theme';
 import { loadPendingEntries } from '../lib/pending-entries';
 import {
   initBadgeService,
@@ -32,6 +33,7 @@ import type {
   BatchEntryResult,
   BatchSyncResponse,
   SpotifyContentType,
+  ColorTheme,
   Platform,
   ExtensionDiagnostics,
   PlatformHealth
@@ -197,15 +199,17 @@ export default defineBackground(() => {
 
     const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
     try {
+      const pushParams: Record<string, string> = {
+        action: 'jp343_extension_push_settings',
+        ext_api_token: userState.extApiToken,
+        blocked_channels: JSON.stringify(settings.blockedChannels),
+        spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
+        day_boundary_hour: String(settings.dayStartHour || 0),
+        color_theme: settings.colorTheme ?? 'magenta',
+      };
       const resp = await fetch(ajaxUrl, {
         method: 'POST',
-        body: new URLSearchParams({
-          action: 'jp343_extension_push_settings',
-          ext_api_token: userState.extApiToken,
-          blocked_channels: JSON.stringify(settings.blockedChannels),
-          spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
-          day_boundary_hour: String(settings.dayStartHour || 0),
-        }),
+        body: new URLSearchParams(pushParams),
       });
       const result = await resp.json();
       if (result.success) {
@@ -219,13 +223,13 @@ export default defineBackground(() => {
     }
   }
 
-  async function pullAndMergeSettingsFromServer(): Promise<void> {
+  async function pullAndMergeSettingsFromServer(): Promise<boolean> {
     const userState: JP343UserState | null = (
       await browser.storage.local.get(STORAGE_KEYS.USER)
     )[STORAGE_KEYS.USER] ?? null;
     if (!userState?.isLoggedIn || !userState?.extApiToken) {
       settingsPullComplete = true;
-      return;
+      return false;
     }
 
     const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
@@ -242,21 +246,32 @@ export default defineBackground(() => {
       });
       const result = await resp.json();
       if (!result.success) {
-        if (isAuthFailure(result)) { await handleAuthFailure(); return; }
+        if (isAuthFailure(result)) { await handleAuthFailure(); return false; }
         log('[JP343] Settings pull failed:', result.data?.message);
-        return;
+        return false;
       }
 
       if (result.data?.changed === false) {
         log('[JP343] Settings unchanged on server');
+        const serverTheme: string | undefined = result.data?.color_theme;
+        if (serverTheme && VALID_COLOR_THEMES.includes(serverTheme as ColorTheme)) {
+          const settings = await loadSettings();
+          if (settings.colorTheme !== serverTheme) {
+            settings.colorTheme = serverTheme as ColorTheme;
+            await saveSettings(settings);
+            log('[JP343] Color theme updated from server:', serverTheme);
+          }
+        }
         settingsPullComplete = true;
-        return;
+        settingsLastPullTime = Date.now();
+        return false;
       }
 
       if (result.data?.updated_at) settingsLastUpdated = result.data.updated_at;
 
       const serverBlocked: BlockedChannel[] | null = result.data?.blocked_channels ?? null;
       const serverSpotify: SpotifyContentType[] | null = result.data?.spotify_content_types ?? null;
+      const serverColorTheme: string | undefined = result.data?.color_theme;
 
       const settings = await loadSettings();
       let changed = false;
@@ -279,15 +294,24 @@ export default defineBackground(() => {
         }
       }
 
+      if (serverColorTheme && VALID_COLOR_THEMES.includes(serverColorTheme as ColorTheme)) {
+        if (settings.colorTheme !== serverColorTheme) {
+          settings.colorTheme = serverColorTheme as ColorTheme;
+          changed = true;
+        }
+      }
+
       if (changed) {
         await saveSettings(settings);
         log('[JP343] Settings merged from server');
       }
       settingsPullComplete = true;
       settingsLastPullTime = Date.now();
+      return serverColorTheme !== undefined;
     } catch (error) {
       log('[JP343] Settings pull error:', error);
       settingsPullComplete = true;
+      return false;
     }
   }
 
@@ -856,6 +880,49 @@ export default defineBackground(() => {
 
   recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
+
+  (async function migrateLocalHubBgFlag(): Promise<void> {
+    const flagRes = await browser.storage.local.get(STORAGE_KEYS.MIGRATED_HUB_BG);
+    if (flagRes[STORAGE_KEYS.MIGRATED_HUB_BG]) return;
+
+    const settingsRes = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+    const settings = settingsRes[STORAGE_KEYS.SETTINGS] as (ExtensionSettings & { backgroundEnabledHub?: boolean }) | undefined;
+    if (!settings || !('backgroundEnabledHub' in settings)) {
+      await browser.storage.local.set({ [STORAGE_KEYS.MIGRATED_HUB_BG]: true });
+      return;
+    }
+
+    let serverHasMigration = false;
+    try {
+      serverHasMigration = await pullAndMergeSettingsFromServer();
+    } catch { return; }
+    if (!serverHasMigration) return;
+
+    const userState: JP343UserState | null = (
+      await browser.storage.local.get(STORAGE_KEYS.USER)
+    )[STORAGE_KEYS.USER] ?? null;
+    if (!userState?.isLoggedIn || !userState?.extApiToken) return;
+
+    if (settings.backgroundEnabledHub === true) {
+      const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+      try {
+        await fetch(ajaxUrl, {
+          method: 'POST',
+          body: new URLSearchParams({
+            action: 'jp343_extension_push_settings',
+            ext_api_token: userState.extApiToken,
+            hub_background_enabled: '1',
+          }),
+        });
+      } catch { return; }
+    }
+
+    const cleaned = { ...settings };
+    delete (cleaned as Record<string, unknown>).backgroundEnabledHub;
+    await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: cleaned });
+    await browser.storage.local.set({ [STORAGE_KEYS.MIGRATED_HUB_BG]: true });
+    log('[JP343] Hub BG flag migrated to server');
+  })().catch(() => {});
 
   browser.alarms.create('jp343-check', { periodInMinutes: 5 });
 

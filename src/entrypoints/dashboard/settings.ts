@@ -41,6 +41,11 @@ async function getSettings(): Promise<ExtensionSettings> {
   return { ...DEFAULT_SETTINGS };
 }
 
+async function getFreshSettings(): Promise<ExtensionSettings> {
+  const res = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+  return { ...DEFAULT_SETTINGS, ...(res[STORAGE_KEYS.SETTINGS] || {}) };
+}
+
 async function updateSettings(patch: Partial<ExtensionSettings>): Promise<void> {
   const current = await getSettings();
   const updated = { ...current, ...patch };
@@ -177,7 +182,8 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
     const resized = await resizeImage(file);
     await saveBackground(resized);
     await updateSettings({ backgroundEnabled: true });
-    await applyDashboardBackground(true, settings.backgroundOpacity ?? 75);
+    const fresh = await getFreshSettings();
+    await applyDashboardBackground(true, fresh.backgroundOpacity ?? 75);
     uploadBtn.textContent = 'Upload';
     removeBtn.style.display = '';
 
@@ -204,8 +210,8 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
       existing.replaceWith(ph);
     }
 
-    removeBackground();
-    updateSettings({ backgroundEnabled: false });
+    await removeBackground();
+    await updateSettings({ backgroundEnabled: false });
   });
 
   uploadRow.appendChild(fileInput);
@@ -241,7 +247,8 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
   slider.addEventListener('change', async () => {
     const opacity = Number(slider.value);
     await updateSettings({ backgroundOpacity: opacity });
-    if (settings.backgroundEnabled) {
+    const fresh = await getFreshSettings();
+    if (fresh.backgroundEnabled) {
       await applyDashboardBackground(true, opacity);
     }
   });
