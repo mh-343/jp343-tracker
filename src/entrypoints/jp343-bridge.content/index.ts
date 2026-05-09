@@ -1,4 +1,6 @@
 import type { JP343UserState } from '../../types';
+import { STORAGE_KEYS } from '../../types';
+import { loadBackground } from '../../lib/background-image';
 
 export default defineContentScript({
   matches: [
@@ -16,6 +18,29 @@ export default defineContentScript({
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
     log('[JP343 Bridge] Content script loaded');
+
+    const observers: MutationObserver[] = [];
+    const intervalIds: ReturnType<typeof setInterval>[] = [];
+    const storageListeners: Array<(changes: Record<string, browser.storage.StorageChange>, area: string) => void> = [];
+
+    let disposed = false;
+
+    function cleanup(): void {
+      disposed = true;
+      for (const o of observers) o.disconnect();
+      observers.length = 0;
+      for (const id of intervalIds) clearInterval(id);
+      intervalIds.length = 0;
+      for (const fn of storageListeners) {
+        try { browser.storage.onChanged.removeListener(fn); } catch { /* ignore */ }
+      }
+      storageListeners.length = 0;
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+      }
+    }
+    window.addEventListener('pagehide', cleanup);
 
     const version = browser.runtime.getManifest().version;
     document.documentElement.setAttribute('data-jp343-extension', version);
@@ -156,5 +181,95 @@ export default defineContentScript({
       setTimeout(poll, 300);
     }
     provideExtensionDataIfLoggedIn();
+
+    let currentObjectUrl: string | null = null;
+    let bgSyncGeneration = 0;
+
+    async function syncHubBackgroundLayer(): Promise<void> {
+      if (disposed) return;
+      const thisGeneration = ++bgSyncGeneration;
+      bodyClassObserver.disconnect();
+      try {
+        const wantBg = document.body?.classList.contains('jp343-hub-bg-enabled') ?? false;
+        const layer = document.querySelector<HTMLDivElement>('.jp343-ext-bg-layer');
+        const overlay = document.querySelector<HTMLDivElement>('.jp343-ext-bg-overlay');
+
+        if (!wantBg) {
+          document.body.classList.remove('jp343-hub-bg-active');
+          layer?.remove();
+          overlay?.remove();
+          if (currentObjectUrl) { URL.revokeObjectURL(currentObjectUrl); currentObjectUrl = null; }
+          return;
+        }
+
+        const blob = await loadBackground();
+        if (thisGeneration !== bgSyncGeneration || disposed) return;
+
+        if (!blob) {
+          document.body.classList.remove('jp343-hub-bg-active');
+          layer?.remove();
+          overlay?.remove();
+          return;
+        }
+
+        if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = URL.createObjectURL(blob);
+
+        const settingsRes = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+        if (thisGeneration !== bgSyncGeneration || disposed) return;
+        const opacity = (settingsRes[STORAGE_KEYS.SETTINGS]?.backgroundOpacity ?? 75) / 100;
+
+        const ensuredLayer = layer ?? (() => {
+          const el = document.createElement('div');
+          el.className = 'jp343-ext-bg-layer';
+          document.body.prepend(el);
+          return el;
+        })();
+        ensuredLayer.style.backgroundImage = `url(${currentObjectUrl})`;
+
+        const ensuredOverlay = overlay ?? (() => {
+          const el = document.createElement('div');
+          el.className = 'jp343-ext-bg-overlay';
+          ensuredLayer.after(el);
+          return el;
+        })();
+        ensuredOverlay.style.opacity = String(opacity);
+        document.body.classList.add('jp343-hub-bg-active');
+      } finally {
+        if (!disposed && document.body) {
+          bodyClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        }
+      }
+    }
+
+    const bodyClassObserver = new MutationObserver(() => { syncHubBackgroundLayer(); });
+    function startBgObserver(): void {
+      if (!document.body) return;
+      bodyClassObserver.disconnect();
+      bodyClassObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      if (!observers.includes(bodyClassObserver)) observers.push(bodyClassObserver);
+      syncHubBackgroundLayer();
+    }
+
+    if (document.body) startBgObserver();
+    else document.addEventListener('DOMContentLoaded', startBgObserver, { once: true });
+
+    function onStorageChanged(changes: Record<string, browser.storage.StorageChange>, area: string): void {
+      if (area !== 'local') return;
+      if (changes[STORAGE_KEYS.BG_IMAGE_REVISION] || changes[STORAGE_KEYS.SETTINGS]) {
+        syncHubBackgroundLayer();
+      }
+    }
+    browser.storage.onChanged.addListener(onStorageChanged);
+    storageListeners.push(onStorageChanged);
+
+    window.addEventListener('pageshow', (event) => {
+      if (event.persisted) {
+        disposed = false;
+        startBgObserver();
+        browser.storage.onChanged.addListener(onStorageChanged);
+        storageListeners.push(onStorageChanged);
+      }
+    });
   }
 });
