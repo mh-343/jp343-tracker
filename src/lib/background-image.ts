@@ -28,6 +28,13 @@ async function bumpRevision(): Promise<void> {
 
 export async function saveBackground(blob: Blob): Promise<void> {
   cachedBlob = blob;
+  const reader = new FileReader();
+  const base64 = await new Promise<string>((resolve, reject) => {
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+  await browser.storage.local.set({ [STORAGE_KEYS.BACKGROUND_IMAGE]: base64 });
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -36,19 +43,10 @@ export async function saveBackground(blob: Blob): Promise<void> {
       tx.oncomplete = () => { db.close(); resolve(); };
       tx.onerror = () => { db.close(); reject(tx.error); };
     });
-    await browser.storage.local.remove(STORAGE_KEYS.BACKGROUND_IMAGE);
-    await bumpRevision();
-    return;
   } catch {
-    const reader = new FileReader();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    await browser.storage.local.set({ [STORAGE_KEYS.BACKGROUND_IMAGE]: base64 });
-    await bumpRevision();
+    /* ignore */
   }
+  await bumpRevision();
 }
 
 export async function loadBackground(): Promise<Blob | null> {
@@ -60,7 +58,21 @@ export async function loadBackground(): Promise<Blob | null> {
       req.onsuccess = () => { db.close(); resolve(req.result ?? null); };
       req.onerror = () => { db.close(); reject(req.error); };
     });
-    if (blob) return blob;
+    if (blob) {
+      try {
+        const existing = await browser.storage.local.get(STORAGE_KEYS.BACKGROUND_IMAGE);
+        if (!existing[STORAGE_KEYS.BACKGROUND_IMAGE]) {
+          const reader = new FileReader();
+          const base64 = await new Promise<string>((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+          await browser.storage.local.set({ [STORAGE_KEYS.BACKGROUND_IMAGE]: base64 });
+        }
+      } catch { /* backfill failure is non-critical */ }
+      return blob;
+    }
   } catch {
     /* ignore */
   }

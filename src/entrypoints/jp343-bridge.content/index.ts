@@ -184,6 +184,7 @@ export default defineContentScript({
 
     let currentObjectUrl: string | null = null;
     let bgSyncGeneration = 0;
+    let lastWantBg: boolean | null = null;
 
     async function syncHubBackgroundLayer(): Promise<void> {
       if (disposed) return;
@@ -191,6 +192,7 @@ export default defineContentScript({
       bodyClassObserver.disconnect();
       try {
         const wantBg = document.body?.classList.contains('jp343-hub-bg-enabled') ?? false;
+        lastWantBg = wantBg;
         const layer = document.querySelector<HTMLDivElement>('.jp343-ext-bg-layer');
         const overlay = document.querySelector<HTMLDivElement>('.jp343-ext-bg-overlay');
 
@@ -242,7 +244,11 @@ export default defineContentScript({
       }
     }
 
-    const bodyClassObserver = new MutationObserver(() => { syncHubBackgroundLayer(); });
+    const bodyClassObserver = new MutationObserver(() => {
+      const wantBg = document.body?.classList.contains('jp343-hub-bg-enabled') ?? false;
+      if (wantBg === lastWantBg) return;
+      syncHubBackgroundLayer();
+    });
     function startBgObserver(): void {
       if (!document.body) return;
       bodyClassObserver.disconnect();
