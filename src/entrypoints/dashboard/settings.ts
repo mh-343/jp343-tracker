@@ -1,4 +1,4 @@
-import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
+import type { ExtensionSettings, BlockedChannel, WhitelistedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
@@ -87,6 +87,8 @@ function createToggleRow(
   row.appendChild(toggle);
   return row;
 }
+
+
 
 function showStatus(container: HTMLElement, message: string, type: 'success' | 'error'): void {
   let el = container.querySelector('.settings-status') as HTMLElement | null;
@@ -287,6 +289,20 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
     'Combine repeated sessions of the same video on the same day',
     settings.mergeSameDaySessions,
     async (val) => { await updateSettings({ mergeSameDaySessions: val }); }
+  ));
+
+  section.appendChild(createToggleRow(
+    'Track Japanese only',
+    'YouTube only',
+    settings.trackJapaneseOnly ?? false,
+    async (val) => { await updateSettings({ trackJapaneseOnly: val }); }
+  ));
+
+  section.appendChild(createToggleRow(
+    'Use original YouTube titles',
+    'Show untranslated titles instead of auto-translated ones',
+    settings.useOriginalTitles ?? false,
+    async (val) => { await updateSettings({ useOriginalTitles: val }); }
   ));
 
   container.appendChild(section);
@@ -801,18 +817,82 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): 
   buildExportImportPanel(panel);
 }
 
-function rebuildBlockedPanel(panel: HTMLElement, settings: ExtensionSettings): void {
-  panel.textContent = '';
-  buildBlockedPanel(panel, settings);
+function buildWhitelistedPanel(container: HTMLElement, settings: ExtensionSettings): void {
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const header = document.createElement('div');
+  header.className = 'blocked-header';
+  const title = document.createElement('div');
+  title.className = 'card-title';
+  title.textContent = 'Allowed Channels';
+  title.style.marginBottom = '0';
+  const count = document.createElement('span');
+  count.className = 'blocked-count';
+  count.id = 'settingsWhitelistedCount';
+  count.textContent = `${settings.whitelistedChannels.length} allowed`;
+  header.appendChild(title);
+  header.appendChild(count);
+  card.appendChild(header);
+
+  const channels = settings.whitelistedChannels;
+  const list = document.createElement('div');
+  list.id = 'settingsWhitelistedList';
+
+  if (channels.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'blocked-empty';
+    empty.textContent = 'No whitelisted channels';
+    list.appendChild(empty);
+  } else {
+    for (const channel of channels) {
+      const row = document.createElement('div');
+      row.className = 'blocked-row';
+      const name = document.createElement('span');
+      name.className = 'blocked-channel-name';
+      name.textContent = channel.channelName;
+      name.title = channel.channelName;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'blocked-unblock-btn';
+      btn.textContent = 'Remove';
+      btn.addEventListener('click', async () => {
+        await browser.runtime.sendMessage({ type: 'UNWHITELIST_CHANNEL', channelId: channel.channelId });
+        const idx = channels.findIndex(c => c.channelId === channel.channelId);
+        if (idx !== -1) channels.splice(idx, 1);
+        row.remove();
+        const countEl = document.getElementById('settingsWhitelistedCount');
+        if (countEl) countEl.textContent = `${channels.length} allowed`;
+      });
+      row.appendChild(name);
+      row.appendChild(btn);
+      list.appendChild(row);
+    }
+  }
+
+  card.appendChild(list);
+  container.appendChild(card);
+}
+
+function rebuildChannelsPanel(grid: HTMLElement, settings: ExtensionSettings): void {
+  grid.textContent = '';
+  const blockedCol = document.createElement('div');
+  blockedCol.className = 'channels-col';
+  buildBlockedPanel(blockedCol, settings);
+  const allowedCol = document.createElement('div');
+  allowedCol.className = 'channels-col';
+  buildWhitelistedPanel(allowedCol, settings);
+  grid.appendChild(blockedCol);
+  grid.appendChild(allowedCol);
 }
 
 export async function setupSettings(): Promise<void> {
   const settingsPanel = document.getElementById('tabSettings');
-  const blockedPanel = document.getElementById('tabBlocked');
-  if (!settingsPanel || !blockedPanel) return;
+  const channelsGrid = document.getElementById('channelsGrid');
+  if (!settingsPanel || !channelsGrid) return;
 
   const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
   const settings: ExtensionSettings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEYS.SETTINGS] || {}) };
   rebuildSettingsPanel(settingsPanel, settings);
-  rebuildBlockedPanel(blockedPanel, settings);
+  rebuildChannelsPanel(channelsGrid, settings);
 }

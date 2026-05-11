@@ -6,7 +6,7 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.6.4',
+    version: '2.7.0',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
@@ -69,6 +69,14 @@ export default defineConfig({
             '*://127.0.0.1/*'
           ] : [])
         ]
+      },
+      {
+        resources: ['inject-yt-original-title.js'],
+        matches: ['*://*.youtube.com/*']
+      },
+      {
+        resources: ['inject-yt-innertube-title.js'],
+        matches: ['*://*.youtube.com/*']
       }
     ]
   },

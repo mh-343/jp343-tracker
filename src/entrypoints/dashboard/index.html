@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https: blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jp343 Dashboard</title>
   <script src="/theme-init.js"></script>
@@ -13,8 +13,9 @@
   <header class="header">
     <div class="header-inner">
       <div style="display:flex;align-items:center;gap:10px;">
-        <span class="header-logo">jp343</span>
-        <a id="headerDiscord" class="header-discord" href="https://discord.gg/WxGtd5eNH9" target="_blank" title="Join our Discord">
+        <a href="https://jp343.com/?src=d" target="_blank"><img src="/logo.png" alt="jp343" class="header-logo-img header-logo-dark"><img src="/logo-light.png" alt="jp343" class="header-logo-img header-logo-light"></a>
+        <button class="header-feedback-btn" id="headerFeedbackBtn" title="Send feedback or report a bug"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+        <a id="headerDiscord" class="header-discord" href="https://discord.gg/B9kG2rGhUf" target="_blank" title="Join our Discord">
           <svg width="18" height="14" viewBox="0 0 127.14 96.36" fill="currentColor"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/></svg>
         </a>
         <a class="header-discord" href="https://ko-fi.com/jp343" target="_blank" title="Support on Ko-fi">
@@ -44,7 +45,10 @@
   <main class="wrap">
     <!-- User Bar (logged in) -->
     <div class="user-bar" id="userBar" style="display: none;">
-      <div>Logged in as<span class="user-name" id="userName"></span></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <a href="https://jp343.com/my-account/?src=ext_dashboard" target="_blank" class="user-avatar-link" title="Change profile picture"><img id="userAvatar" class="user-avatar" alt="" style="display:none"></a>
+        <span>Logged in as<span class="user-name" id="userName"></span></span>
+      </div>
       <button class="btn-logout" id="btnLogout">Logout</button>
     </div>
 
@@ -72,7 +76,7 @@
     <!-- Register Drawer (expandable) -->
     <div class="login-drawer" id="registerDrawer">
       <div class="login-card">
-        <form class="login-form" id="registerForm">
+        <form class="login-form" id="registerForm" novalidate>
           <label class="sr-only" for="regEmail">Email</label>
           <input class="login-input" type="email" id="regEmail" placeholder="Email" autocomplete="email" required>
           <label class="sr-only" for="regPassword">Password</label>
@@ -90,7 +94,7 @@
     <!-- Tab Navigation -->
     <div class="tab-nav" role="tablist" aria-label="Dashboard sections">
       <button class="tab-btn" id="tabBtnStats" role="tab" aria-selected="true" aria-controls="tabStats">Stats</button>
-      <button class="tab-btn" id="tabBtnBlocked" role="tab" aria-selected="false" aria-controls="tabBlocked">Blocked</button>
+      <button class="tab-btn" id="tabBtnChannels" role="tab" aria-selected="false" aria-controls="tabChannels">Channels</button>
       <button class="tab-btn" id="tabBtnSettings" role="tab" aria-selected="false" aria-controls="tabSettings">Settings</button>
     </div>
 
@@ -213,8 +217,9 @@
 
     </div><!-- /tabStats -->
 
-    <!-- Blocked Tab -->
-    <div class="tab-panel" id="tabBlocked" role="tabpanel" aria-labelledby="tabBtnBlocked" style="display:none">
+    <!-- Channels Tab -->
+    <div class="tab-panel" id="tabChannels" role="tabpanel" aria-labelledby="tabBtnChannels" style="display:none">
+      <div class="channels-grid" id="channelsGrid"></div>
     </div>
 
     <!-- Settings Tab -->

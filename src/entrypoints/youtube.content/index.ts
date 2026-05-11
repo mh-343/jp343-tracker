@@ -1,7 +1,9 @@
 // JP343 Extension - YouTube Content Script
 
 import type { VideoState } from '../../types';
+import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, DEBUG_MODE, downloadBuffer } from '../../lib/debug-logger';
+import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -17,6 +19,10 @@ export default defineContentScript({
     let lastVideoPlayTime = 0;
     let lastVideoPauseTime = 0;
     let pendingRetryTimeouts: ReturnType<typeof setTimeout>[] = [];
+    let originalTitle: string | null = null;
+    let originalTitleVideoId: string | null = null;
+    let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let useOriginalTitles = false;
     const DEDUP_WINDOW_MS = 200;
 
     const observers: MutationObserver[] = [];
@@ -26,6 +32,8 @@ export default defineContentScript({
       intervalIds.forEach(clearInterval);
       observers.length = 0;
       intervalIds.length = 0;
+      if (originalTitleRetryTimer) clearTimeout(originalTitleRetryTimer);
+      window.removeEventListener('jp343-original-title', handleOriginalTitleResponse);
     }
     window.addEventListener('pagehide', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
@@ -85,6 +93,31 @@ export default defineContentScript({
     }
 
     sendDiagnostic('content_script_loaded');
+
+    function onOriginalTitleSettingChanged(): void {
+      if (!originalTitle) return;
+      const state = getCurrentVideoState();
+      if (state && state.isPlaying && !state.isAd) {
+        sendMessage('VIDEO_STATE_UPDATE', { state });
+      }
+    }
+
+    browser.runtime.sendMessage({ type: 'GET_SETTINGS' }).then((response) => {
+      if (response?.success && response.data?.settings) {
+        const prev = useOriginalTitles;
+        useOriginalTitles = response.data.settings.useOriginalTitles ?? false;
+        if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
+      }
+    }).catch(() => {});
+
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
+        const prev = useOriginalTitles;
+        useOriginalTitles = changes[STORAGE_KEYS.SETTINGS].newValue.useOriginalTitles ?? false;
+        if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
+      }
+    });
 
     if (DEBUG_MODE) {
       window.addEventListener('message', (event) => {
@@ -259,22 +292,11 @@ export default defineContentScript({
     }
 
     function getVideoId(): string | null {
-      const url = new URL(window.location.href);
-      return url.searchParams.get('v');
+      return extractVideoIdFromUrl();
     }
 
     function readTitleFromDOM(): string | null {
-      const titleSelectors = [
-        'h1.ytd-watch-metadata yt-formatted-string',
-        'h1.ytd-video-primary-info-renderer yt-formatted-string',
-        '#title h1 yt-formatted-string',
-        'ytd-watch-metadata h1 yt-formatted-string',
-        '#above-the-fold #title yt-formatted-string',
-        'h1.style-scope.ytd-watch-metadata',
-        'ytm-slim-video-metadata-section-renderer h2'
-      ];
-
-      for (const selector of titleSelectors) {
+      for (const selector of WATCH_TITLE_SELECTORS) {
         const element = document.querySelector(selector);
         if (element?.textContent?.trim()) {
           return element.textContent.trim();
@@ -430,6 +452,51 @@ export default defineContentScript({
       return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
+    function handleOriginalTitleResponse(e: Event): void {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      if (detail.videoId !== originalTitleVideoId) return;
+      if (detail.title && typeof detail.title === 'string') {
+        originalTitle = detail.title;
+        log('[JP343] Original title:', originalTitle);
+        sendDiagnostic('original_title_success');
+        const state = getCurrentVideoState();
+        if (state && state.isPlaying && !state.isAd) {
+          sendMessage('VIDEO_STATE_UPDATE', { state });
+        }
+      }
+    }
+
+    window.addEventListener('jp343-original-title', handleOriginalTitleResponse);
+
+    function requestOriginalTitle(videoId: string | null): void {
+      if (!videoId) { originalTitle = null; return; }
+      originalTitle = null;
+      originalTitleVideoId = videoId;
+      if (originalTitleRetryTimer) {
+        clearTimeout(originalTitleRetryTimer);
+        originalTitleRetryTimer = null;
+      }
+      attemptOriginalTitle(videoId, 0);
+    }
+
+    function attemptOriginalTitle(videoId: string | null, attempt: number): void {
+      if (attempt >= 3) {
+        sendDiagnostic('original_title_fallback');
+        return;
+      }
+      try {
+        const script = document.createElement('script');
+        script.src = browser.runtime.getURL('inject-yt-original-title.js');
+        document.documentElement.appendChild(script);
+      } catch {
+        log('[JP343] Failed to inject original title script');
+      }
+      if (!originalTitle) {
+        originalTitleRetryTimer = setTimeout(() => attemptOriginalTitle(videoId, attempt + 1), 1000);
+      }
+    }
+
     function getCurrentVideoState(): VideoState | null {
       const video = findVideoElement();
       if (!video) return null;
@@ -445,7 +512,7 @@ export default defineContentScript({
         isPlaying: !video.paused && !video.ended,
         currentTime: video.currentTime,
         duration: video.duration || 0,
-        title: getVideoTitle(),
+        title: (useOriginalTitles && originalTitle) || getVideoTitle(),
         url: window.location.href,
         platform: 'youtube',
         isAd: isAdPlaying(),
@@ -453,7 +520,8 @@ export default defineContentScript({
         videoId: videoId,
         channelId: channelInfo.id,
         channelName: channelInfo.name,
-        channelUrl: channelInfo.url
+        channelUrl: channelInfo.url,
+        originalTitle: originalTitle || null
       };
     }
 
@@ -488,6 +556,7 @@ export default defineContentScript({
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
+        requestOriginalTitle(getVideoId());
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
           const initialTitle = state.title;
@@ -670,6 +739,11 @@ export default defineContentScript({
         stopStateUpdates();
         pendingRetryTimeouts.forEach(clearTimeout);
         pendingRetryTimeouts = [];
+        if (originalTitleRetryTimer) {
+          clearTimeout(originalTitleRetryTimer);
+          originalTitleRetryTimer = null;
+        }
+        originalTitle = null;
 
         if (currentVideoElement) {
           currentVideoElement.removeAttribute('data-jp343-tracked');
@@ -681,6 +755,7 @@ export default defineContentScript({
         setTimeout(() => {
           urlChangeInProgress = false;
           if (!isExtensionContextValid()) return;
+          requestOriginalTitle(getVideoId());
           const video = findVideoElement();
           if (video) {
             currentVideoElement = video;
@@ -744,6 +819,7 @@ export default defineContentScript({
 
       const video = findVideoElement();
       if (video) {
+        requestOriginalTitle(getVideoId());
         currentVideoElement = video;
         attachVideoEvents(video);
         startAdMonitoring();

@@ -2,7 +2,26 @@ import type { ActivityType, ExtensionMessage, VideoState } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
+import { isJapaneseContent } from '../language-detection';
+import { fetchOembedTitle } from '../youtube-utils';
 import type { BackgroundMessageContext } from './message-context';
+
+const jpCheckCache = new Map<string, boolean>();
+
+async function checkJapaneseVideo(videoId: string, domTitle: string, originalTitle?: string): Promise<boolean> {
+  if (originalTitle && isJapaneseContent(originalTitle)) return true;
+  if (isJapaneseContent(domTitle)) return true;
+  if (jpCheckCache.has(videoId)) return jpCheckCache.get(videoId)!;
+  try {
+    const title = await fetchOembedTitle(videoId);
+    const result = isJapaneseContent(title ?? '');
+    jpCheckCache.set(videoId, result);
+    return result;
+  } catch {
+    jpCheckCache.set(videoId, false);
+    return false;
+  }
+}
 
 export async function handleTrackingMessage(
   message: ExtensionMessage,
@@ -26,6 +45,13 @@ export async function handleTrackingMessage(
       if ('state' in message && message.state && typeof message.state === 'object') {
         const channelId = message.state.channelId;
         if (channelId && settings.blockedChannels.some(c => c.channelId === channelId)) {
+          if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
+            context.setLastSkippedChannel({
+              channelId,
+              channelName: message.state.channelName || channelId,
+              channelUrl: message.state.channelUrl
+            });
+          }
           context.log('[JP343] Channel blocked - ignoring VIDEO_PLAY:', channelId);
           return { success: true, skipped: true, blocked: true };
         }
@@ -34,6 +60,31 @@ export async function handleTrackingMessage(
           if (!settings.spotifyContentTypes?.includes(message.state.contentType)) {
             context.log('[JP343] Spotify content type blocked:', message.state.contentType);
             return { success: true, skipped: true, blocked: true };
+          }
+        }
+
+        if (
+          settings.trackJapaneseOnly &&
+          message.state.platform === 'youtube'
+        ) {
+          const isWhitelisted = channelId &&
+            settings.whitelistedChannels.some(c => c.channelId === channelId);
+          if (!isWhitelisted && message.state.title) {
+            const origTitle = message.state.originalTitle ?? undefined;
+            const isJP = message.state.videoId
+              ? await checkJapaneseVideo(message.state.videoId, message.state.title, origTitle)
+              : isJapaneseContent(origTitle || message.state.title);
+            if (!isJP) {
+              if (channelId) {
+                context.setLastSkippedChannel({
+                  channelId,
+                  channelName: message.state.channelName || channelId,
+                  channelUrl: message.state.channelUrl
+                });
+              }
+              context.log('[JP343] Non-JP content skipped (track-only mode)');
+              return { success: true, skipped: true };
+            }
           }
         }
 
@@ -57,6 +108,7 @@ export async function handleTrackingMessage(
           }
         }
 
+        context.setLastSkippedChannel(null);
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
         await context.saveSessionState(session);
@@ -128,14 +180,78 @@ export async function handleTrackingMessage(
           tracker.updateSessionThumbnail(message.state.thumbnailUrl);
         }
 
-        if (message.state.channelId) {
+        if (message.state.channelId || message.state.title) {
           const settings = await context.loadSettings();
-          if (settings.blockedChannels.some(c => c.channelId === message.state.channelId)) {
+          if (message.state.channelId && settings.blockedChannels.some(c => c.channelId === message.state.channelId)) {
+            if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
+              context.setLastSkippedChannel({
+                channelId: message.state.channelId,
+                channelName: message.state.channelName || message.state.channelId,
+                channelUrl: message.state.channelUrl || null
+              });
+            }
             context.log('[JP343] Channel blocked on STATE_UPDATE - stopping session:', message.state.channelId);
             tracker.stopSession();
             await context.saveSessionState(null);
             scheduleStatusBadgeUpdate();
             return { success: true, blocked: true };
+          }
+          if (
+            settings.trackJapaneseOnly &&
+            message.state.platform === 'youtube' &&
+            message.state.title
+          ) {
+            const chId = message.state.channelId;
+            const isWhitelisted = chId &&
+              settings.whitelistedChannels.some(c => c.channelId === chId);
+            if (!isWhitelisted) {
+              const origTitle = message.state.originalTitle ?? undefined;
+              const isJP = message.state.videoId
+                ? await checkJapaneseVideo(message.state.videoId, message.state.title, origTitle)
+                : isJapaneseContent(origTitle || message.state.title);
+              if (!isJP) {
+                if (chId) {
+                  context.setLastSkippedChannel({
+                    channelId: chId,
+                    channelName: message.state.channelName || chId,
+                    channelUrl: message.state.channelUrl || null
+                  });
+                }
+                context.log('[JP343] Non-JP title confirmed on STATE_UPDATE - stopping session');
+                tracker.stopSession();
+                await context.saveSessionState(null);
+                scheduleStatusBadgeUpdate();
+                return { success: true, skipped: true };
+              }
+            }
+          }
+        }
+
+        if (
+          !tracker.getCurrentSession() &&
+          message.state.originalTitle &&
+          message.state.platform === 'youtube' &&
+          message.state.isPlaying
+        ) {
+          const settings = await context.loadSettings();
+          if (settings.trackJapaneseOnly) {
+            const lastSkipped = context.getLastSkippedChannel();
+            const chId = message.state.channelId;
+            if (lastSkipped && chId && lastSkipped.channelId === chId) {
+              const isWhitelisted = settings.whitelistedChannels.some(c => c.channelId === chId);
+              if (!isWhitelisted) {
+                const isJP = message.state.videoId
+                  ? await checkJapaneseVideo(message.state.videoId, message.state.title, message.state.originalTitle)
+                  : isJapaneseContent(message.state.originalTitle);
+                if (isJP) {
+                  context.log('[JP343] Re-evaluation: original title is JP, starting session');
+                  context.setLastSkippedChannel(null);
+                  const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
+                  tracker.startSession(message.state as VideoState, tabId);
+                  scheduleStatusBadgeUpdate();
+                }
+              }
+            }
           }
         }
       }
@@ -148,17 +264,26 @@ export async function handleTrackingMessage(
       const session = tracker.getCurrentSession();
       const duration = tracker.getCurrentDuration();
       const isAd = tracker.isAdPlaying();
-      const pending = await loadPendingEntries();
+
+      let skippedChannel: { channelId: string; channelName: string; channelUrl: string | null; platform: 'youtube' } | null = null;
+      if (!session) {
+        const settings = await context.loadSettings();
+        if (settings.trackJapaneseOnly) {
+          const skipped = context.getLastSkippedChannel();
+          if (skipped) {
+            skippedChannel = {
+              channelId: skipped.channelId,
+              channelName: skipped.channelName,
+              channelUrl: skipped.channelUrl,
+              platform: 'youtube'
+            };
+          }
+        }
+      }
 
       return {
         success: true,
-        data: {
-          session,
-          duration,
-          isAd,
-          pendingCount: pending.length,
-          pendingMinutes: pending.reduce((sum, e) => sum + e.duration_min, 0)
-        }
+        data: { session, duration, isAd, skippedChannel }
       };
     }
 
@@ -215,6 +340,18 @@ export async function handleTrackingMessage(
             channelName: session.channelName,
             channelUrl: session.channelUrl,
             platform: session.platform
+          }
+        };
+      }
+      const skipped = context.getLastSkippedChannel();
+      if (skipped) {
+        return {
+          success: true,
+          data: {
+            channelId: skipped.channelId,
+            channelName: skipped.channelName,
+            channelUrl: skipped.channelUrl,
+            platform: 'youtube' as const
           }
         };
       }

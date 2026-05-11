@@ -1,19 +1,40 @@
 import type { JP343UserState, PendingEntry } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { isValidImageUrl } from '../../lib/format-utils';
 import { ajaxPost, AJAX_URL } from './api';
 import { invalidateSessionCache } from './sessions';
 
+interface AuthResponseData {
+  nonce: string;
+  ajaxUrl: string;
+  userId: number;
+  displayName: string;
+  extApiToken: string | null;
+  avatarUrlSmall: string | null;
+  message?: string;
+}
+
+function validateAjaxUrl(url: unknown): string {
+  if (typeof url === 'string' && /^https:\/\/(.*\.)?jp343\.com\//i.test(url)) return url;
+  return AJAX_URL;
+}
+
+function buildUserState(data: AuthResponseData, fallback?: Partial<JP343UserState>): JP343UserState {
+  return {
+    isLoggedIn: true,
+    userId: data.userId,
+    nonce: data.nonce,
+    ajaxUrl: validateAjaxUrl(data.ajaxUrl),
+    extApiToken: data.extApiToken || fallback?.extApiToken || null,
+    avatarUrlSmall: data.avatarUrlSmall !== undefined ? (data.avatarUrlSmall || null) : (fallback?.avatarUrlSmall ?? null),
+  };
+}
+
 export async function tryRefreshNonce(userState: JP343UserState): Promise<JP343UserState | null> {
   try {
-    const result = await ajaxPost('jp343_extension_nonce_refresh');
+    const result = await ajaxPost('jp343_extension_nonce_refresh') as { success: boolean; data?: AuthResponseData };
     if (result.success && result.data?.nonce) {
-      const updated: JP343UserState = {
-        ...userState,
-        nonce: result.data.nonce as string,
-        isLoggedIn: true,
-        userId: result.data.userId as number,
-        extApiToken: (result.data.extApiToken as string) || userState.extApiToken || null,
-      };
+      const updated = buildUserState(result.data, userState);
       await browser.storage.local.set({ [STORAGE_KEYS.USER]: updated });
       return updated;
     }
@@ -35,24 +56,19 @@ export async function doLogin(email: string, password: string): Promise<{ succes
 
     const text = await response.text();
 
-    let result: { success: boolean; data?: Record<string, unknown> };
+    let result: { success: boolean; data?: AuthResponseData | string };
     try {
       result = JSON.parse(text);
     } catch {
       return { success: false, error: `Server returned non-JSON (${response.status})` };
     }
 
-    if (result.success && result.data?.nonce) {
-      const userState: JP343UserState = {
-        isLoggedIn: true,
-        userId: result.data.userId as number,
-        nonce: result.data.nonce as string,
-        ajaxUrl: (result.data.ajaxUrl && /^https:\/\/(.*\.)?jp343\.com\//i.test(result.data.ajaxUrl as string)) ? result.data.ajaxUrl as string : AJAX_URL,
-        extApiToken: (result.data.extApiToken as string) || null
-      };
+    if (result.success && typeof result.data === 'object' && result.data?.nonce) {
+      const data = result.data;
+      const userState = buildUserState(data);
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
+        [STORAGE_KEYS.DISPLAY_NAME]: data.displayName || email
       });
       invalidateSessionCache();
 
@@ -61,7 +77,10 @@ export async function doLogin(email: string, password: string): Promise<{ succes
       return { success: true, userState };
     }
 
-    const msg = (result.data?.message as string) || (typeof result.data === 'string' ? result.data : null) || 'Login failed';
+    const errorData = result.data;
+    const msg = (typeof errorData === 'object' ? errorData?.message : null)
+      || (typeof errorData === 'string' ? errorData : null)
+      || 'Login failed';
     return { success: false, error: msg };
   } catch {
     return { success: false, error: 'Network error \u2014 check your connection' };
@@ -82,22 +101,17 @@ export async function doRegister(email: string, password: string): Promise<{ suc
 
     const text = await response.text();
 
-    let result: { success: boolean; data?: Record<string, unknown> };
+    let result: { success: boolean; data?: AuthResponseData | string };
     try { result = JSON.parse(text); } catch {
       return { success: false, error: `Server returned non-JSON (${response.status})` };
     }
 
-    if (result.success && result.data?.nonce) {
-      const userState: JP343UserState = {
-        isLoggedIn: true,
-        userId: result.data.userId as number,
-        nonce: result.data.nonce as string,
-        ajaxUrl: (result.data.ajaxUrl && /^https:\/\/(.*\.)?jp343\.com\//i.test(result.data.ajaxUrl as string)) ? result.data.ajaxUrl as string : AJAX_URL,
-        extApiToken: (result.data.extApiToken as string) || null
-      };
+    if (result.success && typeof result.data === 'object' && result.data?.nonce) {
+      const data = result.data;
+      const userState = buildUserState(data);
       await browser.storage.local.set({
         [STORAGE_KEYS.USER]: userState,
-        [STORAGE_KEYS.DISPLAY_NAME]: result.data.displayName || email
+        [STORAGE_KEYS.DISPLAY_NAME]: data.displayName || email
       });
       invalidateSessionCache();
 
@@ -106,7 +120,8 @@ export async function doRegister(email: string, password: string): Promise<{ suc
       return { success: true };
     }
 
-    return { success: false, error: (result.data?.message as string) || 'Registration failed' };
+    const errorData = result.data;
+    return { success: false, error: (typeof errorData === 'object' ? errorData?.message : null) || 'Registration failed' };
   } catch {
     return { success: false, error: 'Network error \u2014 check your connection' };
   }
@@ -128,7 +143,7 @@ export async function doLogout(): Promise<void> {
     });
     await r.text();
   } catch { /* server unreachable is fine, clear local state anyway */ }
-  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME]);
+  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.AVATAR_DATA]);
   invalidateSessionCache();
   isLoggingOut = false;
   requestRefresh();
@@ -199,6 +214,14 @@ export function setupAuthUI(): void {
     const btn = document.getElementById('btnRegister') as HTMLButtonElement;
     const errorEl = document.getElementById('registerError');
 
+    if (!emailInput.value || !passInput.value) {
+      if (errorEl) errorEl.textContent = 'Please enter email and password';
+      return;
+    }
+    if (passInput.value.length < 8) {
+      if (errorEl) errorEl.textContent = 'Password must be at least 8 characters';
+      return;
+    }
     if (!gdprInput.checked) {
       if (errorEl) errorEl.textContent = 'Please accept the Privacy Policy';
       return;
@@ -216,6 +239,7 @@ export function setupAuthUI(): void {
       emailInput.value = '';
       passInput.value = '';
       gdprInput.checked = false;
+      browser.tabs.create({ url: 'https://jp343.com/my-account/' });
       requestRefresh();
     } else {
       if (errorEl) errorEl.textContent = error || 'Registration failed';
@@ -282,6 +306,8 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
   const userName = document.getElementById('userName');
   const siteLinks = document.getElementById('siteLinks');
 
+  const avatarEl = document.getElementById('userAvatar') as HTMLImageElement | null;
+
   if (userState?.isLoggedIn) {
     if (userBar) userBar.style.display = 'flex';
     if (authToggle) authToggle.style.display = 'none';
@@ -290,11 +316,34 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (registerDrawer) { registerDrawer.style.display = 'none'; registerDrawer.classList.remove('open'); }
     const stored = await browser.storage.local.get(STORAGE_KEYS.DISPLAY_NAME);
     if (userName) userName.textContent = stored[STORAGE_KEYS.DISPLAY_NAME] || 'Connected';
+
+    if (avatarEl) {
+      if (!userState.avatarUrlSmall) {
+        avatarEl.src = '/avatar-default.png';
+        avatarEl.style.display = '';
+      } else {
+        const avatarResult = await browser.storage.local.get(STORAGE_KEYS.AVATAR_DATA);
+        const avatarData = avatarResult[STORAGE_KEYS.AVATAR_DATA] as string | undefined;
+        if (avatarData && isValidImageUrl(avatarData)) {
+          avatarEl.src = avatarData;
+          avatarEl.style.display = '';
+          avatarEl.onerror = () => {
+            avatarEl.src = '/avatar-default.png';
+            avatarEl.onerror = null;
+          };
+        } else {
+          avatarEl.src = '/avatar-default.png';
+          avatarEl.style.display = '';
+          browser.runtime.sendMessage({ type: 'REFETCH_AVATAR' }).catch(() => {});
+        }
+      }
+    }
   } else {
     if (userBar) userBar.style.display = 'none';
     if (authToggle) authToggle.style.display = '';
     if (siteLinks) siteLinks.style.display = 'none';
     if (loginDrawer) loginDrawer.style.display = '';
     if (registerDrawer) registerDrawer.style.display = '';
+    if (avatarEl) avatarEl.style.display = 'none';
   }
 }

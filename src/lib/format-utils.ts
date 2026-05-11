@@ -21,7 +21,7 @@ export function formatDuration(minutes: number): string {
 export function isValidImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:';
+    return parsed.protocol === 'https:' || parsed.protocol === 'data:';
   } catch {
     return false;
   }

@@ -774,7 +774,6 @@ body {
 .jp-toggle.active .flag-circle {
   fill: #bc002d;
 }
-
 /* Toggle Switch */
 .toggle-container {
   display: flex;
@@ -1007,6 +1006,26 @@ body {
 
 .btn-block.blocked {
   background: var(--accent);
+  color: white;
+}
+
+.btn-allow {
+  padding: 4px 10px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid #4caf50;
+  color: #4caf50;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn-allow:hover {
+  background: #4caf50;
+  color: white;
+}
+.btn-allow.allowed {
+  background: #4caf50;
   color: white;
 }
 

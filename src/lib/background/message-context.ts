@@ -6,6 +6,12 @@ import type {
   TrackingSession,
 } from '../../types';
 
+export interface SkippedChannelInfo {
+  channelId: string;
+  channelName: string;
+  channelUrl: string | null;
+}
+
 export interface BackgroundMessageContext {
   log: (...args: unknown[]) => void;
   loadSettings: () => Promise<ExtensionSettings>;
@@ -20,4 +26,7 @@ export interface BackgroundMessageContext {
   pullAndMergeSettingsFromServer: () => Promise<void>;
   fetchAndCacheServerStats: () => Promise<void>;
   recoveryReady: Promise<void>;
+  setLastSkippedChannel: (info: SkippedChannelInfo | null) => void;
+  getLastSkippedChannel: () => SkippedChannelInfo | null;
+  fetchAndStoreAvatar: (url: string) => Promise<void>;
 }

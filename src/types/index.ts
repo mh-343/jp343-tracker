@@ -36,6 +36,7 @@ export interface VideoState {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
+  originalTitle?: string | null;
   contentType?: SpotifyContentType;
 }
 
@@ -87,6 +88,7 @@ export interface JP343UserState {
   nonce: string | null;
   ajaxUrl: string | null;
   extApiToken: string | null;
+  avatarUrlSmall: string | null;
 }
 
 export interface ExtensionStorage {
@@ -108,7 +110,10 @@ export interface ExtensionSettings {
   spotifyContentTypes: SpotifyContentType[];
   dailyGoalMinutes: number;
   dayStartHour: number;
-  requireJapaneseContent: boolean;
+  hideNonJapanese: boolean;
+  trackJapaneseOnly: boolean;
+  whitelistedChannels: WhitelistedChannel[];
+  useOriginalTitles: boolean;
   diagnosticsEnabled: boolean;
   backgroundEnabled: boolean;
   backgroundOpacity: number;
@@ -120,6 +125,38 @@ export interface BlockedChannel {
   channelName: string;
   channelUrl: string | null;
   blockedAt: string;
+}
+
+export interface WhitelistedChannel {
+  channelId: string;
+  channelName: string;
+  channelUrl: string | null;
+  whitelistedAt: string;
+}
+
+export interface SettingsPushResponse {
+  success: boolean;
+  data?: {
+    message?: string;
+    code?: string;
+  };
+}
+
+export interface SettingsPullResponse {
+  success: boolean;
+  data?: {
+    changed?: false;
+    blocked_channels?: BlockedChannel[] | null;
+    whitelisted_channels?: WhitelistedChannel[] | null;
+    spotify_content_types?: string[] | null;
+    updated_at?: string | null;
+    color_theme?: string;
+    hub_background_enabled?: boolean;
+    hide_non_japanese?: boolean;
+    track_japanese_only?: boolean;
+    message?: string;
+    code?: string;
+  };
 }
 
 export type ExtensionMessage =
@@ -144,6 +181,8 @@ export type ExtensionMessage =
   | { type: 'UPDATE_SETTINGS'; settings: ExtensionSettings }
   | { type: 'BLOCK_CHANNEL'; channel: BlockedChannel }
   | { type: 'UNBLOCK_CHANNEL'; channelId: string }
+  | { type: 'WHITELIST_CHANNEL'; channel: WhitelistedChannel }
+  | { type: 'UNWHITELIST_CHANNEL'; channelId: string }
   | { type: 'GET_CURRENT_CHANNEL' }
   | { type: 'UPDATE_SESSION_TITLE'; title: string }
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
@@ -154,7 +193,8 @@ export type ExtensionMessage =
   | { type: 'SYNC_ENTRIES_DIRECT' }
   | { type: 'OPEN_DASHBOARD' }
   | { type: 'DIAGNOSTIC_EVENT'; code: string; platform?: Platform }
-  | { type: 'GET_DIAGNOSTICS' };
+  | { type: 'GET_DIAGNOSTICS' }
+  | { type: 'REFETCH_AVATAR' };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -212,7 +252,10 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
   dailyGoalMinutes: 60,
   dayStartHour: 0,
-  requireJapaneseContent: false,
+  hideNonJapanese: false,
+  trackJapaneseOnly: false,
+  whitelistedChannels: [],
+  useOriginalTitles: false,
   diagnosticsEnabled: true,
   backgroundEnabled: false,
   backgroundOpacity: 75,
@@ -231,7 +274,9 @@ export const STORAGE_KEYS = {
   BACKGROUND_IMAGE: 'jp343_extension_bg_image',
   BG_IMAGE_REVISION: 'jp343_bg_image_revision',
   ACTIVITY_PREFS: 'jp343_extension_activity_prefs',
-  MIGRATED_HUB_BG: 'jp343_migrated_hub_bg_to_server'
+  MIGRATED_HUB_BG: 'jp343_migrated_hub_bg_to_server',
+  TITLE_CACHE: 'jp343_yt_title_cache',
+  AVATAR_DATA: 'jp343_avatar_data'
 } as const;
 
 export interface PlatformHealth {

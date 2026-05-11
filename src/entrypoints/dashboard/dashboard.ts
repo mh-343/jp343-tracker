@@ -125,7 +125,7 @@ document.addEventListener('jp343:refresh', () => refresh());
 function setupTabNav(): void {
   const tabs = [
     { btn: document.getElementById('tabBtnStats'), panel: document.getElementById('tabStats') },
-    { btn: document.getElementById('tabBtnBlocked'), panel: document.getElementById('tabBlocked') },
+    { btn: document.getElementById('tabBtnChannels'), panel: document.getElementById('tabChannels') },
     { btn: document.getElementById('tabBtnSettings'), panel: document.getElementById('tabSettings') }
   ];
   if (tabs.some(t => !t.btn || !t.panel)) return;
@@ -141,7 +141,7 @@ function setupTabNav(): void {
 
   const urlTab = new URLSearchParams(location.search).get('tab');
   if (urlTab === 'settings') tabs[2].btn!.click();
-  if (urlTab === 'blocked') tabs[1].btn!.click();
+  if (urlTab === 'blocked' || urlTab === 'channels') tabs[1].btn!.click();
 }
 
 setupThemeToggle();
@@ -181,6 +181,14 @@ browser.storage.onChanged.addListener((changes, area) => {
         newSettings?.backgroundEnabled ?? false,
         newSettings?.backgroundOpacity ?? 75
       );
+    }
+  }
+  if (area === 'local' && changes[STORAGE_KEYS.AVATAR_DATA]) {
+    const avatarEl = document.getElementById('userAvatar') as HTMLImageElement | null;
+    if (avatarEl) {
+      const newData = changes[STORAGE_KEYS.AVATAR_DATA].newValue;
+      avatarEl.src = newData || '/avatar-default.png';
+      avatarEl.style.display = '';
     }
   }
 });

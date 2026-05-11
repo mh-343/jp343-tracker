@@ -67,15 +67,25 @@
       padding: 14px 24px;
     }
 
-    .header-logo {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: -0.3px;
-      background: linear-gradient(90deg, var(--accent), var(--gradient-secondary));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+    .header-logo-img {
+      height: 56px;
+      width: auto;
     }
+    .header-logo-light { display: none; }
+    [data-theme="light"] .header-logo-dark { display: none; }
+    [data-theme="light"] .header-logo-light { display: inline; }
+    .header-feedback-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      opacity: 0.7;
+      padding: 0;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      display: flex;
+      align-items: center;
+    }
+    .header-feedback-btn:hover { opacity: 1; }
 
     .header-discord {
       color: var(--accent);
@@ -277,6 +287,17 @@
     }
 
     .user-name { font-weight: 700; color: var(--accent-text); margin-left: 6px; }
+
+    .user-avatar-link { display: flex; flex-shrink: 0; position: relative; border-radius: 50%; }
+    .user-avatar-link::after { content: 'Edit'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.55); color: #fff; font-size: 10px; font-weight: 600; border-radius: 50%; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    .user-avatar-link:hover::after { opacity: 1; }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
 
     .btn-logout {
       background: none;
@@ -775,8 +796,10 @@
     .footer-link:hover { opacity: 1; }
     .footer-link-icon { color: var(--accent); opacity: 0.8; transition: opacity 0.2s; display: flex; align-items: center; }
     .footer-link-icon:hover { opacity: 1; }
-    .feedback-login-msg { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
-    .feedback-discord-link { display: inline-block; padding: 8px 16px; background: var(--accent); color: #fff; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; transition: background 0.2s; }
+    .feedback-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0 12px; color: var(--text-muted); font-size: 12px; text-align: center; }
+    .feedback-divider::before, .feedback-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .feedback-discord-wrap { text-align: center; }
+    .feedback-discord-link { display: inline-flex; align-items: center; gap: 8px; justify-content: center; padding: 8px 16px; background: var(--accent); color: #fff; border-radius: 6px; text-decoration: none; font-size: 13px; font-weight: 600; transition: background 0.2s; margin: 0 auto; }
     .feedback-discord-link:hover { background: var(--accent-hover); }
 
     @keyframes iri-shimmer {
@@ -792,15 +815,7 @@
     }
 
     /* ── Light Mode Overrides ────────────────────────── */
-    [data-theme="light"] .header { background: rgba(240, 241, 248, 0.92); }
-    [data-theme="light"] .header-logo {
-      background: linear-gradient(135deg, #6b4d99, #2d7a94, #a8578e, #2d8a84);
-      background-size: 300% 300%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: iri-shimmer 5s ease infinite;
-      will-change: background-position;
-    }
+    [data-theme="light"] .header { background: rgba(225, 222, 232, 0.95); }
     [data-theme="light"] .hero::before {
       width: 500px; height: 500px; top: 50%; left: 50%; transform: translate(-50%, -50%);
       background: radial-gradient(circle, rgba(126,200,227,0.12) 0%, rgba(167,139,218,0.08) 40%, rgba(212,165,201,0.06) 70%, transparent 100%);
@@ -1149,22 +1164,6 @@
     }
     .feedback-msg.success { display: block; background: rgba(72, 187, 120, 0.15); color: #48bb78; }
     .feedback-msg.error { display: block; background: rgba(245, 101, 101, 0.15); color: #f56565; }
-    .footer-feedback-btn {
-      background: none;
-      border: none;
-      color: var(--accent);
-      opacity: 0.8;
-      font-family: inherit;
-      font-size: 11px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 0;
-      transition: opacity 0.2s;
-    }
-    .footer-feedback-btn:hover { opacity: 1; }
-
     /* ── Tab Navigation ────────────────────────────── */
     .tab-nav {
       display: flex;
@@ -1365,6 +1364,16 @@
       border-color: var(--accent);
       color: var(--accent);
       background: var(--accent-soft);
+    }
+
+    /* Channels grid */
+    .channels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 700px) {
+      .channels-grid { grid-template-columns: 1fr; }
     }
 
     /* Blocked channels panel */
