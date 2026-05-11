@@ -29,6 +29,9 @@ import type {
   ExtensionSettings,
   ExtensionStats,
   BlockedChannel,
+  WhitelistedChannel,
+  SettingsPushResponse,
+  SettingsPullResponse,
   DirectSyncResult,
   BatchEntryResult,
   BatchSyncResponse,
@@ -47,6 +50,12 @@ export default defineBackground(() => {
   log('[JP343] Background Service Worker started');
 
   browser.runtime.setUninstallURL('https://jp343.com/uninstall/');
+
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') {
+      browser.tabs.create({ url: browser.runtime.getURL('/welcome.html') });
+    }
+  });
 
   let inMemoryDiagnostics: ExtensionDiagnostics | null = null;
   let diagnosticsFlushTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -146,9 +155,42 @@ export default defineBackground(() => {
 
   let cachedSettings: ExtensionSettings | null = null;
 
+  async function fetchAndStoreAvatar(url: string): Promise<void> {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const dataUrl = `data:${blob.type};base64,${btoa(binary)}`;
+      await browser.storage.local.set({ [STORAGE_KEYS.AVATAR_DATA]: dataUrl });
+      log('[JP343] Avatar stored as base64');
+    } catch {
+      log('[JP343] Avatar fetch failed');
+    }
+  }
+
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
       cachedSettings = null;
+    }
+    if (area === 'local' && changes[STORAGE_KEYS.USER]) {
+      const oldUrl = changes[STORAGE_KEYS.USER].oldValue?.avatarUrlSmall || null;
+      const newUrl = changes[STORAGE_KEYS.USER].newValue?.avatarUrlSmall || null;
+      if (oldUrl !== newUrl) {
+        if (newUrl) {
+          fetchAndStoreAvatar(newUrl);
+        } else {
+          browser.storage.local.remove(STORAGE_KEYS.AVATAR_DATA);
+        }
+      }
     }
   });
 
@@ -157,6 +199,16 @@ export default defineBackground(() => {
     try {
       const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
       const raw = { ...DEFAULT_SETTINGS, ...result[STORAGE_KEYS.SETTINGS] };
+      if ((raw as Record<string, unknown>).hideNonJapanese === undefined) {
+        const oldMode = (raw as Record<string, unknown>).japaneseContentMode;
+        const oldBool = (raw as Record<string, unknown>).requireJapaneseContent;
+        raw.hideNonJapanese = oldMode === 'hide' || oldBool === true;
+        raw.trackJapaneseOnly = oldMode === 'track-only';
+        delete (raw as Record<string, unknown>).requireJapaneseContent;
+        delete (raw as Record<string, unknown>).japaneseContentMode;
+        await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: raw });
+        log('[JP343] Migrated to hideNonJapanese/trackJapaneseOnly');
+      }
       raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
       cachedSettings = raw;
       return { ...cachedSettings };
@@ -202,16 +254,20 @@ export default defineBackground(() => {
       const pushParams: Record<string, string> = {
         action: 'jp343_extension_push_settings',
         ext_api_token: userState.extApiToken,
+        extension_version: browser.runtime.getManifest().version,
         blocked_channels: JSON.stringify(settings.blockedChannels),
+        whitelisted_channels: JSON.stringify(settings.whitelistedChannels),
         spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
         day_boundary_hour: String(settings.dayStartHour || 0),
         color_theme: settings.colorTheme ?? 'magenta',
+        hide_non_japanese: String(settings.hideNonJapanese ?? false),
+        track_japanese_only: String(settings.trackJapaneseOnly ?? false),
       };
       const resp = await fetch(ajaxUrl, {
         method: 'POST',
         body: new URLSearchParams(pushParams),
       });
-      const result = await resp.json();
+      const result: SettingsPushResponse = await resp.json();
       if (result.success) {
         log('[JP343] Settings pushed to server');
       } else {
@@ -244,7 +300,7 @@ export default defineBackground(() => {
         method: 'POST',
         body: new URLSearchParams(params),
       });
-      const result = await resp.json();
+      const result: SettingsPullResponse = await resp.json();
       if (!result.success) {
         if (isAuthFailure(result)) { await handleAuthFailure(); return false; }
         log('[JP343] Settings pull failed:', result.data?.message);
@@ -252,37 +308,54 @@ export default defineBackground(() => {
       }
 
       if (result.data?.changed === false) {
-        log('[JP343] Settings unchanged on server');
-        const serverTheme: string | undefined = result.data?.color_theme;
-        if (serverTheme && VALID_COLOR_THEMES.includes(serverTheme as ColorTheme)) {
-          const settings = await loadSettings();
-          if (settings.colorTheme !== serverTheme) {
-            settings.colorTheme = serverTheme as ColorTheme;
-            await saveSettings(settings);
-            log('[JP343] Color theme updated from server:', serverTheme);
-          }
-        }
-        settingsPullComplete = true;
-        settingsLastPullTime = Date.now();
-        return false;
+        log('[JP343] Settings unchanged on server, merging meta fields');
       }
 
       if (result.data?.updated_at) settingsLastUpdated = result.data.updated_at;
 
       const serverBlocked: BlockedChannel[] | null = result.data?.blocked_channels ?? null;
+      const serverWhitelisted: WhitelistedChannel[] | null = result.data?.whitelisted_channels ?? null;
       const serverSpotify: SpotifyContentType[] | null = result.data?.spotify_content_types ?? null;
       const serverColorTheme: string | undefined = result.data?.color_theme;
+      const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
+      const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
 
       const settings = await loadSettings();
       let changed = false;
+      let needsPushBack = false;
 
       if (serverBlocked !== null) {
-        const localIds = settings.blockedChannels.map(c => c.channelId).sort().join(',');
-        const serverIds = serverBlocked.map(c => c.channelId).sort().join(',');
-        if (localIds !== serverIds) {
-          settings.blockedChannels = serverBlocked;
+        const localMap = new Map(settings.blockedChannels.map(c => [c.channelId, c]));
+        for (const ch of serverBlocked) {
+          if (ch.channelId && !localMap.has(ch.channelId)) localMap.set(ch.channelId, ch);
+        }
+        const merged = [...localMap.values()];
+        if (merged.length !== settings.blockedChannels.length) {
+          settings.blockedChannels = merged;
           changed = true;
         }
+        if (merged.length > serverBlocked.length) needsPushBack = true;
+      }
+
+      if (serverWhitelisted !== null) {
+        const localMap = new Map(settings.whitelistedChannels.map(c => [c.channelId, c]));
+        for (const ch of serverWhitelisted) {
+          if (ch.channelId && !localMap.has(ch.channelId)) localMap.set(ch.channelId, ch);
+        }
+        const merged = [...localMap.values()];
+        if (merged.length !== settings.whitelistedChannels.length) {
+          settings.whitelistedChannels = merged;
+          changed = true;
+        }
+        if (merged.length > serverWhitelisted.length) needsPushBack = true;
+      }
+
+      const blockedIds = new Set(settings.blockedChannels.map(c => c.channelId));
+      const beforeWhitelist = settings.whitelistedChannels.length;
+      settings.whitelistedChannels = settings.whitelistedChannels.filter(c => !blockedIds.has(c.channelId));
+      if (settings.whitelistedChannels.length !== beforeWhitelist) {
+        changed = true;
+        needsPushBack = true;
       }
 
       if (serverSpotify !== null) {
@@ -301,16 +374,37 @@ export default defineBackground(() => {
         }
       }
 
+      if (serverHideNonJp !== undefined && settings.hideNonJapanese !== serverHideNonJp) {
+        settings.hideNonJapanese = serverHideNonJp;
+        changed = true;
+      }
+      if (serverTrackJpOnly !== undefined && settings.trackJapaneseOnly !== serverTrackJpOnly) {
+        settings.trackJapaneseOnly = serverTrackJpOnly;
+        changed = true;
+      }
+
       if (changed) {
         await saveSettings(settings);
         log('[JP343] Settings merged from server');
       }
       settingsPullComplete = true;
       settingsLastPullTime = Date.now();
+
+      if (needsPushBack) {
+        const pushSettings = { ...settings };
+        pushSettings.blockedChannels = pushSettings.blockedChannels.filter(
+          c => c.channelId && c.channelName && c.blockedAt
+        );
+        pushSettings.whitelistedChannels = pushSettings.whitelistedChannels.filter(
+          c => c.channelId && c.channelName && c.whitelistedAt
+        );
+        syncSettingsToServer(pushSettings).catch(() => {});
+        log('[JP343] Push-back: local channels synced to server');
+      }
+
       return serverColorTheme !== undefined;
     } catch (error) {
       log('[JP343] Settings pull error:', error);
-      settingsPullComplete = true;
       return false;
     }
   }
@@ -758,6 +852,8 @@ export default defineBackground(() => {
   let resolveRecovery: () => void;
   const recoveryReady = new Promise<void>(r => { resolveRecovery = r; });
 
+  let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
+
   const handleMessage = createBackgroundMessageHandler({
     log,
     loadSettings,
@@ -772,6 +868,9 @@ export default defineBackground(() => {
     pullAndMergeSettingsFromServer,
     fetchAndCacheServerStats,
     recoveryReady,
+    setLastSkippedChannel: (info) => { lastSkippedChannel = info; },
+    getLastSkippedChannel: () => lastSkippedChannel,
+    fetchAndStoreAvatar,
   }, diagnosticsContext);
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {

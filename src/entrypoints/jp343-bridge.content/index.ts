@@ -84,7 +84,8 @@ export default defineContentScript({
             userId: userData.userId || null,
             nonce: userData.nonce || null,
             ajaxUrl: validatedAjaxUrl,
-            extApiToken: userData.extApiToken || null
+            extApiToken: userData.extApiToken || null,
+            avatarUrlSmall: userData.avatarUrlSmall || null
           };
         } catch (e) {
           log('[JP343 Bridge] Failed to parse data-jp343-user:', e);
@@ -96,7 +97,8 @@ export default defineContentScript({
         userId: null,
         nonce: null,
         ajaxUrl: null,
-        extApiToken: null
+        extApiToken: null,
+        avatarUrlSmall: null
       };
     }
 
@@ -162,6 +164,20 @@ export default defineContentScript({
     }
 
     waitForUserStateAndReport();
+
+    let lastUserAttr = document.documentElement.getAttribute('data-jp343-user');
+    const userAttrObserver = new MutationObserver(() => {
+      const current = document.documentElement.getAttribute('data-jp343-user');
+      if (current && current !== lastUserAttr) {
+        lastUserAttr = current;
+        reportUserState();
+      }
+    });
+    userAttrObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-jp343-user']
+    });
+    observers.push(userAttrObserver);
 
     function provideExtensionDataIfLoggedIn(): void {
       const maxWait = 6000;

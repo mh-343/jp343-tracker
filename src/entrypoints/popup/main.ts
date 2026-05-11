@@ -1,7 +1,7 @@
 // JP343 Extension - Popup UI
 
 import { STORAGE_KEYS } from '../../types';
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 
@@ -30,6 +30,7 @@ const elements = {
   channelLabel: document.getElementById('channelLabel') as HTMLElement,
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
+  btnAllowChannel: document.getElementById('btnAllowChannel') as HTMLButtonElement,
   btnEditTitle: document.getElementById('btnEditTitle') as HTMLButtonElement,
   // Manual Tracking
   manualTrackMode: document.getElementById('manualTrackMode') as HTMLElement,
@@ -62,9 +63,14 @@ let updateInterval: ReturnType<typeof setInterval> | null = null;
 let pendingEntries: PendingEntry[] = [];
 let isEnabled = true;
 let blockedChannels: BlockedChannel[] = [];
+let whitelistedChannels: WhitelistedChannel[] = [];
+let hideNonJapanese = false;
+let trackJapaneseOnly = false;
 let currentChannelId: string | null = null;
+let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null; platform: string } | null = null;
 let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+let fetchSeq = 0;
 
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
   if (toastTimeout) {
@@ -107,7 +113,10 @@ async function loadAndApplySettings(): Promise<void> {
       updateSpotifyFilterUI(settings);
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
       _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
-      updateJpFilterDisplay(settings.requireJapaneseContent ?? false);
+      whitelistedChannels = settings.whitelistedChannels || [];
+      hideNonJapanese = settings.hideNonJapanese ?? false;
+      trackJapaneseOnly = settings.trackJapaneseOnly ?? false;
+      updateJpFilterDisplay(hideNonJapanese);
       applyColorTheme(settings.colorTheme ?? 'magenta');
     }
   } catch (error) {
@@ -117,7 +126,9 @@ async function loadAndApplySettings(): Promise<void> {
 
 function updateJpFilterDisplay(active: boolean): void {
   const btn = document.getElementById('btnJpFilter');
-  if (btn) btn.classList.toggle('active', active);
+  if (!btn) return;
+  btn.classList.toggle('active', active);
+  btn.title = active ? 'JP filter: Hide non-Japanese' : 'JP filter: Off';
 }
 
 function updateSpotifyFilterUI(settings: ExtensionSettings): void {
@@ -168,13 +179,8 @@ async function loadActiveTabInfo(): Promise<void> {
       updateManualTrackDisplay();
       loadAndApplySettings();
       if (activeTabInfo.domain?.includes('youtube.com')) {
-        const stored = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
-        const jpEnabled = stored[STORAGE_KEYS.SETTINGS]?.requireJapaneseContent ?? false;
         const jpBtn = document.getElementById('btnJpFilter');
-        if (jpBtn) {
-          (jpBtn as HTMLElement).style.display = 'flex';
-          jpBtn.classList.toggle('active', jpEnabled);
-        }
+        if (jpBtn) (jpBtn as HTMLElement).style.display = 'flex';
       }
       if (activeTabInfo.tabId) {
         browser.tabs.sendMessage(activeTabInfo.tabId, { type: 'TAB_ACTIVATED' }).catch(() => {});
@@ -283,25 +289,60 @@ function isChannelBlocked(channelId: string): boolean {
   return blockedChannels.some(c => c.channelId === channelId);
 }
 
-function updateChannelDisplay(session: TrackingSession | null): void {
+function isChannelWhitelisted(channelId: string): boolean {
+  return whitelistedChannels.some(c => c.channelId === channelId);
+}
+
+function updateChannelDisplay(
+  session: TrackingSession | null,
+  skippedChannel?: { channelId: string; channelName: string; channelUrl: string | null; platform: string } | null
+): void {
   if (session && session.channelId) {
     currentChannelId = session.channelId;
     elements.channelSection.style.display = 'block';
     elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Title';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
-    elements.btnBlockChannel.style.display = '';
+    const allowed = session.platform === 'youtube' && trackJapaneseOnly
+      && isChannelWhitelisted(session.channelId);
 
-    const blocked = isChannelBlocked(session.channelId);
-    elements.btnBlockChannel.textContent = blocked ? 'Blocked' : 'Block';
-    elements.btnBlockChannel.classList.toggle('blocked', blocked);
+    elements.btnBlockChannel.style.display = allowed ? 'none' : '';
+    if (!allowed) {
+      const blocked = isChannelBlocked(session.channelId);
+      elements.btnBlockChannel.textContent = blocked ? 'Blocked' : 'Block';
+      elements.btnBlockChannel.classList.toggle('blocked', blocked);
+    }
+    elements.btnAllowChannel.style.display = allowed ? '' : 'none';
+    if (allowed) {
+      elements.btnAllowChannel.textContent = 'Allowed';
+      elements.btnAllowChannel.classList.add('allowed');
+    }
+  } else if (skippedChannel) {
+    currentChannelId = skippedChannel.channelId;
+    elements.channelSection.style.display = 'block';
+    elements.channelLabel.textContent = 'Channel';
+    elements.currentChannelName.textContent = skippedChannel.channelName || skippedChannel.channelId;
+    (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
+    const blocked = isChannelBlocked(skippedChannel.channelId);
+    if (blocked) {
+      elements.btnBlockChannel.style.display = '';
+      elements.btnBlockChannel.textContent = 'Blocked';
+      elements.btnBlockChannel.classList.add('blocked');
+      elements.btnAllowChannel.style.display = 'none';
+    } else {
+      elements.btnBlockChannel.style.display = 'none';
+      elements.btnAllowChannel.style.display = '';
+      const allowed = isChannelWhitelisted(skippedChannel.channelId);
+      elements.btnAllowChannel.textContent = allowed ? 'Allowed' : 'Allow';
+      elements.btnAllowChannel.classList.toggle('allowed', allowed);
+    }
   } else {
     currentChannelId = null;
     elements.channelSection.style.display = blockedChannels.length > 0 ? 'block' : 'none';
     (elements.currentChannelName.parentElement as HTMLElement).style.display = 'none';
     elements.btnBlockChannel.style.display = 'none';
+    elements.btnAllowChannel.style.display = 'none';
   }
-
 }
 
 async function blockChannel(): Promise<void> {
@@ -317,7 +358,8 @@ async function blockChannel(): Promise<void> {
   try {
     await browser.runtime.sendMessage({ type: 'BLOCK_CHANNEL', channel });
     blockedChannels.push(channel);
-    updateChannelDisplay(currentSession);
+    whitelistedChannels = whitelistedChannels.filter(c => c.channelId !== channel.channelId);
+    updateChannelDisplay(currentSession, lastSkippedChannel);
     log('[JP343 Popup] Channel blocked:', channel.channelName);
   } catch (error) {
     log('[JP343 Popup] Failed to block channel:', error);
@@ -328,20 +370,60 @@ async function unblockChannel(channelId: string): Promise<void> {
   try {
     await browser.runtime.sendMessage({ type: 'UNBLOCK_CHANNEL', channelId });
     blockedChannels = blockedChannels.filter(c => c.channelId !== channelId);
-    updateChannelDisplay(currentSession);
+    updateChannelDisplay(currentSession, lastSkippedChannel);
     log('[JP343 Popup] Channel unblocked:', channelId);
   } catch (error) {
     log('[JP343 Popup] Failed to unblock channel:', error);
   }
 }
 
+async function allowChannel(): Promise<void> {
+  if (!currentChannelId) return;
+  const channelName = currentSession?.channelName || elements.currentChannelName.textContent || currentChannelId;
+  const channelUrl = currentSession?.channelUrl || null;
+  const channel: WhitelistedChannel = {
+    channelId: currentChannelId,
+    channelName: channelName,
+    channelUrl: channelUrl,
+    whitelistedAt: new Date().toISOString()
+  };
+  try {
+    await browser.runtime.sendMessage({ type: 'WHITELIST_CHANNEL', channel });
+    whitelistedChannels.push(channel);
+    blockedChannels = blockedChannels.filter(c => c.channelId !== channel.channelId);
+    updateChannelDisplay(currentSession, lastSkippedChannel);
+    log('[JP343 Popup] Channel whitelisted:', channel.channelName);
+  } catch (error) {
+    log('[JP343 Popup] Failed to whitelist channel:', error);
+  }
+}
+
+async function unallowChannel(channelId: string): Promise<void> {
+  try {
+    await browser.runtime.sendMessage({ type: 'UNWHITELIST_CHANNEL', channelId });
+    whitelistedChannels = whitelistedChannels.filter(c => c.channelId !== channelId);
+    updateChannelDisplay(currentSession, lastSkippedChannel);
+    log('[JP343 Popup] Channel unwhitelisted:', channelId);
+  } catch (error) {
+    log('[JP343 Popup] Failed to unwhitelist channel:', error);
+  }
+}
+
 elements.btnBlockChannel.addEventListener('click', async () => {
   if (!currentChannelId) return;
-
   if (isChannelBlocked(currentChannelId)) {
     await unblockChannel(currentChannelId);
   } else {
     await blockChannel();
+  }
+});
+
+elements.btnAllowChannel.addEventListener('click', async () => {
+  if (!currentChannelId) return;
+  if (isChannelWhitelisted(currentChannelId)) {
+    await unallowChannel(currentChannelId);
+  } else {
+    await allowChannel();
   }
 });
 
@@ -785,11 +867,14 @@ async function fetchPendingEntries(): Promise<void> {
 }
 
 async function fetchCurrentState(): Promise<void> {
+  const seq = ++fetchSeq;
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_CURRENT_SESSION' });
+    if (seq !== fetchSeq) return;
 
     if (response.success && response.data) {
-      const { session, duration, isAd } = response.data;
+      const { session, duration, isAd, skippedChannel } = response.data;
+      lastSkippedChannel = skippedChannel || null;
 
       const platformChanged = currentSession?.platform !== session?.platform;
       currentSession = session;
@@ -797,7 +882,7 @@ async function fetchCurrentState(): Promise<void> {
 
       updateStatus(session, isAd);
       updateSessionDisplay(session, duration, isAd);
-      updateChannelDisplay(session);
+      updateChannelDisplay(session, skippedChannel);
       updateManualTrackDisplay();
       if (platformChanged) {
         loadAndApplySettings();
@@ -855,11 +940,12 @@ document.getElementById('btnJpFilter')?.addEventListener('click', async () => {
     const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
     if (!response.success) return;
     const settings = response.data.settings as ExtensionSettings;
-    settings.requireJapaneseContent = !settings.requireJapaneseContent;
+    settings.hideNonJapanese = !settings.hideNonJapanese;
     await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings });
-    updateJpFilterDisplay(settings.requireJapaneseContent);
+    hideNonJapanese = settings.hideNonJapanese;
+    updateJpFilterDisplay(hideNonJapanese);
   } catch (error) {
-    log('[JP343 Popup] Failed to toggle JP filter:', error);
+    log('[JP343 Popup] Failed to cycle JP mode:', error);
   }
 });
 

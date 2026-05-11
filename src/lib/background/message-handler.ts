@@ -57,6 +57,9 @@ export function createBackgroundMessageHandler(
         case 'SET_ENABLED':
         case 'BLOCK_CHANNEL':
         case 'UNBLOCK_CHANNEL':
+        case 'WHITELIST_CHANNEL':
+        case 'UNWHITELIST_CHANNEL':
+        case 'REFETCH_AVATAR':
           return handleSettingsMessage(message, messageSender, context);
 
         case 'SYNC_ENTRIES_DIRECT':

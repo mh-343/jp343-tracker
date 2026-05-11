@@ -4,6 +4,7 @@ import {
   scheduleStatusBadgeUpdate,
   updateStatusBadge,
 } from '../badge-service';
+import { isJapaneseContent } from '../language-detection';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -25,6 +26,7 @@ export async function handleSettingsMessage(
         const merged = {
           ...newState,
           extApiToken: newState?.extApiToken || existing?.extApiToken || null,
+          avatarUrlSmall: 'avatarUrlSmall' in (newState || {}) ? (newState?.avatarUrlSmall || null) : (existing?.avatarUrlSmall ?? null),
         };
         if (!merged.isLoggedIn && merged.extApiToken) {
           merged.isLoggedIn = true;
@@ -87,12 +89,15 @@ export async function handleSettingsMessage(
     case 'BLOCK_CHANNEL': {
       if ('channel' in message && message.channel) {
         const settings = await context.loadSettings();
+        settings.whitelistedChannels = settings.whitelistedChannels.filter(
+          c => c.channelId !== message.channel.channelId
+        );
         if (!settings.blockedChannels.some(c => c.channelId === message.channel.channelId)) {
           settings.blockedChannels.push(message.channel);
-          await context.saveSettings(settings);
-          context.log('[JP343] Channel blocked:', message.channel.channelName);
-          context.syncSettingsToServer(settings).catch(() => {});
         }
+        await context.saveSettings(settings);
+        context.log('[JP343] Channel blocked:', message.channel.channelName);
+        context.syncSettingsToServer(settings).catch(() => {});
 
         const currentSession = tracker.getCurrentSession();
         if (currentSession && currentSession.channelId === message.channel.channelId) {
@@ -120,6 +125,68 @@ export async function handleSettingsMessage(
         return { success: true, removed: before > settings.blockedChannels.length };
       }
       return { success: false, error: 'No channelId provided' };
+    }
+
+    case 'WHITELIST_CHANNEL': {
+      if ('channel' in message && message.channel) {
+        const settings = await context.loadSettings();
+        settings.blockedChannels = settings.blockedChannels.filter(
+          c => c.channelId !== message.channel.channelId
+        );
+        if (!settings.whitelistedChannels.some(c => c.channelId === message.channel.channelId)) {
+          settings.whitelistedChannels.push(message.channel);
+        }
+        await context.saveSettings(settings);
+        context.log('[JP343] Channel whitelisted:', message.channel.channelName);
+        context.syncSettingsToServer(settings).catch(() => {});
+        return { success: true };
+      }
+      return { success: false, error: 'No channel provided' };
+    }
+
+    case 'UNWHITELIST_CHANNEL': {
+      if ('channelId' in message && message.channelId) {
+        const settings = await context.loadSettings();
+        const before = settings.whitelistedChannels.length;
+        settings.whitelistedChannels = settings.whitelistedChannels.filter(
+          c => c.channelId !== message.channelId
+        );
+        await context.saveSettings(settings);
+        context.log('[JP343] Channel unwhitelisted:', message.channelId);
+        context.syncSettingsToServer(settings).catch(() => {});
+
+        if (settings.trackJapaneseOnly) {
+          const currentSession = tracker.getCurrentSession();
+          if (currentSession && currentSession.channelId === message.channelId) {
+            const videoIsJp = isJapaneseContent(currentSession.title || '');
+            if (!videoIsJp) {
+              const entry = tracker.finalizeSession();
+              if (entry) {
+                await context.savePendingEntry(entry);
+                context.log('[JP343] Session saved on un-whitelist:', entry.project, entry.duration_min, 'min');
+              }
+              context.setLastSkippedChannel({
+                channelId: message.channelId,
+                channelName: currentSession.channelName || message.channelId,
+                channelUrl: currentSession.channelUrl || null
+              });
+              await context.saveSessionState(null);
+              scheduleStatusBadgeUpdate();
+            }
+          }
+        }
+
+        return { success: true, removed: before > settings.whitelistedChannels.length };
+      }
+      return { success: false, error: 'No channelId provided' };
+    }
+
+    case 'REFETCH_AVATAR': {
+      const user = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER];
+      if (user?.avatarUrlSmall) {
+        context.fetchAndStoreAvatar(user.avatarUrlSmall);
+      }
+      return { success: true };
     }
 
     default:

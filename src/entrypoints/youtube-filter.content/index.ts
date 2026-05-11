@@ -1,7 +1,9 @@
-// JP343 Extension - YouTube Japanese Content Filter
-// Hides non-Japanese videos from the YouTube feed, fetches original titles via oEmbed
-
 import { isJapaneseContent } from '../../lib/language-detection';
+import {
+  VIDEO_CARD_SELECTORS, getCardTitleText, extractVideoIdFromElement,
+  getChannelIdFromElement, fetchOembedTitle
+} from '../../lib/youtube-utils';
+import type { WhitelistedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 
 export default defineContentScript({
@@ -18,34 +20,9 @@ export default defineContentScript({
     window.addEventListener('pagehide', cleanup);
 
     let filterEnabled = false;
+    let whitelistedChannels: WhitelistedChannel[] = [];
     let filterObserver: MutationObserver | null = null;
     let updateScheduled = false;
-
-    const VIDEO_SELECTORS = [
-      'ytd-rich-item-renderer',
-      'ytd-video-renderer',
-      'ytd-compact-video-renderer',
-      'ytd-grid-video-renderer',
-      'ytd-reel-item-renderer',
-      'yt-lockup-view-model',
-      'ytd-playlist-video-renderer',
-      'ytd-movie-renderer',
-      'ytm-rich-item-renderer',
-      'ytm-compact-video-renderer',
-      'ytm-video-with-context-renderer',
-      'ytm-reel-item-renderer'
-    ].join(',');
-
-    const TITLE_SELECTORS = [
-      '#video-title',
-      '#video-title-link',
-      'a#video-title',
-      '#movie-title',
-      'a.yt-lockup-metadata-view-model-wiz__title',
-      'yt-formatted-string#video-title',
-      'span.yt-core-attributed-string',
-      'h3 a'
-    ];
 
     const PROCESSED_ATTR = 'data-jp343-processed';
     const HIDDEN_CLASS = 'jp343-jp-hidden';
@@ -60,66 +37,28 @@ export default defineContentScript({
       document.head.appendChild(style);
     }
 
-    function getVideoTitle(element: Element): string | null {
-      for (const selector of TITLE_SELECTORS) {
-        const titleEl = element.querySelector(selector);
-        const text = titleEl?.textContent?.trim();
-        if (text) return text;
-      }
-      return null;
-    }
-
-    function getVideoId(element: Element): string | null {
-      const link = element.querySelector('a[href*="/watch?v="], a[href*="/shorts/"]');
-      if (!link) return null;
-
-      const href = link.getAttribute('href');
-      if (!href) return null;
-
-      try {
-        if (href.includes('/shorts/')) {
-          const match = href.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
-          return match ? match[1] : null;
-        }
-        const url = new URL(href, 'https://youtube.com');
-        return url.searchParams.get('v');
-      } catch {
-        return null;
-      }
-    }
-
     async function getOriginalTitle(videoId: string): Promise<string | null> {
-      if (titleCache.has(videoId)) {
-        return titleCache.get(videoId) ?? null;
-      }
-
-      try {
-        const url = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}`;
-        const response = await fetch(url);
-        if (!response.ok) {
-          titleCache.set(videoId, null);
-          return null;
-        }
-        const data = await response.json();
-        const title = data.title?.trim() || null;
-        titleCache.set(videoId, title);
-        return title;
-      } catch {
-        titleCache.set(videoId, null);
-        return null;
-      }
+      if (titleCache.has(videoId)) return titleCache.get(videoId) ?? null;
+      const title = await fetchOembedTitle(videoId);
+      titleCache.set(videoId, title);
+      return title;
     }
 
     async function processVideo(element: Element): Promise<void> {
       if (element.hasAttribute(PROCESSED_ATTR)) return;
       if (element.closest(`[${PROCESSED_ATTR}]`)) return;
 
-      const domTitle = getVideoTitle(element);
-      const videoId = getVideoId(element);
+      const domTitle = getCardTitleText(element);
+      const videoId = extractVideoIdFromElement(element);
 
       if (!domTitle && !videoId) return;
 
       element.setAttribute(PROCESSED_ATTR, '1');
+
+      const channelId = getChannelIdFromElement(element);
+      if (channelId && whitelistedChannels.some(c => c.channelId === channelId)) {
+        return;
+      }
 
       const htmlEl = element as HTMLElement;
       htmlEl.classList.add(HIDDEN_CLASS);
@@ -139,7 +78,7 @@ export default defineContentScript({
     }
 
     function processAllVideos(): void {
-      const videos = document.querySelectorAll(VIDEO_SELECTORS);
+      const videos = document.querySelectorAll(VIDEO_CARD_SELECTORS);
       videos.forEach((video) => {
         processVideo(video);
       });
@@ -176,7 +115,7 @@ export default defineContentScript({
           for (const node of Array.from(mutation.addedNodes)) {
             if (!(node instanceof Element)) continue;
             if (node.hasAttribute(PROCESSED_ATTR)) continue;
-            if (node.matches(VIDEO_SELECTORS) || node.querySelector(VIDEO_SELECTORS)) {
+            if (node.matches(VIDEO_CARD_SELECTORS) || node.querySelector(VIDEO_CARD_SELECTORS)) {
               scheduleUpdate();
               return;
             }
@@ -201,19 +140,29 @@ export default defineContentScript({
       showAllVideos();
     }
 
+    function applySettings(shouldFilter: boolean, channels: WhitelistedChannel[]): void {
+      const whitelistChanged = JSON.stringify(channels) !== JSON.stringify(whitelistedChannels);
+      whitelistedChannels = channels;
+      if (shouldFilter !== filterEnabled) {
+        filterEnabled = shouldFilter;
+        if (filterEnabled) {
+          startFiltering();
+        } else {
+          stopFiltering();
+        }
+      } else if (filterEnabled && whitelistChanged) {
+        showAllVideos();
+        processAllVideos();
+      }
+    }
+
     async function loadSettings(): Promise<void> {
       try {
         const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
         if (response?.success && response.data?.settings) {
-          const enabled = response.data.settings.requireJapaneseContent ?? false;
-          if (enabled !== filterEnabled) {
-            filterEnabled = enabled;
-            if (filterEnabled) {
-              startFiltering();
-            } else {
-              stopFiltering();
-            }
-          }
+          const hide = response.data.settings.hideNonJapanese ?? false;
+          const channels = response.data.settings.whitelistedChannels ?? [];
+          applySettings(hide, channels);
         }
       } catch { /* ignore */ }
     }
@@ -223,15 +172,9 @@ export default defineContentScript({
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
-        const enabled = changes[STORAGE_KEYS.SETTINGS].newValue.requireJapaneseContent ?? false;
-        if (enabled !== filterEnabled) {
-          filterEnabled = enabled;
-          if (filterEnabled) {
-            startFiltering();
-          } else {
-            stopFiltering();
-          }
-        }
+        const hide = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
+        const channels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
+        applySettings(hide, channels);
       }
     });
   }
