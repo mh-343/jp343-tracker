@@ -1,9 +1,11 @@
 // JP343 Extension - YouTube Content Script
 
-import type { VideoState } from '../../types';
+import type { VideoState, WhitelistedChannel, BlockedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, DEBUG_MODE, downloadBuffer } from '../../lib/debug-logger';
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
+import { isJapaneseContent } from '../../lib/language-detection';
+import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -23,6 +25,10 @@ export default defineContentScript({
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let useOriginalTitles = false;
+    let trackJapaneseOnly = false;
+    let hideNonJapanese = false;
+    let whitelistedChannels: WhitelistedChannel[] = [];
+    let blockedChannels: BlockedChannel[] = [];
     const DEDUP_WINDOW_MS = 200;
 
     const observers: MutationObserver[] = [];
@@ -106,6 +112,10 @@ export default defineContentScript({
       if (response?.success && response.data?.settings) {
         const prev = useOriginalTitles;
         useOriginalTitles = response.data.settings.useOriginalTitles ?? false;
+        trackJapaneseOnly = response.data.settings.trackJapaneseOnly ?? false;
+        hideNonJapanese = response.data.settings.hideNonJapanese ?? false;
+        whitelistedChannels = response.data.settings.whitelistedChannels ?? [];
+        blockedChannels = response.data.settings.blockedChannels ?? [];
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
       }
     }).catch(() => {});
@@ -115,7 +125,12 @@ export default defineContentScript({
       if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
         const prev = useOriginalTitles;
         useOriginalTitles = changes[STORAGE_KEYS.SETTINGS].newValue.useOriginalTitles ?? false;
+        trackJapaneseOnly = changes[STORAGE_KEYS.SETTINGS].newValue.trackJapaneseOnly ?? false;
+        hideNonJapanese = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
+        whitelistedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
+        blockedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.blockedChannels ?? [];
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
+        checkTrackingToast();
       }
     });
 
@@ -413,20 +428,20 @@ export default defineContentScript({
         }
       }
 
-      if (!channelId) {
+      if (!channelId || channelId.startsWith('@')) {
         const metaChannel = document.querySelector('meta[itemprop="channelId"]') as HTMLMetaElement | null;
         if (metaChannel?.content) {
           channelId = metaChannel.content;
         }
       }
 
-      if (!channelId || !channelName) {
+      if (!channelId || channelId.startsWith('@') || !channelName) {
         try {
           const scripts = document.querySelectorAll('script');
           for (const script of scripts) {
             const text = script.textContent;
             if (!text?.includes('ytInitialPlayerResponse') && !text?.includes('ytInitialData')) continue;
-            if (!channelId) {
+            if (!channelId || channelId.startsWith('@')) {
               const idMatch = text.match(/"channelId":"(UC[a-zA-Z0-9_-]+)"/);
               if (idMatch) channelId = idMatch[1];
             }
@@ -434,7 +449,7 @@ export default defineContentScript({
               const nameMatch = text.match(/"ownerChannelName":"([^"]+)"/);
               if (nameMatch) channelName = nameMatch[1];
             }
-            if (channelId && channelName) break;
+            if (channelId && !channelId.startsWith('@') && channelName) break;
           }
         } catch { /* ignore */ }
       }
@@ -464,6 +479,7 @@ export default defineContentScript({
         if (state && state.isPlaying && !state.isAd) {
           sendMessage('VIDEO_STATE_UPDATE', { state });
         }
+        checkTrackingToast();
       }
     }
 
@@ -483,6 +499,7 @@ export default defineContentScript({
     function attemptOriginalTitle(videoId: string | null, attempt: number): void {
       if (attempt >= 3) {
         sendDiagnostic('original_title_fallback');
+        checkTrackingToast();
         return;
       }
       try {
@@ -495,6 +512,53 @@ export default defineContentScript({
       if (!originalTitle) {
         originalTitleRetryTimer = setTimeout(() => attemptOriginalTitle(videoId, attempt + 1), 1000);
       }
+    }
+
+    function checkTrackingToast(): void {
+      if (!hideNonJapanese || !trackJapaneseOnly) { hideTrackingToast(); return; }
+      if (useOriginalTitles && !originalTitle && originalTitleVideoId === getVideoId()) return;
+      const state = getCurrentVideoState();
+
+      if (state?.channelId) {
+        if (whitelistedChannels.some(c => c.channelId === state.channelId)) { hideTrackingToast(); return; }
+        if (blockedChannels.some(c => c.channelId === state.channelId)) { hideTrackingToast(); return; }
+      }
+
+      if (isToastActive()) return;
+
+      if (!state || state.isAd) return;
+      if (!state.channelId || !state.channelName) return;
+      if (isJapaneseContent(state.title)) return;
+      if (!isJapaneseContent(state.channelName)) return;
+
+      const player = document.querySelector('#movie_player') || document.querySelector('.player-container');
+      const channelMsg = {
+        channelId: state.channelId!,
+        channelName: state.channelName!,
+        channelUrl: state.channelUrl || null,
+      };
+
+      showTrackingToast(state.channelId, {
+        channelName: state.channelName,
+        container: player,
+        onAllow: () => {
+          browser.runtime.sendMessage({
+            type: 'WHITELIST_CHANNEL',
+            channel: { ...channelMsg, whitelistedAt: new Date().toISOString() }
+          }).then(() => {
+            const freshState = getCurrentVideoState();
+            if (freshState && freshState.isPlaying && !freshState.isAd) {
+              sendVideoPlay(freshState);
+            }
+          }).catch(() => {});
+        },
+        onBlock: () => {
+          browser.runtime.sendMessage({
+            type: 'BLOCK_CHANNEL',
+            channel: { ...channelMsg, blockedAt: new Date().toISOString() }
+          }).catch(() => {});
+        }
+      });
     }
 
     function getCurrentVideoState(): VideoState | null {
@@ -571,6 +635,8 @@ export default defineContentScript({
             }
           }, 1500));
 
+          pendingRetryTimeouts.push(setTimeout(checkTrackingToast, 2500));
+
           if (!state.channelId) {
             const retryDelays = [2000, 4000, 8000];
             let retryIndex = 0;
@@ -603,6 +669,7 @@ export default defineContentScript({
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
         sendMessage('VIDEO_ENDED');
+        hideTrackingToast();
       });
 
       video.addEventListener('waiting', () => {
@@ -731,6 +798,7 @@ export default defineContentScript({
           sendMessage('VIDEO_ENDED');
         }
 
+        hideTrackingToast();
         lastVideoUrl = currentUrl;
 
         cachedPlayer = null;

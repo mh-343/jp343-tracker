@@ -76,18 +76,31 @@ export function getCardTitleText(element: Element): string | null {
 }
 
 export function getChannelIdFromElement(element: Element): string | null {
+  const links = element.querySelectorAll(
+    'ytd-channel-name a, #channel-name a, a[href*="/@"], a[href*="/channel/"]'
+  );
+  let handle: string | null = null;
+  for (const link of links) {
+    const href = (link as HTMLAnchorElement).href;
+    if (!href) continue;
+    const channelMatch = href.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
+    if (channelMatch) return channelMatch[1];
+    if (!handle) {
+      const handleMatch = href.match(/\/@([^/?#]+)/);
+      if (handleMatch) {
+        try { handle = `@${decodeURIComponent(handleMatch[1])}`; }
+        catch { handle = `@${handleMatch[1]}`; }
+      }
+    }
+  }
+  return handle;
+}
+
+export function getChannelNameFromElement(element: Element): string | null {
   const link = element.querySelector(
     'ytd-channel-name a, #channel-name a, a[href*="/@"], a[href*="/channel/"]'
   ) as HTMLAnchorElement | null;
-  if (!link?.href) return null;
-  const channelMatch = link.href.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
-  if (channelMatch) return channelMatch[1];
-  const handleMatch = link.href.match(/\/@([^/?#]+)/);
-  if (handleMatch) {
-    try { return `@${decodeURIComponent(handleMatch[1])}`; }
-    catch { return `@${handleMatch[1]}`; }
-  }
-  return null;
+  return link?.textContent?.trim() || null;
 }
 
 interface OembedResponse {
