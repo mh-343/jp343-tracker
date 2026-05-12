@@ -192,3 +192,7 @@ browser.storage.onChanged.addListener((changes, area) => {
     }
   }
 });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refresh();
+});

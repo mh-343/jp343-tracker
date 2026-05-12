@@ -1,7 +1,7 @@
 import { isJapaneseContent } from '../../lib/language-detection';
 import {
   VIDEO_CARD_SELECTORS, getCardTitleText, extractVideoIdFromElement,
-  getChannelIdFromElement, fetchOembedTitle
+  getChannelIdFromElement, getChannelNameFromElement, fetchOembedTitle
 } from '../../lib/youtube-utils';
 import type { WhitelistedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
@@ -12,7 +12,12 @@ export default defineContentScript({
 
   main() {
     const observers: MutationObserver[] = [];
+    const navHandler = () => { if (filterEnabled) setTimeout(scheduleUpdate, 200); };
+
     function cleanup() {
+      clearRetry();
+      document.removeEventListener('yt-navigate-finish', navHandler);
+      window.removeEventListener('popstate', navHandler);
       observers.forEach(o => o.disconnect());
       observers.length = 0;
       showAllVideos();
@@ -23,6 +28,9 @@ export default defineContentScript({
     let whitelistedChannels: WhitelistedChannel[] = [];
     let filterObserver: MutationObserver | null = null;
     let updateScheduled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryCount = 0;
+    const RETRY_DELAYS = [300, 1000];
 
     const PROCESSED_ATTR = 'data-jp343-processed';
     const HIDDEN_CLASS = 'jp343-jp-hidden';
@@ -68,6 +76,12 @@ export default defineContentScript({
         return;
       }
 
+      const channelName = getChannelNameFromElement(element);
+      if (channelName && isJapaneseContent(channelName)) {
+        htmlEl.classList.remove(HIDDEN_CLASS);
+        return;
+      }
+
       if (videoId) {
         const originalTitle = await getOriginalTitle(videoId);
         if (originalTitle && isJapaneseContent(originalTitle)) {
@@ -84,12 +98,31 @@ export default defineContentScript({
       });
     }
 
+    function clearRetry(): void {
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    }
+
+    function scheduleRetry(): void {
+      clearRetry();
+      if (retryCount >= RETRY_DELAYS.length) { retryCount = 0; return; }
+      const delay = RETRY_DELAYS[retryCount];
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!filterEnabled) return;
+        retryCount++;
+        processAllVideos();
+        scheduleRetry();
+      }, delay);
+    }
+
     function scheduleUpdate(): void {
       if (updateScheduled) return;
       updateScheduled = true;
       requestAnimationFrame(() => {
         updateScheduled = false;
         processAllVideos();
+        retryCount = 0;
+        scheduleRetry();
       });
     }
 
@@ -109,6 +142,8 @@ export default defineContentScript({
 
       injectStyles();
       processAllVideos();
+      retryCount = 0;
+      scheduleRetry();
 
       filterObserver = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
@@ -131,6 +166,7 @@ export default defineContentScript({
     }
 
     function stopFiltering(): void {
+      clearRetry();
       if (filterObserver) {
         const idx = observers.indexOf(filterObserver);
         if (idx !== -1) observers.splice(idx, 1);
@@ -168,6 +204,9 @@ export default defineContentScript({
     }
 
     loadSettings();
+
+    document.addEventListener('yt-navigate-finish', navHandler);
+    window.addEventListener('popstate', navHandler);
 
     browser.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;

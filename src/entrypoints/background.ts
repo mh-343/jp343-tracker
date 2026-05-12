@@ -1,7 +1,7 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
 import { getLocalDateString, getLogicalNow } from '../lib/format-utils';
 import { withStorageLock } from '../lib/storage-lock';
-import { isAuthFailure, handleAuthFailure } from '../lib/auth-helpers';
+import { isAuthFailure } from '../lib/auth-helpers';
 import { VALID_COLOR_THEMES } from '../lib/theme';
 import { loadPendingEntries } from '../lib/pending-entries';
 import {
@@ -184,12 +184,8 @@ export default defineBackground(() => {
     if (area === 'local' && changes[STORAGE_KEYS.USER]) {
       const oldUrl = changes[STORAGE_KEYS.USER].oldValue?.avatarUrlSmall || null;
       const newUrl = changes[STORAGE_KEYS.USER].newValue?.avatarUrlSmall || null;
-      if (oldUrl !== newUrl) {
-        if (newUrl) {
-          fetchAndStoreAvatar(newUrl);
-        } else {
-          browser.storage.local.remove(STORAGE_KEYS.AVATAR_DATA);
-        }
+      if (oldUrl !== newUrl && newUrl) {
+        fetchAndStoreAvatar(newUrl);
       }
     }
   });
@@ -210,6 +206,23 @@ export default defineBackground(() => {
         log('[JP343] Migrated to hideNonJapanese/trackJapaneseOnly');
       }
       raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
+      let migrated = false;
+      for (const list of [raw.blockedChannels, raw.whitelistedChannels] as Array<Array<{ channelId: string; channelName: string }>>) {
+        const ucByName = new Map<string, string>();
+        for (const c of list) {
+          if (c.channelId.startsWith('UC')) ucByName.set(c.channelName, c.channelId);
+        }
+        for (let i = list.length - 1; i >= 0; i--) {
+          if (list[i].channelId.startsWith('@') && ucByName.has(list[i].channelName)) {
+            list.splice(i, 1);
+            migrated = true;
+          }
+        }
+      }
+      if (migrated) {
+        await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: raw });
+        log('[JP343] Deduplicated @handle channel entries');
+      }
       cachedSettings = raw;
       return { ...cachedSettings };
     } catch (error) {
@@ -219,6 +232,12 @@ export default defineBackground(() => {
   }
 
   async function saveSettings(settings: ExtensionSettings): Promise<void> {
+    if (settings.blockedChannels.length > 0 && settings.whitelistedChannels.length > 0) {
+      const blockedIds = new Set(settings.blockedChannels.map(c => c.channelId));
+      settings.whitelistedChannels = settings.whitelistedChannels.filter(
+        c => !blockedIds.has(c.channelId)
+      );
+    }
     cachedSettings = { ...settings };
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
@@ -271,7 +290,10 @@ export default defineBackground(() => {
       if (result.success) {
         log('[JP343] Settings pushed to server');
       } else {
-        if (isAuthFailure(result)) { await handleAuthFailure(); return; }
+        if (isAuthFailure(result)) {
+          log('[JP343] Auth error (transient), will retry next cycle');
+          return;
+        }
         log('[JP343] Settings push failed:', result.data?.message);
       }
     } catch (error) {
@@ -302,7 +324,10 @@ export default defineBackground(() => {
       });
       const result: SettingsPullResponse = await resp.json();
       if (!result.success) {
-        if (isAuthFailure(result)) { await handleAuthFailure(); return false; }
+        if (isAuthFailure(result)) {
+          log('[JP343] Auth error (transient), will retry next cycle');
+          return false;
+        }
         log('[JP343] Settings pull failed:', result.data?.message);
         return false;
       }
@@ -609,7 +634,7 @@ export default defineBackground(() => {
 
           // Auth error from batch endpoint
           if (isAuthFailure(batchResult)) {
-            await handleAuthFailure();
+            log('[JP343] Auth error (transient), will retry next cycle');
             return { attempted: unsynced.length, succeeded: 0, failed: unsynced.length, noAuth: true, nonceMissing: false };
           }
 
@@ -666,7 +691,7 @@ export default defineBackground(() => {
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
           if (isAuthFailure(result)) {
-            await handleAuthFailure();
+            log('[JP343] Auth error (transient), will retry next cycle');
             authFailed = true;
             failed += (unsynced.length - succeeded - failed);
             break;
@@ -744,7 +769,7 @@ export default defineBackground(() => {
       if (result.success && result.data) {
         await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: result.data });
       } else if (isAuthFailure(result)) {
-        await handleAuthFailure();
+        log('[JP343] Auth error (transient), will retry next cycle');
       }
     } catch { /* server unreachable */ }
   }
