@@ -3,7 +3,7 @@ import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { isJapaneseContent } from '../language-detection';
-import { fetchOembedTitle } from '../youtube-utils';
+import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
@@ -44,7 +44,7 @@ export async function handleTrackingMessage(
 
       if ('state' in message && message.state && typeof message.state === 'object') {
         const channelId = message.state.channelId;
-        if (channelId && settings.blockedChannels.some(c => c.channelId === channelId)) {
+        if (channelId && isChannelInList(settings.blockedChannels, channelId, message.state.channelUrl)) {
           if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
             context.setLastSkippedChannel({
               channelId,
@@ -68,7 +68,7 @@ export async function handleTrackingMessage(
           message.state.platform === 'youtube'
         ) {
           const isWhitelisted = channelId &&
-            settings.whitelistedChannels.some(c => c.channelId === channelId);
+            isChannelInList(settings.whitelistedChannels, channelId, message.state.channelUrl);
           if (!isWhitelisted && message.state.title) {
             const origTitle = message.state.originalTitle ?? undefined;
             const isJP = message.state.videoId
@@ -182,7 +182,7 @@ export async function handleTrackingMessage(
 
         if (message.state.channelId || message.state.title) {
           const settings = await context.loadSettings();
-          if (message.state.channelId && settings.blockedChannels.some(c => c.channelId === message.state.channelId)) {
+          if (message.state.channelId && isChannelInList(settings.blockedChannels, message.state.channelId, message.state.channelUrl)) {
             if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
               context.setLastSkippedChannel({
                 channelId: message.state.channelId,
@@ -203,7 +203,7 @@ export async function handleTrackingMessage(
           ) {
             const chId = message.state.channelId;
             const isWhitelisted = chId &&
-              settings.whitelistedChannels.some(c => c.channelId === chId);
+              isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
             if (!isWhitelisted) {
               const origTitle = message.state.originalTitle ?? undefined;
               const isJP = message.state.videoId
@@ -237,8 +237,8 @@ export async function handleTrackingMessage(
           if (settings.trackJapaneseOnly) {
             const lastSkipped = context.getLastSkippedChannel();
             const chId = message.state.channelId;
-            if (lastSkipped && chId && lastSkipped.channelId === chId) {
-              const isWhitelisted = settings.whitelistedChannels.some(c => c.channelId === chId);
+            if (lastSkipped && chId && (lastSkipped.channelId === chId || (lastSkipped.channelUrl && message.state.channelUrl && lastSkipped.channelUrl === message.state.channelUrl))) {
+              const isWhitelisted = isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
               if (!isWhitelisted) {
                 const isJP = message.state.videoId
                   ? await checkJapaneseVideo(message.state.videoId, message.state.title, message.state.originalTitle)

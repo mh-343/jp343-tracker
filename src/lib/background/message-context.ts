@@ -1,4 +1,5 @@
 import type {
+  ChannelOp,
   DirectSyncResult,
   ExtensionSettings,
   ExtensionStats,
@@ -18,6 +19,7 @@ export interface BackgroundMessageContext {
   saveSettings: (settings: ExtensionSettings) => Promise<void>;
   ensureFreshSettings: () => Promise<void>;
   syncSettingsToServer: (settings: ExtensionSettings) => Promise<void>;
+  applyChannelOp: (op: Omit<ChannelOp, 'opId' | 'timestamp'>) => Promise<void>;
   savePendingEntry: (entry: PendingEntry) => Promise<void>;
   saveSessionState: (session: TrackingSession | null) => Promise<void>;
   loadStats: () => Promise<ExtensionStats>;
@@ -28,5 +30,6 @@ export interface BackgroundMessageContext {
   recoveryReady: Promise<void>;
   setLastSkippedChannel: (info: SkippedChannelInfo | null) => void;
   getLastSkippedChannel: () => SkippedChannelInfo | null;
-  fetchAndStoreAvatar: (url: string) => Promise<void>;
+  fetchAndStoreAvatar: (url: string, userId: number) => Promise<void>;
+  pullChannelsFromServer: () => Promise<void>;
 }

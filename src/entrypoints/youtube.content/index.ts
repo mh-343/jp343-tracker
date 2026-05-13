@@ -415,33 +415,28 @@ export default defineContentScript({
         }
       }
 
-      if (channelUrl) {
+      // UC-ID from meta tag is most reliable
+      const metaChannel = document.querySelector('meta[itemprop="channelId"]') as HTMLMetaElement | null;
+      if (metaChannel?.content?.startsWith('UC')) {
+        channelId = metaChannel.content;
+      }
+
+      // Fallback: extract UC-ID from channelUrl
+      if (!channelId && channelUrl) {
         const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
         if (channelMatch) {
           channelId = channelMatch[1];
-        } else {
-          const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
-          if (handleMatch) {
-            try { channelId = `@${decodeURIComponent(handleMatch[1])}`; }
-            catch { channelId = `@${handleMatch[1]}`; }
-          }
         }
       }
 
-      if (!channelId || channelId.startsWith('@')) {
-        const metaChannel = document.querySelector('meta[itemprop="channelId"]') as HTMLMetaElement | null;
-        if (metaChannel?.content) {
-          channelId = metaChannel.content;
-        }
-      }
-
-      if (!channelId || channelId.startsWith('@') || !channelName) {
+      // Fallback: search ytInitialPlayerResponse/ytInitialData
+      if (!channelId || !channelName) {
         try {
           const scripts = document.querySelectorAll('script');
           for (const script of scripts) {
             const text = script.textContent;
             if (!text?.includes('ytInitialPlayerResponse') && !text?.includes('ytInitialData')) continue;
-            if (!channelId || channelId.startsWith('@')) {
+            if (!channelId) {
               const idMatch = text.match(/"channelId":"(UC[a-zA-Z0-9_-]+)"/);
               if (idMatch) channelId = idMatch[1];
             }
@@ -449,9 +444,18 @@ export default defineContentScript({
               const nameMatch = text.match(/"ownerChannelName":"([^"]+)"/);
               if (nameMatch) channelName = nameMatch[1];
             }
-            if (channelId && !channelId.startsWith('@') && channelName) break;
+            if (channelId && channelName) break;
           }
         } catch { /* ignore */ }
+      }
+
+      // Last resort: @handle from URL (only when no UC-ID available)
+      if (!channelId && channelUrl) {
+        const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
+        if (handleMatch) {
+          try { channelId = `@${decodeURIComponent(handleMatch[1])}`; }
+          catch { channelId = `@${handleMatch[1]}`; }
+        }
       }
 
       return { id: channelId, name: channelName, url: channelUrl };

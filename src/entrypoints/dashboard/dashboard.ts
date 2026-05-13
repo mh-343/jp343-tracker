@@ -187,8 +187,19 @@ browser.storage.onChanged.addListener((changes, area) => {
     const avatarEl = document.getElementById('userAvatar') as HTMLImageElement | null;
     if (avatarEl) {
       const newData = changes[STORAGE_KEYS.AVATAR_DATA].newValue;
-      avatarEl.src = newData || '/avatar-default.png';
-      avatarEl.style.display = '';
+      if (newData) {
+        browser.storage.local.get([STORAGE_KEYS.USER, STORAGE_KEYS.AVATAR_USER_ID]).then(result => {
+          const currentUserId = result[STORAGE_KEYS.USER]?.userId;
+          const cachedUserId = result[STORAGE_KEYS.AVATAR_USER_ID] as number | undefined;
+          if (cachedUserId == null || cachedUserId === currentUserId) {
+            avatarEl.src = newData;
+            avatarEl.style.display = '';
+          }
+        });
+      } else {
+        avatarEl.src = '/avatar-default.png';
+        avatarEl.style.display = '';
+      }
     }
   }
 });

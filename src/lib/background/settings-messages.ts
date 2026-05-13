@@ -26,12 +26,20 @@ export async function handleSettingsMessage(
         const merged = {
           ...newState,
           extApiToken: newState?.extApiToken || existing?.extApiToken || null,
-          avatarUrlSmall: 'avatarUrlSmall' in (newState || {}) ? (newState?.avatarUrlSmall || null) : (existing?.avatarUrlSmall ?? null),
+          userId: newState?.userId || (existing?.userId ?? null),
+          avatarUrlSmall: newState?.avatarUrlSmall
+            ? newState.avatarUrlSmall
+            : newState?.isLoggedIn
+              ? null
+              : (existing?.avatarUrlSmall ?? null),
         };
         if (!merged.isLoggedIn && merged.extApiToken) {
           merged.isLoggedIn = true;
         }
         await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
+        if (newState?.isLoggedIn && !newState?.avatarUrlSmall && existing?.avatarUrlSmall) {
+          await browser.storage.local.remove([STORAGE_KEYS.AVATAR_DATA, STORAGE_KEYS.AVATAR_USER_ID]);
+        }
         if ('displayName' in message && message.displayName) {
           await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
         }
@@ -53,6 +61,8 @@ export async function handleSettingsMessage(
     case 'UPDATE_SETTINGS': {
       if ('settings' in message && message.settings) {
         const newSettings = message.settings as ExtensionSettings;
+        delete (newSettings as Record<string, unknown>).blockedChannels;
+        delete (newSettings as Record<string, unknown>).whitelistedChannels;
         await context.saveSettings(newSettings);
         context.syncSettingsToServer(newSettings).catch(() => {});
 
@@ -88,16 +98,13 @@ export async function handleSettingsMessage(
 
     case 'BLOCK_CHANNEL': {
       if ('channel' in message && message.channel) {
-        const settings = await context.loadSettings();
-        settings.whitelistedChannels = settings.whitelistedChannels.filter(
-          c => c.channelId !== message.channel.channelId
-        );
-        if (!settings.blockedChannels.some(c => c.channelId === message.channel.channelId)) {
-          settings.blockedChannels.push(message.channel);
-        }
-        await context.saveSettings(settings);
+        await context.applyChannelOp({
+          action: 'block',
+          channelId: message.channel.channelId,
+          channelName: message.channel.channelName,
+          channelUrl: message.channel.channelUrl,
+        });
         context.log('[JP343] Channel blocked:', message.channel.channelName);
-        context.syncSettingsToServer(settings).catch(() => {});
 
         const currentSession = tracker.getCurrentSession();
         if (currentSession && currentSession.channelId === message.channel.channelId) {
@@ -114,31 +121,27 @@ export async function handleSettingsMessage(
 
     case 'UNBLOCK_CHANNEL': {
       if ('channelId' in message && message.channelId) {
-        const settings = await context.loadSettings();
-        const before = settings.blockedChannels.length;
-        settings.blockedChannels = settings.blockedChannels.filter(
-          c => c.channelId !== message.channelId
-        );
-        await context.saveSettings(settings);
+        await context.applyChannelOp({
+          action: 'unblock',
+          channelId: message.channelId,
+          channelName: '',
+          channelUrl: null,
+        });
         context.log('[JP343] Channel unblocked:', message.channelId);
-        context.syncSettingsToServer(settings).catch(() => {});
-        return { success: true, removed: before > settings.blockedChannels.length };
+        return { success: true };
       }
       return { success: false, error: 'No channelId provided' };
     }
 
     case 'WHITELIST_CHANNEL': {
       if ('channel' in message && message.channel) {
-        const settings = await context.loadSettings();
-        settings.blockedChannels = settings.blockedChannels.filter(
-          c => c.channelId !== message.channel.channelId
-        );
-        if (!settings.whitelistedChannels.some(c => c.channelId === message.channel.channelId)) {
-          settings.whitelistedChannels.push(message.channel);
-        }
-        await context.saveSettings(settings);
+        await context.applyChannelOp({
+          action: 'whitelist',
+          channelId: message.channel.channelId,
+          channelName: message.channel.channelName,
+          channelUrl: message.channel.channelUrl,
+        });
         context.log('[JP343] Channel whitelisted:', message.channel.channelName);
-        context.syncSettingsToServer(settings).catch(() => {});
         return { success: true };
       }
       return { success: false, error: 'No channel provided' };
@@ -146,15 +149,15 @@ export async function handleSettingsMessage(
 
     case 'UNWHITELIST_CHANNEL': {
       if ('channelId' in message && message.channelId) {
-        const settings = await context.loadSettings();
-        const before = settings.whitelistedChannels.length;
-        settings.whitelistedChannels = settings.whitelistedChannels.filter(
-          c => c.channelId !== message.channelId
-        );
-        await context.saveSettings(settings);
+        await context.applyChannelOp({
+          action: 'unwhitelist',
+          channelId: message.channelId,
+          channelName: '',
+          channelUrl: null,
+        });
         context.log('[JP343] Channel unwhitelisted:', message.channelId);
-        context.syncSettingsToServer(settings).catch(() => {});
 
+        const settings = await context.loadSettings();
         if (settings.trackJapaneseOnly) {
           const currentSession = tracker.getCurrentSession();
           if (currentSession && currentSession.channelId === message.channelId) {
@@ -176,16 +179,21 @@ export async function handleSettingsMessage(
           }
         }
 
-        return { success: true, removed: before > settings.whitelistedChannels.length };
+        return { success: true };
       }
       return { success: false, error: 'No channelId provided' };
     }
 
     case 'REFETCH_AVATAR': {
       const user = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER];
-      if (user?.avatarUrlSmall) {
-        context.fetchAndStoreAvatar(user.avatarUrlSmall);
+      if (user?.avatarUrlSmall && user?.userId) {
+        context.fetchAndStoreAvatar(user.avatarUrlSmall, user.userId);
       }
+      return { success: true };
+    }
+
+    case 'PULL_CHANNELS': {
+      context.pullChannelsFromServer().catch(() => {});
       return { success: true };
     }
 

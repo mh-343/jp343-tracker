@@ -134,6 +134,38 @@ export interface WhitelistedChannel {
   whitelistedAt: string;
 }
 
+export interface ChannelOp {
+  opId: string;
+  action: 'block' | 'unblock' | 'whitelist' | 'unwhitelist';
+  channelId: string;
+  channelName: string;
+  channelUrl: string | null;
+  timestamp: string;
+}
+
+export interface ChannelSyncState {
+  initialized: boolean;
+  serverVersion: number;
+  serverSnapshot: {
+    blocked: BlockedChannel[];
+    whitelisted: WhitelistedChannel[];
+  };
+  pendingOps: ChannelOp[];
+  lastPullAt: string | null;
+}
+
+export interface ChannelOpsResponse {
+  success: boolean;
+  data?: {
+    conflict?: boolean;
+    version?: number;
+    blocked?: BlockedChannel[];
+    whitelisted?: WhitelistedChannel[];
+    message?: string;
+    code?: string;
+  };
+}
+
 export interface SettingsPushResponse {
   success: boolean;
   data?: {
@@ -194,7 +226,8 @@ export type ExtensionMessage =
   | { type: 'OPEN_DASHBOARD' }
   | { type: 'DIAGNOSTIC_EVENT'; code: string; platform?: Platform }
   | { type: 'GET_DIAGNOSTICS' }
-  | { type: 'REFETCH_AVATAR' };
+  | { type: 'REFETCH_AVATAR' }
+  | { type: 'PULL_CHANNELS' };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -276,7 +309,9 @@ export const STORAGE_KEYS = {
   ACTIVITY_PREFS: 'jp343_extension_activity_prefs',
   MIGRATED_HUB_BG: 'jp343_migrated_hub_bg_to_server',
   TITLE_CACHE: 'jp343_yt_title_cache',
-  AVATAR_DATA: 'jp343_avatar_data'
+  AVATAR_DATA: 'jp343_avatar_data',
+  AVATAR_USER_ID: 'jp343_avatar_user_id',
+  CHANNEL_SYNC: 'jp343_channel_sync'
 } as const;
 
 export interface PlatformHealth {

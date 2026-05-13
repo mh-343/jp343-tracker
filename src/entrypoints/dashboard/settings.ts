@@ -763,15 +763,28 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
       [STORAGE_KEYS.STATS]: mergedStats
     };
 
+    let isLoggedIn = false;
     if (includeSettings && data.data.settings) {
       const imported = { ...DEFAULT_SETTINGS, ...data.data.settings };
       imported.dayStartHour = Math.max(0, Math.min(6, imported.dayStartHour || 0));
+
+      const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
+      isLoggedIn = !!userResult[STORAGE_KEYS.USER]?.token;
+      if (isLoggedIn) {
+        delete (imported as Record<string, unknown>).blockedChannels;
+        delete (imported as Record<string, unknown>).whitelistedChannels;
+      }
+
       updates[STORAGE_KEYS.SETTINGS] = imported;
     }
 
     await browser.storage.local.set(updates);
     invalidateSessionCache();
     document.dispatchEvent(new CustomEvent('jp343:refresh'));
+
+    if (includeSettings && isLoggedIn) {
+      browser.runtime.sendMessage({ type: 'PULL_CHANNELS' }).catch(() => {});
+    }
 
     const preview = statusContainer.querySelector('.import-preview');
     if (preview) preview.remove();
