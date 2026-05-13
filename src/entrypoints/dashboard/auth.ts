@@ -143,7 +143,7 @@ export async function doLogout(): Promise<void> {
     });
     await r.text();
   } catch { /* server unreachable is fine, clear local state anyway */ }
-  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.AVATAR_DATA]);
+  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME]);
   invalidateSessionCache();
   isLoggingOut = false;
   requestRefresh();
@@ -318,22 +318,27 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (userName) userName.textContent = stored[STORAGE_KEYS.DISPLAY_NAME] || 'Connected';
 
     if (avatarEl) {
-      if (!userState.avatarUrlSmall) {
+      const [avatarResult, userIdResult] = await Promise.all([
+        browser.storage.local.get(STORAGE_KEYS.AVATAR_DATA),
+        browser.storage.local.get(STORAGE_KEYS.AVATAR_USER_ID)
+      ]);
+      const avatarData = avatarResult[STORAGE_KEYS.AVATAR_DATA] as string | undefined;
+      const cachedUserId = userIdResult[STORAGE_KEYS.AVATAR_USER_ID] as number | undefined;
+      const cacheValid = avatarData
+        && isValidImageUrl(avatarData)
+        && (cachedUserId == null || cachedUserId === userState.userId);
+
+      if (cacheValid) {
+        avatarEl.src = avatarData!;
+        avatarEl.style.display = '';
+        avatarEl.onerror = () => {
+          avatarEl.src = '/avatar-default.png';
+          avatarEl.onerror = null;
+        };
+      } else {
         avatarEl.src = '/avatar-default.png';
         avatarEl.style.display = '';
-      } else {
-        const avatarResult = await browser.storage.local.get(STORAGE_KEYS.AVATAR_DATA);
-        const avatarData = avatarResult[STORAGE_KEYS.AVATAR_DATA] as string | undefined;
-        if (avatarData && isValidImageUrl(avatarData)) {
-          avatarEl.src = avatarData;
-          avatarEl.style.display = '';
-          avatarEl.onerror = () => {
-            avatarEl.src = '/avatar-default.png';
-            avatarEl.onerror = null;
-          };
-        } else {
-          avatarEl.src = '/avatar-default.png';
-          avatarEl.style.display = '';
+        if (userState.avatarUrlSmall) {
           browser.runtime.sendMessage({ type: 'REFETCH_AVATAR' }).catch(() => {});
         }
       }

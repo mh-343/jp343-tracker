@@ -21,6 +21,14 @@ import {
   sendDiagnosticsReport
 } from '../lib/diagnostics';
 import type { DiagnosticsContext } from '../lib/background/diagnostics-context';
+import {
+  initChannelSyncCallbacks,
+  applyChannelOp as applyChannelOpSync,
+  pullFromServer as pullChannelsFromServer,
+  flushOpsToServer as flushChannelOps,
+  handleChannelFlushAlarm,
+  migrateToChannelSync,
+} from '../lib/background/channel-sync';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -28,8 +36,6 @@ import type {
   JP343UserState,
   ExtensionSettings,
   ExtensionStats,
-  BlockedChannel,
-  WhitelistedChannel,
   SettingsPushResponse,
   SettingsPullResponse,
   DirectSyncResult,
@@ -155,7 +161,7 @@ export default defineBackground(() => {
 
   let cachedSettings: ExtensionSettings | null = null;
 
-  async function fetchAndStoreAvatar(url: string): Promise<void> {
+  async function fetchAndStoreAvatar(url: string, userId: number): Promise<void> {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -170,7 +176,10 @@ export default defineBackground(() => {
         binary += String.fromCharCode(bytes[i]);
       }
       const dataUrl = `data:${blob.type};base64,${btoa(binary)}`;
-      await browser.storage.local.set({ [STORAGE_KEYS.AVATAR_DATA]: dataUrl });
+      await browser.storage.local.set({
+        [STORAGE_KEYS.AVATAR_DATA]: dataUrl,
+        [STORAGE_KEYS.AVATAR_USER_ID]: userId
+      });
       log('[JP343] Avatar stored as base64');
     } catch {
       log('[JP343] Avatar fetch failed');
@@ -179,13 +188,16 @@ export default defineBackground(() => {
 
   browser.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
-      cachedSettings = null;
+      cachedSettings = changes[STORAGE_KEYS.SETTINGS].newValue
+        ? { ...changes[STORAGE_KEYS.SETTINGS].newValue }
+        : null;
     }
     if (area === 'local' && changes[STORAGE_KEYS.USER]) {
       const oldUrl = changes[STORAGE_KEYS.USER].oldValue?.avatarUrlSmall || null;
       const newUrl = changes[STORAGE_KEYS.USER].newValue?.avatarUrlSmall || null;
-      if (oldUrl !== newUrl && newUrl) {
-        fetchAndStoreAvatar(newUrl);
+      const newUserId = changes[STORAGE_KEYS.USER].newValue?.userId;
+      if (oldUrl !== newUrl && newUrl && newUserId) {
+        fetchAndStoreAvatar(newUrl, newUserId);
       }
     }
   });
@@ -207,21 +219,77 @@ export default defineBackground(() => {
       }
       raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
       let migrated = false;
-      for (const list of [raw.blockedChannels, raw.whitelistedChannels] as Array<Array<{ channelId: string; channelName: string }>>) {
+
+      // Normalize @handle → UC-ID within each list
+      for (const list of [raw.blockedChannels, raw.whitelistedChannels] as Array<Array<{ channelId: string; channelName: string; channelUrl?: string | null }>>) {
         const ucByName = new Map<string, string>();
+        const ucByUrl = new Map<string, string>();
         for (const c of list) {
-          if (c.channelId.startsWith('UC')) ucByName.set(c.channelName, c.channelId);
+          if (c.channelId.startsWith('UC')) {
+            ucByName.set(c.channelName, c.channelId);
+            if (c.channelUrl) {
+              const handleMatch = c.channelUrl.match(/\/@([^/?#]+)/);
+              if (handleMatch) ucByUrl.set(`@${handleMatch[1]}`, c.channelId);
+            }
+          }
         }
         for (let i = list.length - 1; i >= 0; i--) {
-          if (list[i].channelId.startsWith('@') && ucByName.has(list[i].channelName)) {
-            list.splice(i, 1);
-            migrated = true;
+          if (list[i].channelId.startsWith('@')) {
+            const ucId = ucByUrl.get(list[i].channelId) || ucByName.get(list[i].channelName);
+            if (ucId) {
+              list.splice(i, 1);
+              migrated = true;
+            }
           }
         }
       }
+
+      // Cross-list dedup: same channel in both blocked + whitelisted
+      if (raw.blockedChannels.length > 0 && raw.whitelistedChannels.length > 0) {
+        type ChannelEntry = { channelId: string; channelName: string; channelUrl?: string | null; blockedAt?: string; whitelistedAt?: string };
+        const blockedMap = new Map<string, ChannelEntry>();
+        const whitelistedMap = new Map<string, ChannelEntry>();
+        for (const c of raw.blockedChannels as ChannelEntry[]) blockedMap.set(c.channelId, c);
+        for (const c of raw.whitelistedChannels as ChannelEntry[]) whitelistedMap.set(c.channelId, c);
+
+        // Match @handle to UC-ID via channelUrl
+        const handleToUc = new Map<string, string>();
+        for (const c of [...raw.blockedChannels, ...raw.whitelistedChannels] as ChannelEntry[]) {
+          if (c.channelId.startsWith('UC') && c.channelUrl) {
+            const m = c.channelUrl.match(/\/@([^/?#]+)/);
+            if (m) handleToUc.set(`@${m[1]}`, c.channelId);
+          }
+        }
+
+        for (const [handleId, ucId] of handleToUc) {
+          const inBlocked = blockedMap.has(handleId) || blockedMap.has(ucId);
+          const inWhitelisted = whitelistedMap.has(handleId) || whitelistedMap.has(ucId);
+          if (inBlocked && inWhitelisted) {
+            const bEntry = blockedMap.get(handleId) || blockedMap.get(ucId);
+            const wEntry = whitelistedMap.get(handleId) || whitelistedMap.get(ucId);
+            const bTime = bEntry?.blockedAt || '';
+            const wTime = wEntry?.whitelistedAt || '';
+            // Most recent action wins
+            if (wTime > bTime) {
+              blockedMap.delete(handleId);
+              blockedMap.delete(ucId);
+            } else {
+              whitelistedMap.delete(handleId);
+              whitelistedMap.delete(ucId);
+            }
+            migrated = true;
+          }
+        }
+
+        if (migrated) {
+          raw.blockedChannels = [...blockedMap.values()];
+          raw.whitelistedChannels = [...whitelistedMap.values()];
+        }
+      }
+
       if (migrated) {
         await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: raw });
-        log('[JP343] Deduplicated @handle channel entries');
+        log('[JP343] Deduplicated channel entries (within-list + cross-list)');
       }
       cachedSettings = raw;
       return { ...cachedSettings };
@@ -232,11 +300,10 @@ export default defineBackground(() => {
   }
 
   async function saveSettings(settings: ExtensionSettings): Promise<void> {
-    if (settings.blockedChannels.length > 0 && settings.whitelistedChannels.length > 0) {
-      const blockedIds = new Set(settings.blockedChannels.map(c => c.channelId));
-      settings.whitelistedChannels = settings.whitelistedChannels.filter(
-        c => !blockedIds.has(c.channelId)
-      );
+    const current = (await browser.storage.local.get(STORAGE_KEYS.SETTINGS))[STORAGE_KEYS.SETTINGS];
+    if (current) {
+      settings.blockedChannels = current.blockedChannels ?? [];
+      settings.whitelistedChannels = current.whitelistedChannels ?? [];
     }
     cachedSettings = { ...settings };
     try {
@@ -274,8 +341,6 @@ export default defineBackground(() => {
         action: 'jp343_extension_push_settings',
         ext_api_token: userState.extApiToken,
         extension_version: browser.runtime.getManifest().version,
-        blocked_channels: JSON.stringify(settings.blockedChannels),
-        whitelisted_channels: JSON.stringify(settings.whitelistedChannels),
         spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
         day_boundary_hour: String(settings.dayStartHour || 0),
         color_theme: settings.colorTheme ?? 'magenta',
@@ -338,8 +403,6 @@ export default defineBackground(() => {
 
       if (result.data?.updated_at) settingsLastUpdated = result.data.updated_at;
 
-      const serverBlocked: BlockedChannel[] | null = result.data?.blocked_channels ?? null;
-      const serverWhitelisted: WhitelistedChannel[] | null = result.data?.whitelisted_channels ?? null;
       const serverSpotify: SpotifyContentType[] | null = result.data?.spotify_content_types ?? null;
       const serverColorTheme: string | undefined = result.data?.color_theme;
       const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
@@ -347,41 +410,6 @@ export default defineBackground(() => {
 
       const settings = await loadSettings();
       let changed = false;
-      let needsPushBack = false;
-
-      if (serverBlocked !== null) {
-        const localMap = new Map(settings.blockedChannels.map(c => [c.channelId, c]));
-        for (const ch of serverBlocked) {
-          if (ch.channelId && !localMap.has(ch.channelId)) localMap.set(ch.channelId, ch);
-        }
-        const merged = [...localMap.values()];
-        if (merged.length !== settings.blockedChannels.length) {
-          settings.blockedChannels = merged;
-          changed = true;
-        }
-        if (merged.length > serverBlocked.length) needsPushBack = true;
-      }
-
-      if (serverWhitelisted !== null) {
-        const localMap = new Map(settings.whitelistedChannels.map(c => [c.channelId, c]));
-        for (const ch of serverWhitelisted) {
-          if (ch.channelId && !localMap.has(ch.channelId)) localMap.set(ch.channelId, ch);
-        }
-        const merged = [...localMap.values()];
-        if (merged.length !== settings.whitelistedChannels.length) {
-          settings.whitelistedChannels = merged;
-          changed = true;
-        }
-        if (merged.length > serverWhitelisted.length) needsPushBack = true;
-      }
-
-      const blockedIds = new Set(settings.blockedChannels.map(c => c.channelId));
-      const beforeWhitelist = settings.whitelistedChannels.length;
-      settings.whitelistedChannels = settings.whitelistedChannels.filter(c => !blockedIds.has(c.channelId));
-      if (settings.whitelistedChannels.length !== beforeWhitelist) {
-        changed = true;
-        needsPushBack = true;
-      }
 
       if (serverSpotify !== null) {
         const localStr = [...settings.spotifyContentTypes].sort().join(',');
@@ -415,17 +443,8 @@ export default defineBackground(() => {
       settingsPullComplete = true;
       settingsLastPullTime = Date.now();
 
-      if (needsPushBack) {
-        const pushSettings = { ...settings };
-        pushSettings.blockedChannels = pushSettings.blockedChannels.filter(
-          c => c.channelId && c.channelName && c.blockedAt
-        );
-        pushSettings.whitelistedChannels = pushSettings.whitelistedChannels.filter(
-          c => c.channelId && c.channelName && c.whitelistedAt
-        );
-        syncSettingsToServer(pushSettings).catch(() => {});
-        log('[JP343] Push-back: local channels synced to server');
-      }
+      // Pull channels after settings save to avoid race condition
+      pullChannelsFromServer().catch(() => {});
 
       return serverColorTheme !== undefined;
     } catch (error) {
@@ -508,6 +527,10 @@ export default defineBackground(() => {
     if (alarm.name === 'jp343-auto-sync-retry') {
       await triggerSync();
       await pullAndMergeSettingsFromServer().catch(() => {});
+      flushChannelOps().catch(() => {});
+    }
+    if (alarm.name === 'jp343-channel-flush') {
+      handleChannelFlushAlarm().catch(() => {});
     }
     if (alarm.name === 'jp343-diagnostics-send') {
       maybeSendDiagnostics();
@@ -524,6 +547,26 @@ export default defineBackground(() => {
           log('[JP343] Cleanup: ' + (pending.length - cleaned.length) + ' old synced entries removed');
         }
       });
+    }
+    if (alarm.name === 'jp343-check') {
+      const session = tracker.getCurrentSession();
+      if (session) {
+        await saveSessionState(session);
+        log('[JP343] Periodic save - Session saved:', session.title, Math.round(session.accumulatedMs / 1000), 's');
+
+        if (session.isPaused && (Date.now() - session.lastUpdate) > MAX_RESTORE_AGE_MS) {
+          log('[JP343] Stale session detected (>4h paused) - finalizing');
+          const entry = tracker.finalizeSession();
+          if (entry) {
+            await savePendingEntry(entry);
+          }
+          await saveSessionState(null);
+          scheduleStatusBadgeUpdate();
+        }
+      }
+
+      const pending = await loadPendingEntries();
+      log('[JP343] Periodic check - Pending entries:', pending.length);
     }
   });
 
@@ -879,12 +922,18 @@ export default defineBackground(() => {
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 
+  initChannelSyncCallbacks({
+    logger: log,
+    onSettingsWritten: (settings) => { cachedSettings = { ...settings }; },
+  });
+
   const handleMessage = createBackgroundMessageHandler({
     log,
     loadSettings,
     saveSettings,
     ensureFreshSettings,
     syncSettingsToServer,
+    applyChannelOp: applyChannelOpSync,
     savePendingEntry,
     saveSessionState,
     loadStats,
@@ -896,6 +945,7 @@ export default defineBackground(() => {
     setLastSkippedChannel: (info) => { lastSkippedChannel = info; },
     getLastSkippedChannel: () => lastSkippedChannel,
     fetchAndStoreAvatar,
+    pullChannelsFromServer,
   }, diagnosticsContext);
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
@@ -1005,6 +1055,9 @@ export default defineBackground(() => {
   recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
 
+  // Channel sync: migration + init on SW start
+  migrateToChannelSync().catch(() => {});
+
   (async function migrateLocalHubBgFlag(): Promise<void> {
     const flagRes = await browser.storage.local.get(STORAGE_KEYS.MIGRATED_HUB_BG);
     if (flagRes[STORAGE_KEYS.MIGRATED_HUB_BG]) return;
@@ -1049,29 +1102,6 @@ export default defineBackground(() => {
   })().catch(() => {});
 
   browser.alarms.create('jp343-check', { periodInMinutes: 5 });
-
-  browser.alarms.onAlarm.addListener(async (alarm) => {
-    if (alarm.name === 'jp343-check') {
-      const session = tracker.getCurrentSession();
-      if (session) {
-        await saveSessionState(session);
-        log('[JP343] Periodic save - Session saved:', session.title, Math.round(session.accumulatedMs / 1000), 's');
-
-        if (session.isPaused && (Date.now() - session.lastUpdate) > MAX_RESTORE_AGE_MS) {
-          log('[JP343] Stale session detected (>4h paused) - finalizing');
-          const entry = tracker.finalizeSession();
-          if (entry) {
-            await savePendingEntry(entry);
-          }
-          await saveSessionState(null);
-          scheduleStatusBadgeUpdate();
-        }
-      }
-
-      const pending = await loadPendingEntries();
-      log('[JP343] Periodic check - Pending entries:', pending.length);
-    }
-  });
 
   browser.tabs.onRemoved.addListener(async (tabId) => {
     await recoveryReady;

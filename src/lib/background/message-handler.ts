@@ -60,6 +60,7 @@ export function createBackgroundMessageHandler(
         case 'WHITELIST_CHANNEL':
         case 'UNWHITELIST_CHANNEL':
         case 'REFETCH_AVATAR':
+        case 'PULL_CHANNELS':
           return handleSettingsMessage(message, messageSender, context);
 
         case 'SYNC_ENTRIES_DIRECT':
