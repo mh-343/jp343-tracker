@@ -508,7 +508,7 @@ export default defineContentScript({
       }
       try {
         const script = document.createElement('script');
-        script.src = browser.runtime.getURL('inject-yt-original-title.js');
+        script.src = browser.runtime.getURL('/inject-yt-original-title.js');
         document.documentElement.appendChild(script);
       } catch {
         log('[JP343] Failed to inject original title script');

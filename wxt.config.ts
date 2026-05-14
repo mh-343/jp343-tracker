@@ -13,6 +13,7 @@ export default defineConfig({
       gecko: {
         id: 'tracker@jp343.com',
         strict_min_version: '140.0',
+        // @ts-expect-error Firefox MV3 field not yet in WXT type definitions
         data_collection_permissions: {
           required: ['browsingActivity', 'websiteActivity'],
           optional: ['technicalAndInteraction']

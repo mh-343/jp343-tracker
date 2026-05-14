@@ -1040,7 +1040,8 @@ export default defineBackground(() => {
       channelId: savedSession.channelId,
       channelName: savedSession.channelName,
       channelUrl: savedSession.channelUrl,
-      activityType: savedSession.activityType
+      activityType: savedSession.activityType,
+      serverEntryId: null
     };
 
     await savePendingEntry(entry);

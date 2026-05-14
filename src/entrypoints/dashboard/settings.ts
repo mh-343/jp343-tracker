@@ -1,4 +1,4 @@
-import type { ExtensionSettings, BlockedChannel, WhitelistedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
+import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';

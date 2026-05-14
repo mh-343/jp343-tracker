@@ -10,7 +10,7 @@ import type { BackgroundMessageContext } from './message-context';
 
 export async function handleSettingsMessage(
   message: ExtensionMessage,
-  messageSender: browser.Runtime.MessageSender,
+  messageSender: Browser.runtime.MessageSender,
   context: BackgroundMessageContext
 ): Promise<unknown> {
   await context.recoveryReady;

@@ -162,7 +162,7 @@ export default defineContentScript({
     async function resolveTitleUncached(videoId: string, usePageScripts: boolean): Promise<string | null> {
       if (usePageScripts) {
         const playerPromise = awaitPageEvent('jp343-original-title', videoId, 1000);
-        injectPageScript('inject-yt-original-title.js');
+        injectPageScript('/inject-yt-original-title.js');
         const playerTitle = await playerPromise;
         if (playerTitle) {
           storeInCache(videoId, playerTitle);
@@ -170,7 +170,7 @@ export default defineContentScript({
         }
 
         const innertubePromise = awaitPageEvent('jp343-innertube-title', videoId, 2500);
-        injectPageScript('inject-yt-innertube-title.js');
+        injectPageScript('/inject-yt-innertube-title.js');
         const innertubeTitle = await innertubePromise;
         if (innertubeTitle) {
           storeInCache(videoId, innertubeTitle);

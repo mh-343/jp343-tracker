@@ -26,11 +26,10 @@ const MAX_HEARTBEAT_GAP_MS = 45_000;
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;
-  private tickInterval: ReturnType<typeof setInterval> | null = null;
   private pendingGapMs: number = 0;
 
   constructor() {
-    this.tickInterval = setInterval(() => this.tick(), 1000);
+    setInterval(() => this.tick(), 1000);
   }
 
   startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
@@ -202,7 +201,8 @@ export class TimeTracker {
       channelId: this.session.channelId,
       channelName: this.session.channelName,
       channelUrl: this.session.channelUrl,
-      activityType: this.session.activityType
+      activityType: this.session.activityType,
+      serverEntryId: null
     };
 
     log('[JP343] Session finalized:', durationMinutes, 'minutes');

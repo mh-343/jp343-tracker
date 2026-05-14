@@ -25,7 +25,7 @@ export async function handleStatsSyncMessage(
     }
 
     case 'OPEN_DASHBOARD': {
-      await browser.tabs.create({ url: browser.runtime.getURL('dashboard.html') });
+      await browser.tabs.create({ url: browser.runtime.getURL('/dashboard.html') });
       return { success: true };
     }
 
