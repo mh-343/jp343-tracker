@@ -26,11 +26,10 @@
   --blue: #3a9ab8;
   --blue-soft: rgba(var(--blue-rgb), 0.1);
   --gradient-secondary: #a855f7;
-  --gradient-line: linear-gradient(135deg, #7ec8e3 0%, #d4a5c9 40%, #e891b8 70%, #8ee4df 100%);
+  --gradient-line: linear-gradient(90deg, var(--accent), var(--gradient-secondary));
   --border: rgba(var(--accent-rgb), 0.10);
   --border-hover: rgba(var(--accent-rgb), 0.15);
   --border-subtle: rgba(var(--accent-rgb), 0.12);
-  --iri-gradient-subtle: linear-gradient(135deg, rgba(126,200,227,0.15), rgba(212,165,201,0.15), rgba(var(--accent-rgb),0.10), rgba(142,228,223,0.12));
 }
 
 [data-color-theme="matcha"] {
