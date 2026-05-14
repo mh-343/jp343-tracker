@@ -346,6 +346,7 @@ export default defineBackground(() => {
         color_theme: settings.colorTheme ?? 'magenta',
         hide_non_japanese: String(settings.hideNonJapanese ?? false),
         track_japanese_only: String(settings.trackJapaneseOnly ?? false),
+        daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
       };
       const resp = await fetch(ajaxUrl, {
         method: 'POST',
@@ -407,6 +408,7 @@ export default defineBackground(() => {
       const serverColorTheme: string | undefined = result.data?.color_theme;
       const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
       const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
+      const serverDailyGoal: number | undefined = result.data?.daily_goal;
 
       const settings = await loadSettings();
       let changed = false;
@@ -433,6 +435,10 @@ export default defineBackground(() => {
       }
       if (serverTrackJpOnly !== undefined && settings.trackJapaneseOnly !== serverTrackJpOnly) {
         settings.trackJapaneseOnly = serverTrackJpOnly;
+        changed = true;
+      }
+      if (serverDailyGoal !== undefined && serverDailyGoal > 0 && settings.dailyGoalMinutes !== serverDailyGoal) {
+        settings.dailyGoalMinutes = serverDailyGoal;
         changed = true;
       }
 

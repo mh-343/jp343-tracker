@@ -421,7 +421,6 @@ export default defineContentScript({
         channelId = metaChannel.content;
       }
 
-      // Fallback: extract UC-ID from channelUrl
       if (!channelId && channelUrl) {
         const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
         if (channelMatch) {
@@ -429,27 +428,6 @@ export default defineContentScript({
         }
       }
 
-      // Fallback: search ytInitialPlayerResponse/ytInitialData
-      if (!channelId || !channelName) {
-        try {
-          const scripts = document.querySelectorAll('script');
-          for (const script of scripts) {
-            const text = script.textContent;
-            if (!text?.includes('ytInitialPlayerResponse') && !text?.includes('ytInitialData')) continue;
-            if (!channelId) {
-              const idMatch = text.match(/"channelId":"(UC[a-zA-Z0-9_-]+)"/);
-              if (idMatch) channelId = idMatch[1];
-            }
-            if (!channelName) {
-              const nameMatch = text.match(/"ownerChannelName":"([^"]+)"/);
-              if (nameMatch) channelName = nameMatch[1];
-            }
-            if (channelId && channelName) break;
-          }
-        } catch { /* ignore */ }
-      }
-
-      // Last resort: @handle from URL (only when no UC-ID available)
       if (!channelId && channelUrl) {
         const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
         if (handleMatch) {

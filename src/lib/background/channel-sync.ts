@@ -9,6 +9,7 @@ import type {
 } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
+import { isChannelInList } from '../youtube-utils';
 
 const DEFAULT_SYNC_STATE: ChannelSyncState = {
   initialized: false,
@@ -41,6 +42,20 @@ async function saveSyncState(state: ChannelSyncState): Promise<void> {
   await browser.storage.local.set({ [STORAGE_KEYS.CHANNEL_SYNC]: state });
 }
 
+function findAliasKeys(
+  map: Map<string, { channelId: string; channelUrl?: string | null }>,
+  channelId: string,
+  channelUrl: string | null
+): string[] {
+  const keys: string[] = [];
+  for (const [key, entry] of map) {
+    if (key === channelId || isChannelInList([entry], channelId, channelUrl)) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
 function applyOps(
   snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] },
   ops: ChannelOp[]
@@ -49,9 +64,13 @@ function applyOps(
   const whitelisted = new Map(snapshot.whitelisted.map(c => [c.channelId, c]));
 
   for (const op of ops) {
+    const blockedAliases = findAliasKeys(blocked, op.channelId, op.channelUrl);
+    const whitelistedAliases = findAliasKeys(whitelisted, op.channelId, op.channelUrl);
+
     switch (op.action) {
       case 'block':
-        whitelisted.delete(op.channelId);
+        whitelistedAliases.forEach(k => whitelisted.delete(k));
+        blockedAliases.forEach(k => blocked.delete(k));
         blocked.set(op.channelId, {
           channelId: op.channelId,
           channelName: op.channelName,
@@ -60,10 +79,11 @@ function applyOps(
         });
         break;
       case 'unblock':
-        blocked.delete(op.channelId);
+        blockedAliases.forEach(k => blocked.delete(k));
         break;
       case 'whitelist':
-        blocked.delete(op.channelId);
+        blockedAliases.forEach(k => blocked.delete(k));
+        whitelistedAliases.forEach(k => whitelisted.delete(k));
         whitelisted.set(op.channelId, {
           channelId: op.channelId,
           channelName: op.channelName,
@@ -72,7 +92,7 @@ function applyOps(
         });
         break;
       case 'unwhitelist':
-        whitelisted.delete(op.channelId);
+        whitelistedAliases.forEach(k => whitelisted.delete(k));
         break;
     }
   }
@@ -81,6 +101,26 @@ function applyOps(
     blocked: [...blocked.values()],
     whitelisted: [...whitelisted.values()],
   };
+}
+
+function deduplicateSnapshot(snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] }): { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] } {
+  const dedup = <T extends { channelId: string; channelName: string }>(list: T[]): T[] => {
+    const seen = new Map<string, T>();
+    const result: T[] = [];
+    for (const entry of list) {
+      const key = entry.channelName.trim().toLowerCase();
+      if (!key) { result.push(entry); continue; }
+      const existing = seen.get(key);
+      if (existing && !existing.channelId.startsWith('UC') && entry.channelId.startsWith('UC')) {
+        seen.set(key, entry);
+      } else if (!existing) {
+        seen.set(key, entry);
+      }
+    }
+    result.push(...seen.values());
+    return result;
+  };
+  return { blocked: dedup(snapshot.blocked), whitelisted: dedup(snapshot.whitelisted) };
 }
 
 async function updateSettingsFromView(state: ChannelSyncState): Promise<void> {
@@ -186,10 +226,10 @@ export async function pullFromServer(): Promise<void> {
         return;
       }
 
-      state.serverSnapshot = {
+      state.serverSnapshot = deduplicateSnapshot({
         blocked: result.data.blocked || [],
         whitelisted: result.data.whitelisted || [],
-      };
+      });
       state.serverVersion = result.data.version || 0;
       state.initialized = true;
       state.lastPullAt = new Date().toISOString();
@@ -228,10 +268,10 @@ export async function flushOpsToServer(): Promise<void> {
       }
 
       if (result.data.conflict) {
-        state.serverSnapshot = {
+        state.serverSnapshot = deduplicateSnapshot({
           blocked: result.data.blocked || [],
           whitelisted: result.data.whitelisted || [],
-        };
+        });
         state.serverVersion = result.data.version || 0;
         await saveSyncState(state);
         await updateSettingsFromView(state);
@@ -249,10 +289,10 @@ export async function flushOpsToServer(): Promise<void> {
 
       conflictRetries = 0;
       state.pendingOps = [];
-      state.serverSnapshot = {
+      state.serverSnapshot = deduplicateSnapshot({
         blocked: result.data.blocked || [],
         whitelisted: result.data.whitelisted || [],
-      };
+      });
       state.serverVersion = result.data.version || 0;
       await saveSyncState(state);
       await updateSettingsFromView(state);
@@ -317,24 +357,19 @@ export async function migrateToChannelSync(): Promise<void> {
         return;
       }
 
-      state.serverSnapshot = {
+      state.serverSnapshot = deduplicateSnapshot({
         blocked: result.data.blocked || [],
         whitelisted: result.data.whitelisted || [],
-      };
+      });
       state.serverVersion = result.data.version || 0;
       state.initialized = true;
       state.lastPullAt = new Date().toISOString();
 
-      // Diff: lokale Channels die nicht auf dem Server sind → pending Ops
-      const serverBlockedIds = new Set((result.data.blocked || []).map(c => c.channelId));
-      const serverWhitelistedIds = new Set((result.data.whitelisted || []).map(c => c.channelId));
-      const serverBlockedNames = new Map((result.data.blocked || []).map(c => [c.channelName, c.channelId]));
-      const serverWhitelistedNames = new Map((result.data.whitelisted || []).map(c => [c.channelName, c.channelId]));
+      const serverBlocked = state.serverSnapshot.blocked;
+      const serverWhitelisted = state.serverSnapshot.whitelisted;
 
       for (const local of (settings.blockedChannels || [])) {
-        if (serverBlockedIds.has(local.channelId)) continue;
-        // Match by channelName when @handle vs UC-ID mismatch
-        if (local.channelId.startsWith('@') && serverBlockedNames.has(local.channelName)) continue;
+        if (isChannelInList(serverBlocked, local.channelId, local.channelUrl)) continue;
         state.pendingOps.push({
           opId: crypto.randomUUID(),
           action: 'block',
@@ -346,8 +381,7 @@ export async function migrateToChannelSync(): Promise<void> {
       }
 
       for (const local of (settings.whitelistedChannels || [])) {
-        if (serverWhitelistedIds.has(local.channelId)) continue;
-        if (local.channelId.startsWith('@') && serverWhitelistedNames.has(local.channelName)) continue;
+        if (isChannelInList(serverWhitelisted, local.channelId, local.channelUrl)) continue;
         state.pendingOps.push({
           opId: crypto.randomUUID(),
           action: 'whitelist',
