@@ -25,11 +25,9 @@ export default defineContentScript({
 
   main() {
     let currentVideoElement: HTMLVideoElement | null = null;
-    let lastTitle: string = '';
     let lastVideoId: string | null = null;
     let bestKnownTitle: string = '';
     let isCurrentlyInAd: boolean = false;
-    let recentAdEnd: number = 0;
     let effectiveUrl: string = window.location.href;
     let episodeChangeCounter = 0;
     let lastEpisodeChangeTime = 0;
@@ -482,7 +480,6 @@ export default defineContentScript({
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
-        recentAdEnd = Date.now();
         log('[JP343] Prime Video: Ad ended');
         sendMessage('AD_END');
         setTimeout(() => {
@@ -520,7 +517,6 @@ export default defineContentScript({
           if (isCurrentlyInAd || isAdPlaying()) return;
           const state = getCurrentVideoState();
           if (state) {
-            lastTitle = state.title;
             log('[JP343] Prime Video: New episode started:', state.title);
             sendVideoPlay(state);
           }
@@ -642,14 +638,12 @@ export default defineContentScript({
               if (retryState && !isGenericTitle(retryState.title)) {
                 clearInterval(titleRetry);
                 lastVideoId = videoId;
-                lastTitle = retryState.title;
                 log('[JP343] Prime Video: Good title after retry #' + retryCount + ':', retryState.title);
                 sendVideoPlay(retryState);
               } else if (retryCount >= 5) {
                 clearInterval(titleRetry);
                 if (retryState && retryState.isPlaying && !isCurrentlyInAd) {
                   lastVideoId = videoId;
-                  lastTitle = retryState.title;
                   sendVideoPlay(retryState);
                 }
               }
@@ -658,7 +652,6 @@ export default defineContentScript({
           }
 
           lastVideoId = videoId;
-          lastTitle = state.title;
           lastCurrentTime = video.currentTime;
           log('[JP343] Prime Video Play:', state.title);
           sendVideoPlay(state);
@@ -699,14 +692,10 @@ export default defineContentScript({
             setTimeout(() => {
               const newState = getCurrentVideoState();
               if (newState && newState.isPlaying && !isCurrentlyInAd) {
-                lastTitle = newState.title;
                 sendVideoPlay(newState);
               }
             }, 500);
           } else {
-            if (state.title && state.title !== 'Prime Video Content') {
-              lastTitle = state.title;
-            }
             sendMessage('VIDEO_STATE_UPDATE', { state });
           }
         }
@@ -724,7 +713,6 @@ export default defineContentScript({
         currentVideoElement = null;
         bestKnownTitle = '';
         lastVideoId = null;
-        lastTitle = '';
         return;
       }
 
@@ -746,7 +734,6 @@ export default defineContentScript({
           } else {
             log('[JP343] Prime Video: Video already playing');
             lastVideoId = videoId;
-            lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
               sendVideoPlay(state);
@@ -772,7 +759,6 @@ export default defineContentScript({
             sendMessage('AD_START');
           } else {
             lastVideoId = videoId;
-            lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
               log('[JP343] Prime Video: Initial video playing');
@@ -815,7 +801,6 @@ export default defineContentScript({
               currentVideoElement = video;
               attachVideoEvents(video);
               lastVideoId = getVideoId();
-              lastTitle = getFormattedTitle();
             }
           }, 1000);
         }
@@ -852,7 +837,6 @@ export default defineContentScript({
         if (state && !isGenericTitle(state.title)) {
           log('[JP343] Prime Video: Starting delayed tracking');
           lastVideoId = videoId;
-          lastTitle = state.title;
           sendVideoPlay(state);
         }
       }

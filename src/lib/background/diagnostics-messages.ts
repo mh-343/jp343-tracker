@@ -1,4 +1,4 @@
-import type { ExtensionMessage, Platform, PlatformHealth } from '../../types';
+import type { ExtensionMessage, Platform } from '../../types';
 import type { DiagnosticsContext } from './diagnostics-context';
 
 type DiagnosticsMessage = Extract<ExtensionMessage, { type: 'DIAGNOSTIC_EVENT' | 'GET_DIAGNOSTICS' }>;

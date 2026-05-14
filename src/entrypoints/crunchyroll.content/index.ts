@@ -184,7 +184,6 @@ export default defineContentScript({
     }
 
     let currentVideoElement: HTMLVideoElement | null = null;
-    let lastTitle: string = '';
     let lastVideoId: string | null = null;
     let cachedMetadata: CrunchyrollMetadata | null = null;
     let bestKnownTitle: string = '';
@@ -303,7 +302,6 @@ export default defineContentScript({
             const state = getCurrentVideoState();
             if (state && state.isPlaying && !isAdPlaying()) {
               lastVideoId = pendingVideoId;
-              lastTitle = state.title;
               sendVideoPlay(state);
             }
             pendingVideoId = null;
@@ -821,7 +819,6 @@ export default defineContentScript({
         const state = getCurrentVideoState();
         if (state) {
           lastVideoId = videoId;
-          lastTitle = state.title;
           debugLog('VIDEO_PLAY', 'Tracking started', { videoId, title: state.title });
           log('[JP343] Crunchyroll Play:', state.title, '(ID:', lastVideoId, ')');
           sendVideoPlay(state);
@@ -871,7 +868,6 @@ export default defineContentScript({
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
             log('[JP343] Crunchyroll Video change (ID):', lastVideoId, '->', currentVideoId);
             lastVideoId = currentVideoId;
-            lastTitle = state.title;
             resetForNewVideo();
             sendMessage('VIDEO_ENDED');
             setTimeout(() => {
@@ -881,9 +877,6 @@ export default defineContentScript({
               }
             }, 500);
           } else {
-            if (state.title && state.title !== 'Crunchyroll Content') {
-              lastTitle = state.title;
-            }
             sendMessage('VIDEO_STATE_UPDATE', { state });
           }
         }
@@ -914,7 +907,6 @@ export default defineContentScript({
           } else {
             log('[JP343] Crunchyroll: New video already playing');
             lastVideoId = videoId;
-            lastTitle = getFormattedTitle();
             const state = getCurrentVideoState();
             if (state) {
               sendVideoPlay(state);
@@ -945,7 +937,6 @@ export default defineContentScript({
         } else {
           log('[JP343] Crunchyroll: Video already playing, starting tracking');
           lastVideoId = videoId;
-          lastTitle = getFormattedTitle();
           const state = getCurrentVideoState();
           if (state) {
             sendVideoPlay(state);
@@ -986,7 +977,6 @@ export default defineContentScript({
               currentVideoElement = video;
               attachVideoEvents(video);
               lastVideoId = getVideoId();
-              lastTitle = getFormattedTitle();
             }
           }, 1000);
         }
@@ -1059,7 +1049,6 @@ export default defineContentScript({
         if (state) {
           log('[JP343] Crunchyroll: Starting delayed tracking');
           lastVideoId = videoId;
-          lastTitle = state.title;
           sendVideoPlay(state);
         }
       } else if (video && !video.paused && (adPlaying || isCurrentlyInAd) && videoId) {

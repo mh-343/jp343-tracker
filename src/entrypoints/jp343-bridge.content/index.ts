@@ -21,7 +21,7 @@ export default defineContentScript({
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
-    const storageListeners: Array<(changes: Record<string, browser.storage.StorageChange>, area: string) => void> = [];
+    const storageListeners: Array<(changes: Record<string, Browser.storage.StorageChange>, area: string) => void> = [];
 
     let disposed = false;
 
@@ -276,7 +276,7 @@ export default defineContentScript({
     if (document.body) startBgObserver();
     else document.addEventListener('DOMContentLoaded', startBgObserver, { once: true });
 
-    function onStorageChanged(changes: Record<string, browser.storage.StorageChange>, area: string): void {
+    function onStorageChanged(changes: Record<string, Browser.storage.StorageChange>, area: string): void {
       if (area !== 'local') return;
       if (changes[STORAGE_KEYS.BG_IMAGE_REVISION] || changes[STORAGE_KEYS.SETTINGS]) {
         syncHubBackgroundLayer();

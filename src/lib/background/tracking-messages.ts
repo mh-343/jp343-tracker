@@ -25,7 +25,7 @@ async function checkJapaneseVideo(videoId: string, domTitle: string, originalTit
 
 export async function handleTrackingMessage(
   message: ExtensionMessage,
-  messageSender: browser.Runtime.MessageSender,
+  messageSender: Browser.runtime.MessageSender,
   context: BackgroundMessageContext,
   recordDiagnostic?: (code: string, platform?: string) => void
 ): Promise<unknown> {

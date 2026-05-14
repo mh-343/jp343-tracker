@@ -19,7 +19,7 @@ export function createBackgroundMessageHandler(
 ) {
   return async function handleMessage(
     message: ExtensionMessage,
-    messageSender: browser.Runtime.MessageSender
+    messageSender: Browser.runtime.MessageSender
   ): Promise<unknown> {
     if (!message || typeof message.type !== 'string') {
       return { success: false, error: 'Invalid message format' };

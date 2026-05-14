@@ -1,4 +1,4 @@
-import type { PendingEntry, ActivityType } from '../../types';
+import type { PendingEntry } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { ajaxPost } from './api';

@@ -7,7 +7,7 @@ export interface DebugLogger {
   clearBuffer: () => void;
 }
 
-export function createDebugLogger(platform: string): DebugLogger {
+export function createDebugLogger(_platform: string): DebugLogger {
   const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
   const buffer: string[] = [];
   const MAX_ENTRIES = 5000;

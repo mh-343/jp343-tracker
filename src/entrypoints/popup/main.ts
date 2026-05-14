@@ -2,7 +2,7 @@
 
 import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
-import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates, getLocalDateString } from '../../lib/format-utils';
+import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 
 const DEBUG_MODE = import.meta.env.DEV;
@@ -58,9 +58,7 @@ const platformIcons: Record<Platform, string> = {
 };
 
 let currentSession: TrackingSession | null = null;
-let isAdPlaying = false;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
-let pendingEntries: PendingEntry[] = [];
 let isEnabled = true;
 let blockedChannels: BlockedChannel[] = [];
 let whitelistedChannels: WhitelistedChannel[] = [];
@@ -607,8 +605,6 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
 }
 
 function renderPendingList(entries: PendingEntry[]): void {
-  pendingEntries = entries;
-
   updatePendingDisplay(entries);
 
   if (entries.length === 0) {
@@ -878,8 +874,6 @@ async function fetchCurrentState(): Promise<void> {
 
       const platformChanged = currentSession?.platform !== session?.platform;
       currentSession = session;
-      isAdPlaying = isAd;
-
       updateStatus(session, isAd);
       updateSessionDisplay(session, duration, isAd);
       updateChannelDisplay(session, skippedChannel);
@@ -924,13 +918,13 @@ elements.btnStop.addEventListener('click', async () => {
 });
 
 document.getElementById('btnDashboard')?.addEventListener('click', () => {
-  const dashboardUrl = browser.runtime.getURL('dashboard.html');
+  const dashboardUrl = browser.runtime.getURL('/dashboard.html');
   browser.tabs.create({ url: dashboardUrl });
   window.close();
 });
 
 document.getElementById('btnSettings')?.addEventListener('click', () => {
-  const settingsUrl = browser.runtime.getURL('dashboard.html') + '?tab=settings';
+  const settingsUrl = browser.runtime.getURL('/dashboard.html') + '?tab=settings';
   browser.tabs.create({ url: settingsUrl });
   window.close();
 });
