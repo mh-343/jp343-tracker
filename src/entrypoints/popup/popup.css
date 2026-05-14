@@ -1230,6 +1230,7 @@ body {
 [data-theme="light"] .jp-toggle.active { background: rgba(188, 0, 45, 0.06); border-color: #bc002d; }
 [data-theme="light"] .jp-toggle .flag-circle { fill: #999; }
 [data-theme="light"] .jp-toggle:hover .flag-circle { fill: #777; }
+[data-theme="light"] .jp-toggle.active .flag-circle { fill: #bc002d; }
 [data-theme="light"] .entry-item:hover { background: rgba(var(--accent-rgb), 0.04); }
 [data-theme="light"] ::-webkit-scrollbar-track { background: var(--bg-secondary); }
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(var(--accent-rgb), 0.25); }

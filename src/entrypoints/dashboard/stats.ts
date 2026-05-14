@@ -83,6 +83,10 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
     customInput.value = useHours ? String(+(current / 60).toFixed(1)) : String(Math.round(current * 60));
   });
 
+  customInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); saveBtn.click(); }
+  });
+
   customInput.addEventListener('input', (e) => {
     e.stopPropagation();
     presetsContainer.querySelectorAll('.goal-preset-btn').forEach(b => b.classList.remove('active'));
@@ -98,17 +102,27 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
   saveBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const raw = parseFloat(customInput.value) || 0;
-    const newGoal = Math.max(1, useHours ? Math.round(raw * 60) : Math.round(raw));
+    let newGoal = Math.max(5, useHours ? Math.round(raw * 60) : Math.round(raw));
+    if (newGoal > 480) {
+      newGoal = 480;
+      customInput.value = useHours ? String(8) : String(480);
+      customInput.style.outline = '2px solid #e74c3c';
+      setTimeout(() => { customInput.style.outline = ''; }, 1500);
+      return;
+    }
 
-    const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
-    const settings = result[STORAGE_KEYS.SETTINGS] || {};
-    settings.dailyGoalMinutes = newGoal;
-    await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
+    const current = (await browser.storage.local.get(STORAGE_KEYS.SETTINGS))[STORAGE_KEYS.SETTINGS] || {};
+    await browser.runtime.sendMessage({
+      type: 'UPDATE_SETTINGS',
+      settings: { ...current, dailyGoalMinutes: newGoal }
+    });
 
     _goalMinutes = newGoal;
     renderGoalBar(_localDailyMinutes[getLocalDateString(new Date(), _dayStartHour)] || 0, newGoal);
     editor.classList.remove('open');
   });
+
+  editor.addEventListener('click', (e) => e.stopPropagation());
 
   wrap.addEventListener('click', () => {
     const isOpen = editor.classList.contains('open');

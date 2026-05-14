@@ -69,7 +69,26 @@ export default defineContentScript({
       sendDiagnostic(isGenericPageTitle(state.title) ? 'metadata_missing' : 'metadata_found');
     }
     sendDiagnostic('content_script_loaded');
+
+    const bridgeScript = document.createElement('script');
+    bridgeScript.src = browser.runtime.getURL('inject-netflix-series-info.js');
+    document.documentElement.appendChild(bridgeScript);
+
+    let cachedSeriesInfo: { seriesId: string; title: string | null; type: string | null } | null = null;
+
+    function requestSeriesInfo(): void {
+      window.dispatchEvent(new Event('jp343:requestSeriesInfo'));
+      const raw = document.documentElement.dataset.jp343SeriesInfo;
+      if (raw) {
+        try { cachedSeriesInfo = JSON.parse(raw); }
+        catch { cachedSeriesInfo = null; }
+      } else {
+        cachedSeriesInfo = null;
+      }
+    }
+
     if (window.location.pathname.includes('/watch/')) {
+      setTimeout(() => requestSeriesInfo(), 2000);
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
     }
 
@@ -716,8 +735,11 @@ export default defineContentScript({
         isAd: isCurrentlyInAd || isAdPlaying(),
         thumbnailUrl: metadata.thumbnailUrl,
         videoId: videoId,
-        channelId: (metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
-        channelName: (metadata.title !== 'Netflix Content') ? metadata.title : null,
+        channelId: cachedSeriesInfo
+          ? 'netflix:' + cachedSeriesInfo.seriesId
+          : (metadata.title !== 'Netflix Content') ? 'netflix:' + metadata.title : null,
+        channelName: cachedSeriesInfo?.title
+          || ((metadata.title !== 'Netflix Content') ? metadata.title : null),
         channelUrl: null
       };
     }
@@ -1016,6 +1038,8 @@ export default defineContentScript({
 
         if (isOnWatch) {
           setTimeout(() => {
+            requestSeriesInfo();
+            sendDiagnostic(cachedSeriesInfo ? 'series_id_success' : 'series_id_fallback');
             const video = findVideoElement();
             if (video && video !== currentVideoElement) {
               debugLog('URL_CHANGE', 'New video detected after URL change', collectUIState());
@@ -1024,7 +1048,7 @@ export default defineContentScript({
               lastVideoId = getVideoId();
               lastTitle = getFormattedTitle();
             }
-          }, 1000);
+          }, 2000);
         }
       }
 
