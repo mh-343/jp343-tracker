@@ -70,14 +70,9 @@ export default defineContentScript({
     }
     sendDiagnostic('content_script_loaded');
 
-    const bridgeScript = document.createElement('script');
-    bridgeScript.src = browser.runtime.getURL('inject-netflix-series-info.js');
-    document.documentElement.appendChild(bridgeScript);
-
     let cachedSeriesInfo: { seriesId: string; title: string | null; type: string | null } | null = null;
 
-    function requestSeriesInfo(): void {
-      window.dispatchEvent(new Event('jp343:requestSeriesInfo'));
+    function readSeriesInfo(): void {
       const raw = document.documentElement.dataset.jp343SeriesInfo;
       if (raw) {
         try { cachedSeriesInfo = JSON.parse(raw); }
@@ -88,7 +83,15 @@ export default defineContentScript({
     }
 
     if (window.location.pathname.includes('/watch/')) {
-      setTimeout(() => requestSeriesInfo(), 2000);
+      let seriesRetryCount = 0;
+      const seriesRetryId = setInterval(() => {
+        seriesRetryCount++;
+        readSeriesInfo();
+        if (cachedSeriesInfo || seriesRetryCount >= 20) {
+          clearInterval(seriesRetryId);
+        }
+      }, 500);
+      intervalIds.push(seriesRetryId);
       setTimeout(() => { if (!currentVideoElement) sendDiagnostic('player_missing'); }, 15000);
     }
 
@@ -769,6 +772,7 @@ export default defineContentScript({
     function resetForNewVideo(): void {
       cachedMetadata = null;
       cachedPlayerTitle = null;
+      cachedSeriesInfo = null;
       if (bestKnownTitle) {
         log('[JP343] Netflix: bestKnownTitle reset on video change (was:', bestKnownTitle + ')');
         bestKnownTitle = '';
@@ -814,6 +818,21 @@ export default defineContentScript({
           return;
         }
 
+        if (!cachedSeriesInfo) readSeriesInfo();
+        if (!cachedSeriesInfo) {
+          let seriesWaitCount = 0;
+          const seriesWaitId = setInterval(() => {
+            seriesWaitCount++;
+            readSeriesInfo();
+            if (cachedSeriesInfo || seriesWaitCount >= 20) {
+              clearInterval(seriesWaitId);
+              const deferredState = getCurrentVideoState();
+              if (deferredState) sendMessage('VIDEO_PLAY', { state: deferredState });
+            }
+          }, 500);
+          intervalIds.push(seriesWaitId);
+          return;
+        }
         const state = getCurrentVideoState();
         if (state) {
           if (isGenericPageTitle(state.title) && !cachedPlayerTitle && !bestKnownTitle) {
@@ -1037,9 +1056,18 @@ export default defineContentScript({
         resetForNewVideo();
 
         if (isOnWatch) {
+          let seriesRetryCount = 0;
+          const seriesRetryId = setInterval(() => {
+            seriesRetryCount++;
+            readSeriesInfo();
+            if (cachedSeriesInfo || seriesRetryCount >= 20) {
+              clearInterval(seriesRetryId);
+              sendDiagnostic(cachedSeriesInfo ? 'series_id_success' : 'series_id_fallback');
+            }
+          }, 500);
+          intervalIds.push(seriesRetryId);
+
           setTimeout(() => {
-            requestSeriesInfo();
-            sendDiagnostic(cachedSeriesInfo ? 'series_id_success' : 'series_id_fallback');
             const video = findVideoElement();
             if (video && video !== currentVideoElement) {
               debugLog('URL_CHANGE', 'New video detected after URL change', collectUIState());
@@ -1048,7 +1076,7 @@ export default defineContentScript({
               lastVideoId = getVideoId();
               lastTitle = getFormattedTitle();
             }
-          }, 2000);
+          }, 250);
         }
       }
 

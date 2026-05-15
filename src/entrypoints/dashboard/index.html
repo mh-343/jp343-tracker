@@ -173,7 +173,7 @@
     </div>
 
     <!-- Activity Heatmap -->
-    <div class="card">
+    <div class="card" data-collapse-id="heatmap">
       <div class="card-title">Activity Heatmap</div>
       <div class="heatmap" id="heatmap" role="group" aria-label="Activity heatmap, last 90 days"></div>
       <div class="heatmap-legend">
@@ -187,20 +187,32 @@
       </div>
     </div>
 
+    <!-- Hourly Activity -->
+    <div class="card" data-collapse-id="hourly">
+      <div class="card-title">Hourly Activity</div>
+      <div class="hourly-bars" id="hourlyBars"></div>
+    </div>
+
+    <div class="card" id="targetStartCard" data-collapse-id="targetStart" style="display:none">
+      <div class="card-title">Target Start Time</div>
+      <div class="target-start-stats" id="targetStartStats"></div>
+      <div class="target-start-chart" id="targetStartChart"></div>
+    </div>
+
     <!-- This Week + Monthly Overview (side by side) -->
     <div class="two-col">
-      <div class="card">
+      <div class="card" data-collapse-id="thisWeek">
         <div class="card-title">This Week</div>
         <div class="week-bars" id="weekBars"></div>
       </div>
-      <div class="card">
+      <div class="card" data-collapse-id="monthly">
         <div class="card-title">Monthly Overview</div>
         <div class="month-bars" id="monthBars"></div>
       </div>
     </div>
 
     <!-- Session History -->
-    <div class="card">
+    <div class="card" data-collapse-id="sessions">
       <div class="card-title">Session History</div>
       <div class="session-list" id="sessionList">
         <div class="empty-state">

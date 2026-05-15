@@ -60,7 +60,7 @@ export async function doLogin(email: string, password: string): Promise<{ succes
     try {
       result = JSON.parse(text);
     } catch {
-      return { success: false, error: `Server returned non-JSON (${response.status})` };
+      return { success: false, error: 'Login failed. Please try again.' };
     }
 
     if (result.success && typeof result.data === 'object' && result.data?.nonce) {
@@ -103,7 +103,7 @@ export async function doRegister(email: string, password: string): Promise<{ suc
 
     let result: { success: boolean; data?: AuthResponseData | string };
     try { result = JSON.parse(text); } catch {
-      return { success: false, error: `Server returned non-JSON (${response.status})` };
+      return { success: false, error: 'Login failed. Please try again.' };
     }
 
     if (result.success && typeof result.data === 'object' && result.data?.nonce) {
@@ -273,14 +273,14 @@ export function renderSyncCta(entries: PendingEntry[], userState: JP343UserState
 
   if (totalMinutes < 60) {
     const p = document.createElement('p');
-    p.textContent = 'Your sessions are saved locally in this browser.';
+    p.textContent = 'Your sessions are only on this browser. Clearing browser data will erase them.';
     container.appendChild(p);
   } else {
     const hours = Math.floor(totalMinutes / 60);
     const hoursText = hours === 1 ? '1 hour' : `${hours} hours`;
 
     const p = document.createElement('p');
-    p.textContent = `${hoursText} tracked locally. Export a backup or create an account to keep your hours safe.`;
+    p.textContent = `${hoursText} tracked locally only. Back up or create a free account so you don't lose them.`;
     container.appendChild(p);
   }
 }

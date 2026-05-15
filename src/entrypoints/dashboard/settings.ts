@@ -4,6 +4,7 @@ import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { invalidateSessionCache } from './sessions';
+import { buildTargetStartSection } from './target-start-settings';
 
 interface ExportData {
   exportVersion: 1;
@@ -227,7 +228,7 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
 
   const sliderLabel = document.createElement('div');
   sliderLabel.className = 'settings-row-label';
-  sliderLabel.textContent = 'Overlay Opacity';
+  sliderLabel.textContent = 'Background Opacity';
   sliderLabel.style.flex = '0 0 auto';
 
   const slider = document.createElement('input');
@@ -293,7 +294,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
 
   section.appendChild(createToggleRow(
     'Track Japanese only',
-    'YouTube only',
+    'Only track videos YouTube identifies as Japanese',
     settings.trackJapaneseOnly ?? false,
     async (val) => { await updateSettings({ trackJapaneseOnly: val }); }
   ));
@@ -405,7 +406,7 @@ function buildDayStartRow(container: HTMLElement, settings: ExtensionSettings): 
 
   const desc = document.createElement('div');
   desc.className = 'settings-description';
-  desc.textContent = 'Sessions before this hour count toward the previous day.';
+  desc.textContent = 'For late-night sessions. Anything before this hour counts toward the previous day.';
   desc.style.cssText = 'font-size:11px;color:var(--text-muted);margin-top:4px;padding:0 4px;';
 
   container.appendChild(row);
@@ -615,13 +616,13 @@ function buildExportImportPanel(container: HTMLElement): void {
   const exportBtn = document.createElement('button');
   exportBtn.type = 'button';
   exportBtn.className = 'export-btn';
-  exportBtn.textContent = 'Export JSON';
+  exportBtn.textContent = 'Download Backup';
   exportBtn.addEventListener('click', () => handleExport(section));
   actions.appendChild(exportBtn);
 
   const importLabel = document.createElement('label');
   importLabel.className = 'import-label';
-  importLabel.textContent = 'Import JSON';
+  importLabel.textContent = 'Restore Backup';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = '.json';
@@ -700,7 +701,7 @@ function showImportPreview(container: HTMLElement, data: ExportData): void {
 
   const title = document.createElement('div');
   title.className = 'import-preview-title';
-  title.textContent = 'Backup Preview';
+  title.textContent = 'Import Preview';
   preview.appendChild(title);
 
   const stats = document.createElement('div');
@@ -718,7 +719,7 @@ function showImportPreview(container: HTMLElement, data: ExportData): void {
   const btnEntriesOnly = document.createElement('button');
   btnEntriesOnly.type = 'button';
   btnEntriesOnly.className = 'import-btn';
-  btnEntriesOnly.textContent = 'Import entries only';
+  btnEntriesOnly.textContent = 'Import sessions only';
   btnEntriesOnly.addEventListener('click', () => {
     executeImport(data, false, container);
   });
@@ -726,7 +727,7 @@ function showImportPreview(container: HTMLElement, data: ExportData): void {
   const btnAll = document.createElement('button');
   btnAll.type = 'button';
   btnAll.className = 'import-btn-secondary';
-  btnAll.textContent = 'Import entries + settings';
+  btnAll.textContent = 'Import sessions + settings';
   btnAll.addEventListener('click', () => {
     executeImport(data, true, container);
   });
@@ -790,7 +791,10 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
     if (preview) preview.remove();
 
     const added = mergedEntries.length - localEntries.length;
-    showStatus(statusContainer, `Imported ${added} new entries` + (includeSettings ? ' and settings' : ''), 'success');
+    const msg = added > 0
+      ? `${added} new sessions added` + (includeSettings ? ' and settings applied' : '')
+      : 'No new sessions found (all already present)' + (includeSettings ? ', settings applied' : '');
+    showStatus(statusContainer, msg, 'success');
   } catch (error) {
     showStatus(statusContainer, 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
   }
@@ -808,6 +812,11 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     mergedDaily[date] = Math.max(mergedDaily[date] || 0, minutes);
   }
 
+  const mergedHourly: Record<string, number> = { ...(local.hourlyMinutes || {}) };
+  for (const [hour, minutes] of Object.entries(imported.hourlyMinutes || {})) {
+    mergedHourly[hour] = Math.max(mergedHourly[hour] || 0, minutes);
+  }
+
   const totalMinutes = Object.values(mergedDaily).reduce((sum, m) => sum + m, 0);
   const lastActiveDate = local.lastActiveDate > (imported.lastActiveDate || '')
     ? local.lastActiveDate
@@ -816,7 +825,7 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     ? local.currentStreak
     : (imported.currentStreak || local.currentStreak);
 
-  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak };
+  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly };
 }
 
 // ── Setup ────────────────────────────────────────────────
@@ -824,6 +833,7 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
 function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): void {
   panel.textContent = '';
   buildAppearancePanel(panel, settings);
+  buildTargetStartSection(panel, settings);
   buildTrackingPanel(panel, settings);
   buildPlatformsPanel(panel, settings);
   buildDiagnosticsPanel(panel, settings);
@@ -855,7 +865,7 @@ function buildWhitelistedPanel(container: HTMLElement, settings: ExtensionSettin
   if (channels.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'blocked-empty';
-    empty.textContent = 'No whitelisted channels';
+    empty.textContent = 'No allowed channels';
     list.appendChild(empty);
   } else {
     for (const channel of channels) {

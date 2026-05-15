@@ -2,16 +2,26 @@ import type { ExtensionStats } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
+import { mergeFirstSessions, renderTargetStartChart } from './target-start';
 
 export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
 let _localDailyMinutes: Record<string, number> = {};
+let _localHourlyMinutes: Record<string, number> = {};
+let _localFirstSessions: Record<string, string> = {};
 let _goalMinutes = 60;
 let _dayStartHour = 0;
 let _dayStartHourSynced = false;
 
 export function setLocalDailyMinutes(dm: Record<string, number>): void {
   _localDailyMinutes = dm;
+}
+
+export function setLocalHourlyMinutes(hm: Record<string, number>): void {
+  _localHourlyMinutes = hm;
+}
+export function setLocalFirstSessions(fs: Record<string, string>): void {
+  _localFirstSessions = fs;
 }
 
 export function setDayStartHour(hour: number): void {
@@ -510,6 +520,19 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     renderMonthBars(merged);
     applyDerivedStats(merged);
   }
+  if (serverData.hourly_minutes) {
+    const mergedHourly: Record<string, number> = { ..._localHourlyMinutes };
+    for (const [h, min] of Object.entries(serverData.hourly_minutes)) {
+      mergedHourly[h] = Math.max(mergedHourly[h] || 0, min);
+    }
+    renderHourlyBars(mergedHourly);
+  }
+  if (serverData.first_session_times) {
+    const merged = mergeFirstSessions(serverData.first_session_times, _localFirstSessions);
+    renderTargetStartChart(merged);
+  } else if (Object.keys(_localFirstSessions).length > 0) {
+    renderTargetStartChart(_localFirstSessions);
+  }
   browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: serverData });
 }
 
@@ -517,5 +540,48 @@ export async function applyCachedServerStats(): Promise<void> {
   const cached = (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
   if (cached) {
     applyServerStats(cached, true);
+  }
+}
+
+export function renderHourlyBars(hourlyMinutes: Record<string, number>): void {
+  const container = document.getElementById('hourlyBars');
+  if (!container) return;
+  container.textContent = '';
+
+  const hours: { hour: number; minutes: number }[] = [];
+  for (let h = 0; h < 24; h++) {
+    hours.push({ hour: h, minutes: hourlyMinutes[String(h)] || 0 });
+  }
+
+  const totalMin = hours.reduce((sum, h) => sum + h.minutes, 0);
+  if (totalMin === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'hourly-empty';
+    empty.textContent = 'No hourly data yet. Keep watching to see your patterns.';
+    container.appendChild(empty);
+    return;
+  }
+
+  const maxMin = Math.max(1, ...hours.map(h => h.minutes));
+  const BAR_MAX_PX = 64;
+
+  for (const { hour, minutes } of hours) {
+    const heightPx = minutes > 0 ? Math.max(2, Math.round((minutes / maxMin) * BAR_MAX_PX)) : 0;
+
+    const col = document.createElement('div');
+    col.className = 'hourly-bar-col';
+    col.title = `${hour}:00: ${formatStatDuration(minutes)}`;
+
+    const bar = document.createElement('div');
+    bar.className = 'hourly-bar';
+    bar.style.height = `${heightPx}px`;
+
+    const label = document.createElement('div');
+    label.className = 'hourly-bar-label';
+    label.textContent = String(hour);
+
+    col.appendChild(bar);
+    col.appendChild(label);
+    container.appendChild(col);
   }
 }

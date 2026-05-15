@@ -184,7 +184,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     loadMore.className = 'btn-sync-dashboard';
     loadMore.style.width = '100%';
     loadMore.style.marginTop = '12px';
-    loadMore.textContent = `Load More (${sorted.length - sessionDisplayCount} remaining)`;
+    loadMore.textContent = `Show ${sorted.length - sessionDisplayCount} more sessions`;
     loadMore.addEventListener('click', () => {
       sessionDisplayCount += 20;
       requestRefresh();
@@ -377,7 +377,7 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
     showMore.className = 'btn-sync-dashboard';
     showMore.style.width = '100%';
     showMore.style.marginTop = '12px';
-    showMore.textContent = `Show ${remaining} more`;
+    showMore.textContent = `Show ${remaining} more sessions`;
     showMore.addEventListener('click', () => {
       serverSessionsExpanded = true;
       showMore.remove();

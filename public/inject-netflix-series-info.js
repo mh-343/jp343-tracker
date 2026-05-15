@@ -1,8 +1,11 @@
 (function() {
-  window.addEventListener('jp343:requestSeriesInfo', function() {
+  var lastHref = '';
+
+  function extract() {
+    var watchId = location.href.match(/\/watch\/(\d+)/);
+    watchId = watchId ? watchId[1] : null;
+    if (!watchId) return;
     try {
-      var watchId = location.href.match(/\/watch\/(\d+)/);
-      watchId = watchId ? watchId[1] : null;
       var vp = window.netflix && window.netflix.appContext &&
         window.netflix.appContext.state && window.netflix.appContext.state.playerApp &&
         window.netflix.appContext.state.playerApp.getState() &&
@@ -16,5 +19,15 @@
     } catch(e) {
       document.documentElement.dataset.jp343SeriesInfo = 'null';
     }
-  });
+  }
+
+  setInterval(function() {
+    var href = location.href;
+    if (href !== lastHref) {
+      lastHref = href;
+      extract();
+    }
+  }, 500);
+
+  extract();
 })();
