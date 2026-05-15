@@ -4,7 +4,8 @@ import { getLocalDateString } from '../../lib/format-utils';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
-import { setLocalDailyMinutes, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, applyServerStats, applyCachedServerStats } from './stats';
+import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats } from './stats';
+import { setTargetStartTimes, setDayStartHourForTargetStart, computeLocalFirstSessions, renderTargetStartFromLocal, renderTargetStartChart } from './target-start';
 import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
@@ -19,6 +20,7 @@ interface DashboardData {
   activeSession: TrackingSession | null;
   goalMinutes: number;
   dayStartHour: number;
+  targetStartTimes: (string | null)[];
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -36,7 +38,8 @@ async function loadData(): Promise<DashboardData> {
     userState: result[STORAGE_KEYS.USER] || null,
     activeSession: result[STORAGE_KEYS.SESSION] || null,
     goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60,
-    dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0))
+    dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0)),
+    targetStartTimes: result[STORAGE_KEYS.SETTINGS]?.targetStartTimes ?? [null, null, null, null, null, null, null]
   };
 }
 
@@ -54,6 +57,7 @@ async function refresh(): Promise<void> {
   try {
     const data = await loadData();
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
+    setLocalHourlyMinutes({ ...(data.stats.hourlyMinutes || {}) });
     setGoalMinutes(data.goalMinutes);
     setDayStartHour(data.dayStartHour);
     renderGoalBar(data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0, data.goalMinutes);
@@ -62,6 +66,11 @@ async function refresh(): Promise<void> {
     renderHeatmap(data.stats.dailyMinutes);
     renderWeekBars(data.stats.dailyMinutes);
     renderMonthBars(data.stats.dailyMinutes);
+    renderHourlyBars(data.stats.hourlyMinutes ?? {});
+    setTargetStartTimes(data.targetStartTimes);
+    setDayStartHourForTargetStart(data.dayStartHour);
+    const localFirst = computeLocalFirstSessions(data.entries, data.dayStartHour);
+    setLocalFirstSessions(localFirst);
     renderSyncCta(data.entries, data.userState);
     renderTierBadge(data.userState);
     renderAuthUI(data.userState);
@@ -109,6 +118,7 @@ async function refresh(): Promise<void> {
     } else {
       renderStats(data.stats);
       renderSessions(data.entries);
+      renderTargetStartFromLocal(data.entries);
     }
   } finally {
     initialLoadDone = true;
@@ -144,9 +154,29 @@ function setupTabNav(): void {
   if (urlTab === 'blocked' || urlTab === 'channels') tabs[1].btn!.click();
 }
 
+function setupCardCollapse(): void {
+  browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
+    const collapsed: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
+    const cards = document.querySelectorAll<HTMLElement>('[data-collapse-id]');
+    for (const card of cards) {
+      const id = card.dataset.collapseId!;
+      if (collapsed.includes(id)) card.classList.add('collapsed');
+      const title = card.querySelector('.card-title');
+      if (!title) continue;
+      title.addEventListener('click', () => {
+        card.classList.toggle('collapsed');
+        const current = [...document.querySelectorAll<HTMLElement>('[data-collapse-id].collapsed')]
+          .map(el => el.dataset.collapseId!);
+        browser.storage.local.set({ [STORAGE_KEYS.COLLAPSED_CARDS]: current });
+      });
+    }
+  });
+}
+
 setupThemeToggle();
 setupAuthUI();
 setupTabNav();
+setupCardCollapse();
 
 browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
   const settings = result[STORAGE_KEYS.SETTINGS];

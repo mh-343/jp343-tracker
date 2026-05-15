@@ -2,8 +2,15 @@ import { tracker, generateProjectId } from '../lib/time-tracker';
 import { getLocalDateString, getLogicalNow } from '../lib/format-utils';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure } from '../lib/auth-helpers';
-import { VALID_COLOR_THEMES } from '../lib/theme';
+import {
+  initSettingsSyncCallbacks,
+  syncSettingsToServer,
+  pullAndMergeSettingsFromServer,
+  isSettingsPullComplete,
+  getSettingsLastPullTime,
+} from '../lib/background/settings-sync';
 import { loadPendingEntries } from '../lib/pending-entries';
+import { addHourlyMinutes, subtractHourlyMinutes, migrateHourlyMinutes } from '../lib/background/hourly-stats';
 import {
   initBadgeService,
   scheduleStatusBadgeUpdate,
@@ -36,13 +43,9 @@ import type {
   JP343UserState,
   ExtensionSettings,
   ExtensionStats,
-  SettingsPushResponse,
-  SettingsPullResponse,
   DirectSyncResult,
   BatchEntryResult,
   BatchSyncResponse,
-  SpotifyContentType,
-  ColorTheme,
   Platform,
   ExtensionDiagnostics,
   PlatformHealth
@@ -313,9 +316,7 @@ export default defineBackground(() => {
     }
   }
 
-  let settingsPullComplete = false;
-  let settingsLastUpdated = '';
-  let settingsLastPullTime = 0;
+  initSettingsSyncCallbacks({ log, loadSettings, saveSettings, pullChannelsFromServer });
 
   (async () => {
     if (await isDiagnosticsAllowed()) {
@@ -327,137 +328,6 @@ export default defineBackground(() => {
       maybeSendDiagnostics();
     }
   })().catch(() => {});
-
-  async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
-    if (!settingsPullComplete) return;
-    const userState: JP343UserState | null = (
-      await browser.storage.local.get(STORAGE_KEYS.USER)
-    )[STORAGE_KEYS.USER] ?? null;
-    if (!userState?.isLoggedIn || !userState?.extApiToken) return;
-
-    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
-    try {
-      const pushParams: Record<string, string> = {
-        action: 'jp343_extension_push_settings',
-        ext_api_token: userState.extApiToken,
-        extension_version: browser.runtime.getManifest().version,
-        spotify_content_types: JSON.stringify(settings.spotifyContentTypes),
-        day_boundary_hour: String(settings.dayStartHour || 0),
-        color_theme: settings.colorTheme ?? 'magenta',
-        hide_non_japanese: String(settings.hideNonJapanese ?? false),
-        track_japanese_only: String(settings.trackJapaneseOnly ?? false),
-        daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
-      };
-      const resp = await fetch(ajaxUrl, {
-        method: 'POST',
-        body: new URLSearchParams(pushParams),
-      });
-      const result: SettingsPushResponse = await resp.json();
-      if (result.success) {
-        log('[JP343] Settings pushed to server');
-      } else {
-        if (isAuthFailure(result)) {
-          log('[JP343] Auth error (transient), will retry next cycle');
-          return;
-        }
-        log('[JP343] Settings push failed:', result.data?.message);
-      }
-    } catch (error) {
-      log('[JP343] Settings push error:', error);
-    }
-  }
-
-  async function pullAndMergeSettingsFromServer(): Promise<boolean> {
-    const userState: JP343UserState | null = (
-      await browser.storage.local.get(STORAGE_KEYS.USER)
-    )[STORAGE_KEYS.USER] ?? null;
-    if (!userState?.isLoggedIn || !userState?.extApiToken) {
-      settingsPullComplete = true;
-      return false;
-    }
-
-    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
-    try {
-      const params: Record<string, string> = {
-        action: 'jp343_extension_pull_settings',
-        ext_api_token: userState.extApiToken,
-      };
-      if (settingsLastUpdated) params.since = settingsLastUpdated;
-
-      const resp = await fetch(ajaxUrl, {
-        method: 'POST',
-        body: new URLSearchParams(params),
-      });
-      const result: SettingsPullResponse = await resp.json();
-      if (!result.success) {
-        if (isAuthFailure(result)) {
-          log('[JP343] Auth error (transient), will retry next cycle');
-          return false;
-        }
-        log('[JP343] Settings pull failed:', result.data?.message);
-        return false;
-      }
-
-      if (result.data?.changed === false) {
-        log('[JP343] Settings unchanged on server, merging meta fields');
-      }
-
-      if (result.data?.updated_at) settingsLastUpdated = result.data.updated_at;
-
-      const serverSpotify: SpotifyContentType[] | null = result.data?.spotify_content_types ?? null;
-      const serverColorTheme: string | undefined = result.data?.color_theme;
-      const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
-      const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
-      const serverDailyGoal: number | undefined = result.data?.daily_goal;
-
-      const settings = await loadSettings();
-      let changed = false;
-
-      if (serverSpotify !== null) {
-        const localStr = [...settings.spotifyContentTypes].sort().join(',');
-        const serverStr = [...serverSpotify].sort().join(',');
-        if (localStr !== serverStr) {
-          settings.spotifyContentTypes = serverSpotify as SpotifyContentType[];
-          changed = true;
-        }
-      }
-
-      if (serverColorTheme && VALID_COLOR_THEMES.includes(serverColorTheme as ColorTheme)) {
-        if (settings.colorTheme !== serverColorTheme) {
-          settings.colorTheme = serverColorTheme as ColorTheme;
-          changed = true;
-        }
-      }
-
-      if (serverHideNonJp !== undefined && settings.hideNonJapanese !== serverHideNonJp) {
-        settings.hideNonJapanese = serverHideNonJp;
-        changed = true;
-      }
-      if (serverTrackJpOnly !== undefined && settings.trackJapaneseOnly !== serverTrackJpOnly) {
-        settings.trackJapaneseOnly = serverTrackJpOnly;
-        changed = true;
-      }
-      if (serverDailyGoal !== undefined && serverDailyGoal > 0 && settings.dailyGoalMinutes !== serverDailyGoal) {
-        settings.dailyGoalMinutes = serverDailyGoal;
-        changed = true;
-      }
-
-      if (changed) {
-        await saveSettings(settings);
-        log('[JP343] Settings merged from server');
-      }
-      settingsPullComplete = true;
-      settingsLastPullTime = Date.now();
-
-      // Pull channels after settings save to avoid race condition
-      pullChannelsFromServer().catch(() => {});
-
-      return serverColorTheme !== undefined;
-    } catch (error) {
-      log('[JP343] Settings pull error:', error);
-      return false;
-    }
-  }
 
   async function savePendingEntry(entry: PendingEntry): Promise<void> {
     await withStorageLock(async () => {
@@ -834,6 +704,7 @@ export default defineBackground(() => {
 
       stats.totalMinutes += entry.duration_min;
       stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
+      addHourlyMinutes(stats, entry);
 
       if (stats.lastActiveDate !== today) {
         const yesterday = new Date(logicalNow);
@@ -899,9 +770,9 @@ export default defineBackground(() => {
           delete stats.dailyMinutes[entryDate];
         }
       }
+      subtractHourlyMinutes(stats, entry);
 
       stats.currentStreak = recalculateStreak(stats.dailyMinutes, settings.dayStartHour || 0);
-
 
       const dates = Object.keys(stats.dailyMinutes).sort();
       stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
@@ -914,8 +785,8 @@ export default defineBackground(() => {
   }
 
   async function ensureFreshSettings(): Promise<void> {
-    const pullAge = Date.now() - settingsLastPullTime;
-    if (!settingsPullComplete || pullAge > 60000) {
+    const pullAge = Date.now() - getSettingsLastPullTime();
+    if (!isSettingsPullComplete() || pullAge > 60000) {
       await pullAndMergeSettingsFromServer().catch(() => {});
     }
   }
@@ -1004,19 +875,18 @@ export default defineBackground(() => {
     const sessionAge = Date.now() - savedSession.lastUpdate;
 
     if (sessionAge < MAX_RESTORE_AGE_MS) {
-      if (
-        savedSession.platform === 'generic' &&
-        savedSession.isActive &&
-        !savedSession.isPaused &&
-        sessionAge > 0
-      ) {
-        savedSession.accumulatedMs += sessionAge;
-        log('[JP343] Recovery: Manual session gap compensation:', Math.round(sessionAge / 1000), 's');
+      if (savedSession.platform === 'generic') {
+        if (savedSession.isActive && !savedSession.isPaused && sessionAge > 0) {
+          savedSession.accumulatedMs += sessionAge;
+          log('[JP343] Recovery: Manual session gap compensation:', Math.round(sessionAge / 1000), 's');
+        }
+        tracker.restoreSession(savedSession);
+        log('[JP343] Recovery: Generic session restored (age:', Math.round(sessionAge / 1000), 's)');
+        scheduleStatusBadgeUpdate();
+        return;
       }
-      tracker.restoreSession(savedSession);
-      log('[JP343] Recovery: Session restored (age:', Math.round(sessionAge / 1000), 's)');
-      scheduleStatusBadgeUpdate();
-      return;
+
+      log('[JP343] Recovery: Video platform session found (age:', Math.round(sessionAge / 1000), 's), finalizing');
     }
 
     if (savedSession.accumulatedMs < 60000) {
@@ -1059,6 +929,7 @@ export default defineBackground(() => {
     }
   }
 
+  migrateHourlyMinutes().catch(() => {});
   recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
 

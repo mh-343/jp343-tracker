@@ -31,6 +31,10 @@ export default defineContentScript({
     let blockedChannels: BlockedChannel[] = [];
     const DEDUP_WINDOW_MS = 200;
 
+    document.querySelectorAll('video[data-jp343-tracked]').forEach(v => {
+      v.removeAttribute('data-jp343-tracked');
+    });
+
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
@@ -46,6 +50,17 @@ export default defineContentScript({
         sendMessage('VIDEO_ENDED');
       }
       cleanup();
+    });
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted && isExtensionContextValid()) {
+        const video = findVideoElement();
+        if (video) {
+          video.removeAttribute('data-jp343-tracked');
+          currentVideoElement = video;
+          attachVideoEvents(video);
+          startAdMonitoring();
+        }
+      }
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
@@ -894,7 +909,7 @@ export default defineContentScript({
         handleUrlChange();
         return;
       }
-      if (currentVideoElement) return;
+      if (currentVideoElement && currentVideoElement.isConnected) return;
       if (!window.location.pathname.includes('/watch')) return;
 
       const video = findVideoElement();

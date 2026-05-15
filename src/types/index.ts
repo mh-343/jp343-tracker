@@ -118,6 +118,7 @@ export interface ExtensionSettings {
   backgroundEnabled: boolean;
   backgroundOpacity: number;
   colorTheme: ColorTheme;
+  targetStartTimes: (string | null)[];
 }
 
 export interface BlockedChannel {
@@ -186,6 +187,8 @@ export interface SettingsPullResponse {
     hub_background_enabled?: boolean;
     hide_non_japanese?: boolean;
     track_japanese_only?: boolean;
+    daily_goal?: number;
+    target_start_times?: (string | null)[] | null;
     message?: string;
     code?: string;
   };
@@ -266,13 +269,15 @@ export interface ExtensionStats {
   dailyMinutes: Record<string, number>;
   lastActiveDate: string;
   currentStreak: number;
+  hourlyMinutes?: Record<string, number>;
 }
 
 export const DEFAULT_STATS: ExtensionStats = {
   totalMinutes: 0,
   dailyMinutes: {},
   lastActiveDate: '',
-  currentStreak: 0
+  currentStreak: 0,
+  hourlyMinutes: {}
 };
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
@@ -292,7 +297,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   diagnosticsEnabled: true,
   backgroundEnabled: false,
   backgroundOpacity: 75,
-  colorTheme: 'magenta' as ColorTheme
+  colorTheme: 'magenta' as ColorTheme,
+  targetStartTimes: [null, null, null, null, null, null, null]
 };
 
 export const STORAGE_KEYS = {
@@ -311,7 +317,8 @@ export const STORAGE_KEYS = {
   TITLE_CACHE: 'jp343_yt_title_cache',
   AVATAR_DATA: 'jp343_avatar_data',
   AVATAR_USER_ID: 'jp343_avatar_user_id',
-  CHANNEL_SYNC: 'jp343_channel_sync'
+  CHANNEL_SYNC: 'jp343_channel_sync',
+  COLLAPSED_CARDS: 'jp343_collapsed_cards'
 } as const;
 
 export interface PlatformHealth {

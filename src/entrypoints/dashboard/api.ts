@@ -12,6 +12,8 @@ export interface ServerStatsResponse {
   timezone?: string;
   calendar_week_seconds?: number;
   day_boundary_hour?: number;
+  hourly_minutes?: Record<string, number>;
+  first_session_times?: Record<string, string>;
 }
 
 export interface ServerSession {
