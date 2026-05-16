@@ -864,10 +864,11 @@ export default defineBackground(() => {
     const result = await browser.storage.local.get(STORAGE_KEYS.SESSION);
     const savedSession = result[STORAGE_KEYS.SESSION];
 
-    if (!savedSession) return;
+    if (!savedSession) {
+      return;
+    }
 
     if (!isValidSavedSession(savedSession)) {
-      log('[JP343] Recovery: Invalid session data, discarding');
       await saveSessionState(null);
       return;
     }
@@ -886,11 +887,21 @@ export default defineBackground(() => {
         return;
       }
 
-      log('[JP343] Recovery: Video platform session found (age:', Math.round(sessionAge / 1000), 's), finalizing');
+      if (sessionAge < 90_000) {
+        tracker.restoreSession(savedSession);
+        const restored = tracker.getCurrentSession();
+        if (restored) {
+          restored.isActive = false;
+          restored.isPaused = true;
+        }
+        await saveSessionState(restored);
+        log('[JP343] Recovery: Video session restored as paused (age:', Math.round(sessionAge / 1000), 's)');
+        scheduleStatusBadgeUpdate();
+        return;
+      }
     }
 
     if (savedSession.accumulatedMs < 60000) {
-      log('[JP343] Recovery: Session too short (<1min), discarding');
       await saveSessionState(null);
       return;
     }

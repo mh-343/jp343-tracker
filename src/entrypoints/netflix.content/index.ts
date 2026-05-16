@@ -32,6 +32,7 @@ export default defineContentScript({
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
       if (activePollIntervalId) clearInterval(activePollIntervalId);
+      clearAdEndPoll();
       observers.length = 0;
       intervalIds.length = 0;
     }
@@ -398,8 +399,10 @@ export default defineContentScript({
         debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
         log('[JP343] Netflix: Ad started');
         sendMessage('AD_START');
+        startAdEndPoll();
       } else if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
+        clearAdEndPoll();
         debugLog('AD_STATE', '=== AD ENDED ===', collectUIState());
         log('[JP343] Netflix: Ad ended');
         sendMessage('AD_END');
@@ -780,6 +783,33 @@ export default defineContentScript({
     }
 
     let activePollIntervalId: ReturnType<typeof setInterval> | null = null;
+    let adEndPollId: ReturnType<typeof setInterval> | null = null;
+
+    function startAdEndPoll(): void {
+      if (adEndPollId) return;
+      adEndPollId = setInterval(() => {
+        if (!isCurrentlyInAd) {
+          clearAdEndPoll();
+          return;
+        }
+        const v = findVideoElement();
+        if (v && !isAdPlaying() && !v.paused && !v.ended) {
+          isCurrentlyInAd = false;
+          clearAdEndPoll();
+          sendMessage('AD_END');
+          sendDiagnostic('ad_state_recovered');
+          log('[JP343] Netflix: Ad ended (fast poll)');
+        }
+      }, 2000);
+      intervalIds.push(adEndPollId);
+    }
+
+    function clearAdEndPoll(): void {
+      if (adEndPollId) {
+        clearInterval(adEndPollId);
+        adEndPollId = null;
+      }
+    }
 
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) {
@@ -791,6 +821,7 @@ export default defineContentScript({
         clearInterval(activePollIntervalId);
         activePollIntervalId = null;
       }
+      clearAdEndPoll();
 
       video.addEventListener('play', () => {
         if (!window.location.pathname.includes('/watch/')) {
@@ -814,6 +845,7 @@ export default defineContentScript({
           if (!isCurrentlyInAd) {
             isCurrentlyInAd = true;
             sendMessage('AD_START');
+            startAdEndPoll();
           }
           return;
         }
@@ -827,7 +859,12 @@ export default defineContentScript({
             if (cachedSeriesInfo || seriesWaitCount >= 20) {
               clearInterval(seriesWaitId);
               const deferredState = getCurrentVideoState();
-              if (deferredState) sendMessage('VIDEO_PLAY', { state: deferredState });
+              if (deferredState && deferredState.isPlaying && !deferredState.isAd) {
+                const vid = getVideoId();
+                lastVideoId = vid;
+                lastTitle = deferredState.title;
+                sendVideoPlay(deferredState);
+              }
             }
           }, 500);
           intervalIds.push(seriesWaitId);
@@ -883,6 +920,13 @@ export default defineContentScript({
         }
       });
 
+      video.addEventListener('playing', () => {
+        const state = getCurrentVideoState();
+        if (state && state.isPlaying && !state.isAd) {
+          sendVideoPlay(state);
+        }
+      });
+
       video.addEventListener('ended', () => {
         debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
 
@@ -922,12 +966,14 @@ export default defineContentScript({
       }, 5000);
 
       activePollIntervalId = setInterval(() => {
+        const v = findVideoElement();
+
         if (isCurrentlyInAd) {
           if (!isAdPlaying()) {
-            const v = findVideoElement();
             if (v && !v.paused && !v.ended) {
-              log('[JP343] Netflix: Ad state recovered (video playing, no ad detected)');
+              log('[JP343] Netflix: Ad state recovered (heartbeat fallback)');
               isCurrentlyInAd = false;
+              clearAdEndPoll();
               sendMessage('AD_END');
               sendDiagnostic('ad_state_recovered');
             }
@@ -987,6 +1033,7 @@ export default defineContentScript({
             if (!isCurrentlyInAd) {
               isCurrentlyInAd = true;
               sendMessage('AD_START');
+              startAdEndPoll();
             }
           } else {
             log('[JP343] Netflix: New video already playing');
@@ -1019,6 +1066,7 @@ export default defineContentScript({
           isCurrentlyInAd = true;
           pendingVideoId = videoId;
           sendMessage('AD_START');
+          startAdEndPoll();
         } else {
           log('[JP343] Netflix: Video already playing, starting tracking');
           lastVideoId = videoId;
