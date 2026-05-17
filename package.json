@@ -1,6 +1,6 @@
 {
   "name": "jp343-extension",
-  "version": "2.7.6",
+  "version": "2.7.7",
   "description": "Auto-track your Japanese immersion time on streaming platforms",
   "type": "module",
   "scripts": {

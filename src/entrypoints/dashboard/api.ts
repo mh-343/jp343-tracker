@@ -14,6 +14,8 @@ export interface ServerStatsResponse {
   day_boundary_hour?: number;
   hourly_minutes?: Record<string, number>;
   first_session_times?: Record<string, string>;
+  has_unread_ticket?: boolean;
+  has_ticket_replies?: boolean;
 }
 
 export interface ServerSession {

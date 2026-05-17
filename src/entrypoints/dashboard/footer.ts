@@ -2,6 +2,7 @@ import type { JP343UserState } from '../../types';
 
 let latestUserState: JP343UserState | null = null;
 let feedbackBound = false;
+let msgBound = false;
 
 export function renderFooter(userState: JP343UserState | null): void {
   latestUserState = userState;
@@ -39,6 +40,17 @@ export function renderFooter(userState: JP343UserState | null): void {
     if (feedbackBtn) {
       feedbackBtn.addEventListener('click', () => openFeedbackModal(latestUserState));
       feedbackBound = true;
+    }
+  }
+
+  if (!msgBound) {
+    const msgBtn = document.getElementById('headerMessageBtn');
+    if (msgBtn) {
+      msgBtn.addEventListener('click', () => {
+        msgBtn.style.display = 'none';
+        window.open('https://jp343.com?open_messages=1', '_blank');
+      });
+      msgBound = true;
     }
   }
 }
