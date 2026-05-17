@@ -21,20 +21,33 @@ export function setDayStartHourForTargetStart(hour: number): void {
 
 export function mergeFirstSessions(
   server: Record<string, string>,
-  local: Record<string, string>
+  local: Record<string, string>,
+  dayStartHour = 0
 ): Record<string, string> {
   const merged: Record<string, string> = { ...server };
   for (const [key, time] of Object.entries(local)) {
-    if (!merged[key] || time < merged[key]) {
+    if (!merged[key] || logicalMinutes(time, dayStartHour) < logicalMinutes(merged[key], dayStartHour)) {
       merged[key] = time;
     }
   }
   return merged;
 }
 
+function logicalMinutes(time: string, dayStartHour: number): number {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m;
+  return dayStartHour > 0 && h < dayStartHour ? total + 1440 : total;
+}
+
 function computeDeviation(target: string, actual: string): number {
   const [th, tm] = target.split(':').map(Number);
   const [ah, am] = actual.split(':').map(Number);
+  if (_dayStartHour > 0) {
+    const bm = _dayStartHour * 60;
+    const tMin = th * 60 + tm < bm ? th * 60 + tm + 1440 : th * 60 + tm;
+    const aMin = ah * 60 + am < bm ? ah * 60 + am + 1440 : ah * 60 + am;
+    return aMin - tMin;
+  }
   let dev = (ah * 60 + am) - (th * 60 + tm);
   if (dev > 720) dev -= 1440;
   if (dev < -720) dev += 1440;
@@ -63,7 +76,7 @@ export function computeLocalFirstSessions(entries: PendingEntry[], dayStartHour 
     const d = new Date(entry.date);
     const key = getLocalDateString(d, dayStartHour);
     const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    if (!result[key] || time < result[key]) {
+    if (!result[key] || logicalMinutes(time, dayStartHour) < logicalMinutes(result[key], dayStartHour)) {
       result[key] = time;
     }
   }
@@ -125,7 +138,9 @@ export function renderTargetStartChart(firstSessions: Record<string, string>): v
 
       const bar = document.createElement('div');
       bar.className = 'target-start-bar ' + (dev <= 0 ? 'early' : 'late');
-      col.title = `${key}: started ${actual}, ${Math.abs(dev)} min ${dev <= 0 ? 'early' : 'late'} (target ${target})`;
+      const absDev = Math.abs(dev);
+      const devFormatted = absDev >= 60 ? formatStatDuration(absDev) : `${absDev} min`;
+      col.title = `${key}: started ${actual}, ${devFormatted} ${dev <= 0 ? 'early' : 'late'} (target ${target})`;
 
       barArea.appendChild(bar);
       bar.dataset.dev = String(dev);
@@ -139,7 +154,9 @@ export function renderTargetStartChart(firstSessions: Record<string, string>): v
     devLabel.className = 'target-start-dev';
     if (devValue !== null) {
       const displayVal = -devValue;
-      devLabel.textContent = displayVal === 0 ? '0' : (displayVal > 0 ? `+${displayVal}` : String(displayVal));
+      const abs = Math.abs(displayVal);
+      const formatted = abs >= 60 ? formatStatDuration(abs) : `${abs}m`;
+      devLabel.textContent = displayVal === 0 ? '0' : (displayVal > 0 ? `+${formatted}` : `-${formatted}`);
       devLabel.classList.add(displayVal === 0 ? 'on-time' : displayVal > 0 ? 'early' : 'late');
     }
 

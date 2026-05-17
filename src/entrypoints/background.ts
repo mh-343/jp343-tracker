@@ -887,7 +887,43 @@ export default defineBackground(() => {
         return;
       }
 
-      if (sessionAge < 90_000) {
+      if (savedSession.isPaused || sessionAge < 90_000) {
+        if (savedSession.tabId) {
+          try {
+            await browser.tabs.get(savedSession.tabId);
+          } catch {
+            log('[JP343] Recovery: Tab gone - finalizing session');
+            if (savedSession.accumulatedMs >= 60000) {
+              const durationMinutes = savedSession.accumulatedMs / 60000;
+              const projectId = generateProjectId(savedSession.platform, savedSession.title, savedSession.videoId);
+              const entry: PendingEntry = {
+                id: savedSession.id,
+                date: new Date(savedSession.startTime).toISOString(),
+                duration_min: durationMinutes,
+                project: savedSession.title,
+                project_id: projectId,
+                platform: savedSession.platform,
+                source: 'extension',
+                url: savedSession.url,
+                thumbnail: savedSession.thumbnailUrl,
+                synced: false,
+                syncedAt: null,
+                syncAttempts: 0,
+                lastSyncError: null,
+                channelId: savedSession.channelId,
+                channelName: savedSession.channelName,
+                channelUrl: savedSession.channelUrl,
+                activityType: savedSession.activityType,
+                serverEntryId: null
+              };
+              await savePendingEntry(entry);
+            }
+            await saveSessionState(null);
+            scheduleStatusBadgeUpdate();
+            return;
+          }
+        }
+
         tracker.restoreSession(savedSession);
         const restored = tracker.getCurrentSession();
         if (restored) {
@@ -895,7 +931,7 @@ export default defineBackground(() => {
           restored.isPaused = true;
         }
         await saveSessionState(restored);
-        log('[JP343] Recovery: Video session restored as paused (age:', Math.round(sessionAge / 1000), 's)');
+        log('[JP343] Recovery: Video session restored as paused (age:', Math.round(sessionAge / 1000), 's, wasPaused:', savedSession.isPaused, ')');
         scheduleStatusBadgeUpdate();
         return;
       }

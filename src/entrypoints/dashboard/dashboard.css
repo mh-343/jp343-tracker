@@ -87,6 +87,34 @@
     }
     .header-feedback-btn:hover { opacity: 1; }
 
+    .header-msg-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      opacity: 0.85;
+      padding: 0;
+      cursor: pointer;
+      transition: opacity 0.2s;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .header-msg-btn:hover { opacity: 1; }
+    .header-msg-dot {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 7px;
+      height: 7px;
+      background: #e91e8b;
+      border-radius: 50%;
+      animation: msg-pulse 2s ease-in-out infinite;
+    }
+    @keyframes msg-pulse {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(233, 30, 139, 0.4); }
+      50% { transform: scale(1.15); box-shadow: 0 0 0 4px rgba(233, 30, 139, 0); }
+    }
+
     .header-discord {
       color: var(--accent);
       opacity: 0.7;
@@ -404,6 +432,13 @@
       letter-spacing: 0.5px;
       color: var(--text-muted);
       margin-top: 2px;
+    }
+
+    .qs-median {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      min-height: 14px;
     }
 
     /* ── Section Cards ──────────────────────────────── */
@@ -1049,8 +1084,35 @@
       border-radius: 3px;
       background: linear-gradient(90deg, var(--accent), rgba(var(--accent-rgb), 0.6));
       box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.3);
-      transition: width 0.4s ease;
       max-width: 100%;
+    }
+    .goal-bar-track.overflow {
+      overflow: visible;
+    }
+    .goal-bar-fill.overflow {
+      box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.4);
+      position: relative;
+    }
+    .goal-bar-fill.overflow::after {
+      content: '';
+      position: absolute;
+      left: var(--goal-cutoff);
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.5);
+    }
+    [data-theme="light"] .goal-bar-fill.overflow {
+      box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.15);
+    }
+    [data-theme="light"] .goal-bar-fill.overflow::after {
+      background: #fff;
+      border-color: var(--accent);
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
     }
     .goal-editor {
       display: none;

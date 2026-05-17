@@ -2,7 +2,7 @@ import type { ExtensionStats } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
-import { mergeFirstSessions, renderTargetStartChart } from './target-start';
+import { mergeFirstSessions, renderTargetStartChart, setDayStartHourForTargetStart } from './target-start';
 
 export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
@@ -49,10 +49,22 @@ export function renderGoalBar(todayMinutes: number, goalMinutes: number): void {
   const fill = document.getElementById('goalBarFill') as HTMLDivElement | null;
   if (!done || !pct || !fill) return;
 
-  const progress = Math.min(Math.round((todayMinutes / goalMinutes) * 100), 100);
+  const progress = Math.round((todayMinutes / goalMinutes) * 100);
   done.textContent = formatStatDuration(todayMinutes);
   pct.textContent = ` / ${formatStatDuration(goalMinutes)} (${progress}%)`;
-  fill.style.width = `${progress}%`;
+  fill.style.width = `${Math.min(progress, 100)}%`;
+  const isOverflow = progress >= 100;
+  const track = fill.parentElement;
+  fill.classList.toggle('overflow', isOverflow);
+  if (track) track.classList.toggle('overflow', isOverflow);
+  if (isOverflow) {
+    const cutoff = (100 / progress) * 100;
+    fill.style.background = `linear-gradient(90deg, var(--accent) ${cutoff}%, var(--gradient-secondary) ${cutoff}%)`;
+    fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
+  } else {
+    fill.style.background = '';
+    fill.style.removeProperty('--goal-cutoff');
+  }
 }
 
 export function setupGoalEditor(initialGoalMinutes: number): void {
@@ -212,32 +224,46 @@ export function renderStats(stats: ExtensionStats): void {
   setText('statStreak', `${stats.currentStreak}d`);
   renderHeroTime(stats.totalMinutes);
 
-  const activeDays = Object.values(stats.dailyMinutes).filter(m => m > 0).length;
+  const activeDayValues = Object.values(stats.dailyMinutes).filter(m => m > 0);
+  const activeDays = activeDayValues.length;
   if (activeDays > 0) {
     const dailyAvg = stats.totalMinutes / activeDays;
     setText('statDailyAvg', formatStatDuration(Math.round(dailyAvg)));
 
-    const activeWeeks = new Set<string>();
-    for (const date of Object.keys(stats.dailyMinutes)) {
-      if (stats.dailyMinutes[date] > 0) {
-        const d = new Date(date + 'T00:00:00');
-        const weekStart = new Date(d);
-        weekStart.setDate(d.getDate() - d.getDay());
-        activeWeeks.add(getLocalDateString(weekStart));
-      }
-    }
-    if (activeWeeks.size > 0) {
-      setText('statWeeklyAvg', formatStatDuration(Math.round(stats.totalMinutes / activeWeeks.size)));
+    const sorted = [...activeDayValues].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0 ? Math.round((sorted[mid - 1] + sorted[mid]) / 2) : Math.round(sorted[mid]);
+    setText('statDailyMedian', `median ${formatStatDuration(median)}`);
+
+    const weekTotals: Record<string, number> = {};
+    const monthTotals: Record<string, number> = {};
+    for (const [date, min] of Object.entries(stats.dailyMinutes)) {
+      if (min <= 0) continue;
+      const d = new Date(date + 'T00:00:00');
+      const weekStart = new Date(d);
+      weekStart.setDate(d.getDate() - d.getDay());
+      const weekKey = getLocalDateString(weekStart);
+      weekTotals[weekKey] = (weekTotals[weekKey] || 0) + min;
+      const monthKey = date.slice(0, 7);
+      monthTotals[monthKey] = (monthTotals[monthKey] || 0) + min;
     }
 
-    const activeMonths = new Set<string>();
-    for (const date of Object.keys(stats.dailyMinutes)) {
-      if (stats.dailyMinutes[date] > 0) {
-        activeMonths.add(date.slice(0, 7));
-      }
+    const weekValues = Object.values(weekTotals);
+    if (weekValues.length > 0) {
+      setText('statWeeklyAvg', formatStatDuration(Math.round(stats.totalMinutes / weekValues.length)));
+      const sw = [...weekValues].sort((a, b) => a - b);
+      const mw = Math.floor(sw.length / 2);
+      const wMedian = sw.length % 2 === 0 ? Math.round((sw[mw - 1] + sw[mw]) / 2) : Math.round(sw[mw]);
+      setText('statWeeklyMedian', `median ${formatStatDuration(wMedian)}`);
     }
-    if (activeMonths.size > 0) {
-      setText('statMonthlyAvg', formatStatDuration(Math.round(stats.totalMinutes / activeMonths.size)));
+
+    const monthValues = Object.values(monthTotals);
+    if (monthValues.length > 0) {
+      setText('statMonthlyAvg', formatStatDuration(Math.round(stats.totalMinutes / monthValues.length)));
+      const sm = [...monthValues].sort((a, b) => a - b);
+      const mm = Math.floor(sm.length / 2);
+      const mMedian = sm.length % 2 === 0 ? Math.round((sm[mm - 1] + sm[mm]) / 2) : Math.round(sm[mm]);
+      setText('statMonthlyMedian', `median ${formatStatDuration(mMedian)}`);
     }
 
     const bestDay = Math.max(...Object.values(stats.dailyMinutes));
@@ -451,8 +477,8 @@ function applyDerivedStats(dailyMinutes: Record<string, number>): void {
   let totalMin = 0;
   let monthMin = 0;
   let bestDay = 0;
-  const activeWeeks = new Set<string>();
-  const activeMonths = new Set<string>();
+  const weekTotals: Record<string, number> = {};
+  const monthTotals: Record<string, number> = {};
 
   for (const [date, min] of Object.entries(dailyMinutes)) {
     if (min <= 0) continue;
@@ -462,16 +488,37 @@ function applyDerivedStats(dailyMinutes: Record<string, number>): void {
     const d = new Date(date + 'T12:00:00');
     const startOfYear = new Date(d.getFullYear(), 0, 1);
     const weekNum = Math.ceil(((d.getTime() - startOfYear.getTime()) / 86400000 + startOfYear.getDay() + 1) / 7);
-    activeWeeks.add(`${d.getFullYear()}-W${weekNum}`);
-    activeMonths.add(date.slice(0, 7));
+    const weekKey = `${d.getFullYear()}-W${weekNum}`;
+    weekTotals[weekKey] = (weekTotals[weekKey] || 0) + min;
+    const monthKey = date.slice(0, 7);
+    monthTotals[monthKey] = (monthTotals[monthKey] || 0) + min;
   }
 
   setText('statMonth', formatStatDuration(monthMin));
   setText('statBestDay', formatStatDuration(bestDay));
-  if (activeWeeks.size > 0)
-    setText('statWeeklyAvg', formatStatDuration(Math.round(totalMin / activeWeeks.size)));
-  if (activeMonths.size > 0)
-    setText('statMonthlyAvg', formatStatDuration(Math.round(totalMin / activeMonths.size)));
+
+  const weekValues = Object.values(weekTotals);
+  if (weekValues.length > 0) {
+    setText('statWeeklyAvg', formatStatDuration(Math.round(totalMin / weekValues.length)));
+    const sw = [...weekValues].sort((a, b) => a - b);
+    const mw = Math.floor(sw.length / 2);
+    setText('statWeeklyMedian', `median ${formatStatDuration(sw.length % 2 === 0 ? Math.round((sw[mw - 1] + sw[mw]) / 2) : Math.round(sw[mw]))}`);
+  }
+
+  const monthVals = Object.values(monthTotals);
+  if (monthVals.length > 0) {
+    setText('statMonthlyAvg', formatStatDuration(Math.round(totalMin / monthVals.length)));
+    const sm = [...monthVals].sort((a, b) => a - b);
+    const mm = Math.floor(sm.length / 2);
+    setText('statMonthlyMedian', `median ${formatStatDuration(sm.length % 2 === 0 ? Math.round((sm[mm - 1] + sm[mm]) / 2) : Math.round(sm[mm]))}`);
+  }
+
+  const activeVals = Object.values(dailyMinutes).filter(m => m > 0).sort((a, b) => a - b);
+  if (activeVals.length > 0) {
+    const mid = Math.floor(activeVals.length / 2);
+    const median = activeVals.length % 2 === 0 ? Math.round((activeVals[mid - 1] + activeVals[mid]) / 2) : Math.round(activeVals[mid]);
+    setText('statDailyMedian', `median ${formatStatDuration(median)}`);
+  }
 }
 
 export function applyServerStats(serverData: ServerStatsResponse, fromCache = false): void {
@@ -498,6 +545,7 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     const serverHour = Math.max(0, Math.min(6, serverData.day_boundary_hour));
     if (serverHour !== _dayStartHour) {
       _dayStartHour = serverHour;
+      setDayStartHourForTargetStart(serverHour);
       browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
         const current = { ...result[STORAGE_KEYS.SETTINGS] };
         if ((current.dayStartHour || 0) !== serverHour) {
@@ -528,10 +576,17 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     renderHourlyBars(mergedHourly);
   }
   if (serverData.first_session_times) {
-    const merged = mergeFirstSessions(serverData.first_session_times, _localFirstSessions);
+    const merged = mergeFirstSessions(serverData.first_session_times, _localFirstSessions, _dayStartHour);
     renderTargetStartChart(merged);
   } else if (Object.keys(_localFirstSessions).length > 0) {
     renderTargetStartChart(_localFirstSessions);
+  }
+  const msgBtn = document.getElementById('headerMessageBtn');
+  if (msgBtn) {
+    const show = !!(serverData.has_unread_ticket || serverData.has_ticket_replies);
+    msgBtn.style.display = show ? '' : 'none';
+    const dot = msgBtn.querySelector('.header-msg-dot') as HTMLElement | null;
+    if (dot) dot.style.display = serverData.has_unread_ticket ? '' : 'none';
   }
   browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: serverData });
 }
