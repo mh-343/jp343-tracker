@@ -3,6 +3,7 @@ import type { JP343UserState } from '../../types';
 let latestUserState: JP343UserState | null = null;
 let feedbackBound = false;
 let msgBound = false;
+let escapeHandler: ((e: KeyboardEvent) => void) | null = null;
 
 export function renderFooter(userState: JP343UserState | null): void {
   latestUserState = userState;
@@ -223,11 +224,13 @@ function openFeedbackModal(userState: JP343UserState | null): void {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.classList.remove('open');
   });
-  document.addEventListener('keydown', (e) => {
+  if (escapeHandler) document.removeEventListener('keydown', escapeHandler);
+  escapeHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && overlay.classList.contains('open')) {
       overlay.classList.remove('open');
     }
-  });
+  };
+  document.addEventListener('keydown', escapeHandler);
 
   document.body.appendChild(overlay);
 }

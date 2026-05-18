@@ -209,7 +209,7 @@ export default defineContentScript({
         }
       } else {
         const text = titleContainer.textContent?.trim();
-        if (text && text.length > 1 && !isGenericPageTitle(text)) {
+        if (text && text.length > 1 && !isGenericPageTitle(text) && !AD_PLACEHOLDER_PATTERN.test(text)) {
           cachedPlayerTitle = { series: text, episode: null, episodeTitle: null };
           log('[JP343] Netflix Player title cached (movie):', text);
         }
@@ -276,6 +276,7 @@ export default defineContentScript({
       if (lower.includes('netflix home') || lower.includes('browse')) return true;
       return GENERIC_TITLES.has(lower);
     }
+    const AD_PLACEHOLDER_PATTERN = /nach der Werbung|after the ads?/i;
 
     function findVideoElement(): HTMLVideoElement | null {
       return document.querySelector('video') as HTMLVideoElement;
@@ -313,7 +314,6 @@ export default defineContentScript({
           const rect = element.getBoundingClientRect();
           const isVisible = rect.width > 0 && rect.height > 0;
           if (isVisible) {
-            log('[JP343] Netflix Ad detected via:', selector);
             return true;
           }
         }
@@ -325,7 +325,6 @@ export default defineContentScript({
 
       for (const className of adClasses) {
         if (body.classList.contains(className) || player?.classList.contains(className)) {
-          log('[JP343] Netflix Ad detected via class:', className);
           return true;
         }
       }
@@ -338,7 +337,6 @@ export default defineContentScript({
         if (/^(?:Werbung|Ad|Publicité|Anuncio|Pubblicità|Reclame|Annonce|広告|광고|Реклама)\s+\d/i.test(text)) {
           const isVisible = (el as HTMLElement).offsetParent !== null;
           if (isVisible) {
-            log('[JP343] Netflix Ad detected via text:', text);
             return true;
           }
         }
@@ -346,7 +344,6 @@ export default defineContentScript({
 
       const video = findVideoElement();
       if (video && video.duration > 0 && video.duration < 45 && pendingVideoId) {
-        log('[JP343] Netflix: Short video detected (', Math.round(video.duration), 's)');
         return true;
       }
 
@@ -776,10 +773,6 @@ export default defineContentScript({
       cachedMetadata = null;
       cachedPlayerTitle = null;
       cachedSeriesInfo = null;
-      if (bestKnownTitle) {
-        log('[JP343] Netflix: bestKnownTitle reset on video change (was:', bestKnownTitle + ')');
-        bestKnownTitle = '';
-      }
     }
 
     let activePollIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -799,6 +792,7 @@ export default defineContentScript({
           sendMessage('AD_END');
           sendDiagnostic('ad_state_recovered');
           log('[JP343] Netflix: Ad ended (fast poll)');
+          if (pendingVideoId) { startSessionWithTitleRetry(pendingVideoId); pendingVideoId = null; }
         }
       }, 2000);
       intervalIds.push(adEndPollId);
@@ -1101,6 +1095,10 @@ export default defineContentScript({
           return;
         }
 
+        if (wasOnWatch && isOnWatch && lastVideoId && newUrl.match(/\/watch\/(\d+)/)?.[1] !== lastVideoId) {
+          sendMessage('VIDEO_ENDED'); lastVideoId = null;
+        }
+
         resetForNewVideo();
 
         if (isOnWatch) {
@@ -1117,12 +1115,16 @@ export default defineContentScript({
 
           setTimeout(() => {
             const video = findVideoElement();
+            const videoId = getVideoId();
             if (video && video !== currentVideoElement) {
               debugLog('URL_CHANGE', 'New video detected after URL change', collectUIState());
               currentVideoElement = video;
               attachVideoEvents(video);
-              lastVideoId = getVideoId();
+              lastVideoId = videoId;
               lastTitle = getFormattedTitle();
+            } else if (video && videoId && videoId !== lastVideoId && !isAdPlaying() && !isCurrentlyInAd) {
+              lastVideoId = videoId; clearMetadataCache();
+              const s = getCurrentVideoState(); if (s?.isPlaying) sendVideoPlay(s);
             }
           }, 250);
         }
@@ -1134,7 +1136,7 @@ export default defineContentScript({
       const docTitle = document.title;
       if (docTitle && docTitle.toLowerCase() !== 'netflix' && !docTitle.toLowerCase().includes('home')) {
         const cleanTitle = docTitle.replace(/\s*[\|–-]\s*Netflix.*$/i, '').trim();
-        if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle)) {
+        if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle) && !AD_PLACEHOLDER_PATTERN.test(cleanTitle)) {
           if (cleanTitle !== bestKnownTitle) {
             if (window.location.pathname.includes('/watch/')) {
               log('[JP343] Netflix: New title detected:', cleanTitle);
@@ -1160,7 +1162,7 @@ export default defineContentScript({
       const docTitle = document.title;
       if (docTitle && docTitle.toLowerCase() !== 'netflix') {
         const cleanTitle = docTitle.replace(/\s*[\|–-]\s*Netflix.*$/i, '').trim();
-        if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle) && cleanTitle !== bestKnownTitle) {
+        if (cleanTitle && cleanTitle.length > 2 && !isGenericPageTitle(cleanTitle) && !AD_PLACEHOLDER_PATTERN.test(cleanTitle) && cleanTitle !== bestKnownTitle) {
           if (window.location.pathname.includes('/watch/')) {
             log('[JP343] Netflix: Title found (check #' + titleCheckCount + '):', cleanTitle);
             bestKnownTitle = cleanTitle;

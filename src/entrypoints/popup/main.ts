@@ -4,9 +4,18 @@ import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
+import { reportError, flushErrors } from '../../lib/error-reporter';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+
+window.addEventListener('error', (event) => {
+  reportError(event.message || 'Unknown error', event.filename || 'popup/main.ts', event.error?.stack || '', 'popup');
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  reportError(reason?.message || String(reason), 'popup/main.ts', reason?.stack || '', 'popup');
+});
 
 const elements = {
   statusDot: document.getElementById('statusDot') as HTMLElement,
@@ -22,6 +31,8 @@ const elements = {
   btnPause: document.getElementById('btnPause') as HTMLButtonElement,
   btnStop: document.getElementById('btnStop') as HTMLButtonElement,
   pendingSection: document.getElementById('pendingSection') as HTMLElement,
+  pendingHeader: document.getElementById('pendingHeader') as HTMLElement,
+  pendingCollapseArrow: document.getElementById('pendingCollapseArrow') as HTMLElement,
   pendingList: document.getElementById('pendingList') as HTMLElement,
   toggleEnabled: document.getElementById('toggleEnabled') as HTMLInputElement,
   toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
@@ -97,8 +108,22 @@ let _popupDayStartHour = 0;
 function renderGoalMicroBar(todayMinutes: number): void {
   const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
   if (!fill) return;
-  const pct = Math.min(Math.round((todayMinutes / _popupGoalMinutes) * 100), 100);
-  fill.style.width = `${pct}%`;
+  const bar = fill.parentElement;
+  const safeGoal = _popupGoalMinutes || 60;
+  const progress = Math.round((todayMinutes / safeGoal) * 100);
+  const isOverflow = progress >= 100;
+  if (bar) bar.title = `Daily goal: ${progress}%`;
+  fill.style.width = `${Math.min(progress, 100)}%`;
+  fill.classList.toggle('overflow', isOverflow);
+  if (bar) bar.classList.toggle('overflow', isOverflow);
+  if (isOverflow) {
+    const cutoff = (100 / progress) * 100;
+    fill.style.background = `linear-gradient(90deg, var(--accent) ${cutoff}%, var(--gradient-secondary) ${cutoff}%)`;
+    fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
+  } else {
+    fill.style.background = '';
+    fill.style.removeProperty('--goal-cutoff');
+  }
 }
 
 async function loadAndApplySettings(): Promise<void> {
@@ -562,7 +587,6 @@ interface GroupedEntry {
   entryIds: string[];
   totalMinutes: number;
   sessionCount: number;
-  allSynced: boolean;
   hasError: boolean;
 }
 
@@ -578,7 +602,6 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
       group.entryIds.push(entry.id);
       group.totalMinutes += entry.duration_min;
       group.sessionCount++;
-      if (!entry.synced) group.allSynced = false;
       if (entry.lastSyncError) group.hasError = true;
       if (new Date(entry.date) > new Date(group.primary.date)) {
         group.primary = entry;
@@ -590,7 +613,6 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
         entryIds: [entry.id],
         totalMinutes: entry.duration_min,
         sessionCount: 1,
-        allSynced: entry.synced,
         hasError: !!entry.lastSyncError
       });
     }
@@ -604,6 +626,114 @@ function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
   return result;
 }
 
+function renderEntryGroup(group: GroupedEntry): HTMLElement {
+  const entry = group.primary;
+  const groupKey = entry.project_id || entry.url;
+  const ids = group.entryIds.join(',');
+  const hasMultiple = group.sessionCount > 1;
+
+  const container = document.createElement('div');
+  container.className = 'pending-entry-group';
+  container.dataset.groupKey = groupKey;
+
+  const entryDiv = document.createElement('div');
+  entryDiv.className = 'pending-entry';
+  entryDiv.dataset.ids = ids;
+  entryDiv.dataset.url = entry.url || '';
+
+  const thumbWrap = document.createElement('div');
+  thumbWrap.className = `pending-entry-thumb-wrap${entry.url ? ' clickable' : ''}`;
+  thumbWrap.dataset.url = entry.url || '';
+  if (entry.url) thumbWrap.title = 'Open video';
+
+  if (entry.thumbnail && isValidImageUrl(entry.thumbnail)) {
+    const img = document.createElement('img');
+    img.src = entry.thumbnail;
+    img.className = 'pending-entry-thumb';
+    img.alt = '';
+    thumbWrap.appendChild(img);
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'pending-entry-thumb';
+    Object.assign(placeholder.style, { display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' });
+    placeholder.textContent = platformIcons[entry.platform] || '\u23f5';
+    thumbWrap.appendChild(placeholder);
+  }
+  if (entry.url) {
+    const playIcon = document.createElement('span');
+    playIcon.className = 'pending-entry-play';
+    playIcon.textContent = '\u25b6';
+    thumbWrap.appendChild(playIcon);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'pending-entry-info';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'pending-entry-title-row';
+  const titleSpan = document.createElement('span');
+  titleSpan.className = `pending-entry-title${entry.url ? ' clickable' : ''}`;
+  titleSpan.dataset.ids = ids;
+  titleSpan.dataset.url = entry.url || '';
+  titleSpan.textContent = entry.project;
+  titleRow.appendChild(titleSpan);
+
+  const meta = document.createElement('div');
+  meta.className = 'pending-entry-meta';
+  meta.append(`${entry.platform} \u00b7 `);
+  const strong = document.createElement('strong');
+  strong.textContent = formatDuration(group.totalMinutes);
+  meta.appendChild(strong);
+
+  if (hasMultiple) {
+    const expandBtn = document.createElement('button');
+    expandBtn.className = 'pending-entry-expand';
+    expandBtn.dataset.groupKey = groupKey;
+    expandBtn.title = `Show ${group.sessionCount} sessions`;
+    expandBtn.textContent = `(${group.sessionCount}\u00d7) \u25bc`;
+    meta.appendChild(expandBtn);
+  }
+  if (entry.url) {
+    const continueBtn = document.createElement('button');
+    continueBtn.className = 'pending-entry-continue';
+    continueBtn.dataset.url = entry.url;
+    continueBtn.title = 'Continue watching';
+    continueBtn.textContent = 'Continue \u25b6';
+    meta.appendChild(continueBtn);
+  }
+
+  info.append(titleRow, meta);
+  entryDiv.append(thumbWrap, info);
+  container.appendChild(entryDiv);
+
+  if (hasMultiple) {
+    const detailsList = document.createElement('div');
+    detailsList.className = 'session-details-list';
+    detailsList.dataset.groupKey = groupKey;
+    detailsList.style.display = 'none';
+
+    for (const e of group.entries) {
+      const detail = document.createElement('div');
+      detail.className = 'session-detail';
+      detail.dataset.id = e.id;
+
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'session-detail-date';
+      dateSpan.textContent = formatSessionDate(e.date, _popupDayStartHour);
+      detail.appendChild(dateSpan);
+
+      const durSpan = document.createElement('span');
+      durSpan.className = 'session-detail-duration';
+      durSpan.textContent = formatDuration(e.duration_min);
+      detail.appendChild(durSpan);
+      detailsList.appendChild(detail);
+    }
+    container.appendChild(detailsList);
+  }
+
+  return container;
+}
+
 function renderPendingList(entries: PendingEntry[]): void {
   updatePendingDisplay(entries);
 
@@ -612,94 +742,22 @@ function renderPendingList(entries: PendingEntry[]): void {
     return;
   }
 
-  // Preserve expanded state before re-render
   const expandedGroups = new Set<string>();
   elements.pendingList.querySelectorAll('.session-details-list').forEach(el => {
     if ((el as HTMLElement).style.display !== 'none') {
-      expandedGroups.add((el as HTMLElement).dataset.group || '');
+      expandedGroups.add((el as HTMLElement).dataset.groupKey || '');
     }
   });
 
   const grouped = groupEntriesByVideo(entries);
   const sorted = [...grouped]
     .sort((a, b) => new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime())
-    .slice(0, 5);
+    .slice(0, 8);
 
-  elements.pendingList.innerHTML = sorted.map((group, groupIndex) => {
-    const entry = group.primary;
-    const hasMultipleSessions = group.sessionCount > 1;
-
-    const sessionDetails = group.entries.map(e => `
-      <div class="session-detail" data-id="${escapeHtml(e.id)}">
-        <span class="session-detail-date">${formatSessionDate(e.date, _popupDayStartHour)}</span>
-        <span class="session-detail-duration">${formatDuration(e.duration_min)}</span>
-        <button class="session-detail-delete" data-id="${escapeHtml(e.id)}" title="Delete this session">×</button>
-      </div>
-    `).join('');
-
-    const safeUrl = entry.url ? escapeHtml(entry.url) : '';
-    const safeThumbnail = entry.thumbnail && isValidImageUrl(entry.thumbnail) ? escapeHtml(entry.thumbnail) : '';
-
-    return `
-    <div class="pending-entry-group ${group.allSynced ? 'synced' : ''}" data-group="${groupIndex}">
-      <div class="pending-entry" data-ids="${escapeHtml(group.entryIds.join(','))}" data-url="${safeUrl}">
-        <div class="pending-entry-thumb-wrap ${entry.url ? 'clickable' : ''}" data-url="${safeUrl}" title="${entry.url ? 'Open video' : ''}">
-          ${safeThumbnail
-            ? `<img src="${safeThumbnail}" class="pending-entry-thumb" alt="">`
-            : `<div class="pending-entry-thumb" style="display:flex;align-items:center;justify-content:center;font-size:12px;">${platformIcons[entry.platform] || '⏵'}</div>`
-          }
-          ${entry.url ? '<span class="pending-entry-play">▶</span>' : ''}
-        </div>
-        <div class="pending-entry-info">
-          <div class="pending-entry-title-row">
-            <span class="pending-entry-title ${entry.url ? 'clickable' : ''}" data-ids="${escapeHtml(group.entryIds.join(','))}" data-url="${safeUrl}">${escapeHtml(entry.project)}</span>
-            ${!group.allSynced ? `
-              <button class="pending-entry-edit" data-id="${escapeHtml(entry.id)}" title="Edit title">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                </svg>
-              </button>
-            ` : ''}
-          </div>
-          <div class="pending-entry-meta">
-            ${escapeHtml(entry.platform)} · <strong>${formatDuration(group.totalMinutes)}</strong>
-            ${hasMultipleSessions ? `<button class="pending-entry-expand" data-group="${groupIndex}" title="Show ${group.sessionCount} sessions">(${group.sessionCount}×) ▼</button>` : ''}
-            ${entry.url && !group.allSynced ? `<button class="pending-entry-continue" data-url="${safeUrl}" title="Continue watching">Continue ▶</button>` : ''}
-          </div>
-        </div>
-        <button class="pending-entry-delete" data-ids="${escapeHtml(group.entryIds.join(','))}" title="Delete all sessions">×</button>
-      </div>
-      ${hasMultipleSessions ? `
-        <div class="session-details-list" data-group="${groupIndex}" style="display: none;">
-          ${sessionDetails}
-        </div>
-      ` : ''}
-    </div>
-  `;
-  }).join('');
-
-  // Delete all entries in group
-  elements.pendingList.querySelectorAll('.pending-entry-delete').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const ids = (btn as HTMLElement).dataset.ids;
-      if (ids) {
-        for (const entryId of ids.split(',')) {
-          await deleteEntry(entryId);
-        }
-      }
-    });
-  });
-
-  elements.pendingList.querySelectorAll('.pending-entry-edit').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const entryId = (btn as HTMLElement).dataset.id;
-      if (entryId) {
-        startPendingEntryTitleEdit(entryId);
-      }
-    });
-  });
+  elements.pendingList.textContent = '';
+  for (const g of sorted) {
+    elements.pendingList.appendChild(renderEntryGroup(g));
+  }
 
   elements.pendingList.querySelectorAll('.pending-entry-thumb-wrap.clickable').forEach(thumb => {
     thumb.addEventListener('click', (e) => {
@@ -735,8 +793,8 @@ function renderPendingList(entries: PendingEntry[]): void {
   elements.pendingList.querySelectorAll('.pending-entry-expand').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const groupIndex = (btn as HTMLElement).dataset.group;
-      const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group="${groupIndex}"]`) as HTMLElement;
+      const groupKey = (btn as HTMLElement).dataset.groupKey;
+      const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group-key="${groupKey}"]`) as HTMLElement;
       if (detailsList) {
         const isExpanded = detailsList.style.display !== 'none';
         detailsList.style.display = isExpanded ? 'none' : 'block';
@@ -745,20 +803,9 @@ function renderPendingList(entries: PendingEntry[]): void {
     });
   });
 
-  elements.pendingList.querySelectorAll('.session-detail-delete').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const entryId = (btn as HTMLElement).dataset.id;
-      if (entryId) {
-        await deleteEntry(entryId);
-      }
-    });
-  });
-
-  // Restore expanded state after re-render
-  expandedGroups.forEach(groupIndex => {
-    const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group="${groupIndex}"]`) as HTMLElement;
-    const expandBtn = elements.pendingList.querySelector(`.pending-entry-expand[data-group="${groupIndex}"]`) as HTMLElement;
+  expandedGroups.forEach(groupKey => {
+    const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group-key="${groupKey}"]`) as HTMLElement;
+    const expandBtn = elements.pendingList.querySelector(`.pending-entry-expand[data-group-key="${groupKey}"]`) as HTMLElement;
     if (detailsList) {
       detailsList.style.display = 'block';
       if (expandBtn) {
@@ -766,88 +813,6 @@ function renderPendingList(entries: PendingEntry[]): void {
       }
     }
   });
-}
-
-function startPendingEntryTitleEdit(entryId: string): void {
-  const editBtn = elements.pendingList.querySelector(`.pending-entry-edit[data-id="${entryId}"]`) as HTMLElement;
-  const titleSpan = editBtn?.parentElement?.querySelector('.pending-entry-title') as HTMLElement;
-  if (!titleSpan) return;
-
-  const titleRow = titleSpan.parentElement;
-  if (!titleRow) return;
-
-  const currentTitle = titleSpan.textContent || '';
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'pending-entry-title-input';
-  input.value = currentTitle;
-
-  titleSpan.style.display = 'none';
-  if (editBtn) editBtn.style.display = 'none';
-
-  titleRow.insertBefore(input, titleSpan);
-  input.focus();
-  input.select();
-
-  const saveEdit = async () => {
-    const newTitle = input.value.trim();
-    if (newTitle && newTitle !== currentTitle) {
-      // Update all entry IDs in the group
-      const allIds = titleSpan.dataset.ids?.split(',') || [entryId];
-      try {
-        for (const id of allIds) {
-          await browser.runtime.sendMessage({
-            type: 'UPDATE_PENDING_ENTRY_TITLE',
-            entryId: id,
-            title: newTitle
-          });
-        }
-        titleSpan.textContent = newTitle;
-        log('[JP343 Popup] Pending entry title updated:', newTitle, `(${allIds.length} entries)`);
-      } catch (error) {
-        log('[JP343 Popup] Failed to update title:', error);
-      }
-    }
-
-    input.remove();
-    titleSpan.style.display = '';
-    if (editBtn) editBtn.style.display = '';
-  };
-
-  input.addEventListener('blur', saveEdit);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      saveEdit();
-    }
-    if (e.key === 'Escape') {
-      input.value = currentTitle;
-      saveEdit();
-    }
-  });
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-async function deleteEntry(entryId: string): Promise<void> {
-  try {
-    const response = await browser.runtime.sendMessage({
-      type: 'DELETE_PENDING_ENTRY',
-      entryId
-    });
-
-    if (response.success) {
-      await fetchPendingEntries();
-      await fetchCurrentState();
-    }
-  } catch (error) {
-    log('[JP343 Popup] Failed to delete:', error);
-  }
 }
 
 async function fetchPendingEntries(): Promise<void> {
@@ -1002,13 +967,35 @@ async function fetchAndRenderStats(): Promise<void> {
 // Theme Toggle
 initThemeToggle('themeTogglePopup');
 
+// Sessions-Collapse: State aus Storage laden + Toggle
+let sessionsCollapsed = false;
+browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
+  const collapsed: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
+  if (collapsed.includes('popup-sessions')) {
+    sessionsCollapsed = true;
+    elements.pendingList.style.display = 'none';
+    elements.pendingCollapseArrow.style.transform = 'rotate(-90deg)';
+  }
+});
+elements.pendingHeader.addEventListener('click', () => {
+  sessionsCollapsed = !sessionsCollapsed;
+  elements.pendingList.style.display = sessionsCollapsed ? 'none' : '';
+  elements.pendingCollapseArrow.style.transform = sessionsCollapsed ? 'rotate(-90deg)' : '';
+  browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
+    const current: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
+    const updated = sessionsCollapsed
+      ? [...current.filter(id => id !== 'popup-sessions'), 'popup-sessions']
+      : current.filter(id => id !== 'popup-sessions');
+    browser.storage.local.set({ [STORAGE_KEYS.COLLAPSED_CARDS]: updated });
+  });
+});
+
 // Init
-loadAndApplySettings();
+loadAndApplySettings().then(() => fetchAndRenderStats());
 initSpotifyFilterChips();
 loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
-fetchAndRenderStats();
 
 updateInterval = setInterval(fetchCurrentState, 1000);
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
@@ -1020,4 +1007,5 @@ window.addEventListener('unload', () => {
   }
   clearInterval(pendingInterval);
   clearInterval(statsInterval);
+  flushErrors();
 });

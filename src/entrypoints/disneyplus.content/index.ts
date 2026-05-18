@@ -1,5 +1,5 @@
 import type { VideoState } from '../../types';
-import { createDebugLogger } from '../../lib/debug-logger';
+import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { parseSeasonOnly } from '../../lib/title-parsing';
 
 interface DisneyPlusMetadata {
@@ -74,7 +74,9 @@ export default defineContentScript({
       }
     });
 
-    const { log } = createDebugLogger('disneyplus');
+    const logger = createDebugLogger('disneyplus');
+    const { log, debugLog } = logger;
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'disneyplus'); }
     log('[JP343] Disney+ Content Script loaded');
 
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
@@ -531,6 +533,7 @@ export default defineContentScript({
           log('[JP343] Disney+: Play during ad ignored');
           if (!isCurrentlyInAd) {
             isCurrentlyInAd = true;
+            debugLog('AD_STATE', 'Ad started');
             sendMessage('AD_START');
           }
           return;
@@ -547,12 +550,13 @@ export default defineContentScript({
         if (state) {
           lastVideoId = videoId;
           lastTitle = state.title;
-          log('[JP343] Disney+ Play:', state.title);
+          debugLog('VIDEO_PLAY', 'Play event', { title: state.title, videoId, isAd: state.isAd });
           sendVideoPlay(state);
         }
       });
 
       video.addEventListener('pause', () => {
+        if (!isWatchPage()) return;
         if (isCurrentlyInAd) return;
         sendMessage('VIDEO_PAUSE');
       });
@@ -774,10 +778,10 @@ export default defineContentScript({
     }, 3000);
 
     browser.runtime.onMessage.addListener((message) => {
-      if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
+      if (message?.type === 'PAUSE_VIDEO' && currentVideoElement && isWatchPage()) {
         currentVideoElement.pause();
       }
-      if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
+      if (message?.type === 'RESUME_VIDEO' && currentVideoElement && isWatchPage()) {
         currentVideoElement.play();
       }
       if (message?.type === 'TAB_ACTIVATED') {

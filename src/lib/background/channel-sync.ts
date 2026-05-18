@@ -105,20 +105,28 @@ function applyOps(
 
 function deduplicateSnapshot(snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] }): { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] } {
   const dedup = <T extends { channelId: string; channelName: string }>(list: T[]): T[] => {
-    const seen = new Map<string, T>();
-    const result: T[] = [];
+    const byId = new Map<string, T>();
+    const ucNames = new Map<string, string>();
+
     for (const entry of list) {
-      const key = entry.channelName.trim().toLowerCase();
-      if (!key) { result.push(entry); continue; }
-      const existing = seen.get(key);
-      if (existing && !existing.channelId.startsWith('UC') && entry.channelId.startsWith('UC')) {
-        seen.set(key, entry);
-      } else if (!existing) {
-        seen.set(key, entry);
+      if (!entry.channelId) continue;
+      if (entry.channelId.startsWith('UC')) {
+        if (!byId.has(entry.channelId)) {
+          byId.set(entry.channelId, entry);
+          const name = entry.channelName.trim().toLowerCase();
+          if (name) ucNames.set(name, entry.channelId);
+        }
       }
     }
-    result.push(...seen.values());
-    return result;
+
+    for (const entry of list) {
+      if (entry.channelId.startsWith('UC')) continue;
+      const name = entry.channelName.trim().toLowerCase();
+      if (!name || ucNames.has(name)) continue;
+      if (!byId.has(name)) byId.set(name, entry);
+    }
+
+    return [...byId.values()];
   };
   return { blocked: dedup(snapshot.blocked), whitelisted: dedup(snapshot.whitelisted) };
 }

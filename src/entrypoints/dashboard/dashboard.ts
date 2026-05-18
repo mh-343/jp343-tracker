@@ -12,6 +12,7 @@ import { loadNews } from './news';
 import { setupSettings } from './settings';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
+import { reportError, flushErrors } from '../../lib/error-reporter';
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -172,6 +173,15 @@ function setupCardCollapse(): void {
     }
   });
 }
+
+window.addEventListener('error', (event) => {
+  reportError(event.message || 'Unknown error', event.filename || 'dashboard.ts', event.error?.stack || '', 'dashboard');
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  reportError(reason?.message || String(reason), 'dashboard.ts', reason?.stack || '', 'dashboard');
+});
+window.addEventListener('beforeunload', () => { flushErrors(); });
 
 setupThemeToggle();
 setupAuthUI();

@@ -18,6 +18,7 @@ import {
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
 import { initContextMenu } from '../lib/background/context-menu';
+import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../lib/server-sessions';
 import {
   loadDiagnostics,
   saveDiagnostics,
@@ -51,12 +52,21 @@ import type {
   PlatformHealth
 } from '../types';
 import { DEFAULT_SETTINGS, DEFAULT_STATS, STORAGE_KEYS } from '../types';
+import { initErrorReporter, reportError, flushErrors } from '../lib/error-reporter';
 
 export default defineBackground(() => {
   const DEBUG_MODE = import.meta.env.DEV;
   const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
 
   log('[JP343] Background Service Worker started');
+
+  initErrorReporter();
+  self.addEventListener('unhandledrejection', (event) => {
+    const reason = (event as PromiseRejectionEvent).reason;
+    const message = reason?.message || String(reason);
+    const stack = reason?.stack || '';
+    reportError(message, 'background.ts', stack, 'background');
+  });
 
   browser.runtime.setUninstallURL('https://jp343.com/uninstall/');
 
@@ -303,20 +313,42 @@ export default defineBackground(() => {
   }
 
   async function saveSettings(settings: ExtensionSettings): Promise<void> {
-    const current = (await browser.storage.local.get(STORAGE_KEYS.SETTINGS))[STORAGE_KEYS.SETTINGS];
-    if (current) {
-      settings.blockedChannels = current.blockedChannels ?? [];
-      settings.whitelistedChannels = current.whitelistedChannels ?? [];
-    }
-    cachedSettings = { ...settings };
-    try {
-      await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
-    } catch (error) {
-      log('[JP343] Failed to save settings:', error);
+    await withStorageLock(async () => {
+      const current = (await browser.storage.local.get(STORAGE_KEYS.SETTINGS))[STORAGE_KEYS.SETTINGS];
+      if (current) {
+        settings.blockedChannels = current.blockedChannels ?? [];
+        settings.whitelistedChannels = current.whitelistedChannels ?? [];
+      }
+      cachedSettings = { ...settings };
+      try {
+        await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
+      } catch (error) {
+        log('[JP343] Failed to save settings:', error);
+      }
+    });
+  }
+
+  async function onAuthFailure(): Promise<void> {
+    const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_FAILURE_COUNT);
+    const count = ((result[STORAGE_KEYS.AUTH_FAILURE_COUNT] as number) || 0) + 1;
+    log('[JP343] Auth failure #' + count);
+    if (count >= 3) {
+      log('[JP343] Too many auth failures, clearing credentials');
+      await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.AUTH_FAILURE_COUNT]);
+      clearCachedServerSessions().catch(() => {});
+    } else {
+      await browser.storage.local.set({ [STORAGE_KEYS.AUTH_FAILURE_COUNT]: count });
     }
   }
 
-  initSettingsSyncCallbacks({ log, loadSettings, saveSettings, pullChannelsFromServer });
+  async function onAuthSuccess(): Promise<void> {
+    const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_FAILURE_COUNT);
+    if (result[STORAGE_KEYS.AUTH_FAILURE_COUNT]) {
+      await browser.storage.local.remove(STORAGE_KEYS.AUTH_FAILURE_COUNT);
+    }
+  }
+
+  initSettingsSyncCallbacks({ log, loadSettings, saveSettings, pullChannelsFromServer, onAuthFailure, onAuthSuccess });
 
   (async () => {
     if (await isDiagnosticsAllowed()) {
@@ -330,10 +362,10 @@ export default defineBackground(() => {
   })().catch(() => {});
 
   async function savePendingEntry(entry: PendingEntry): Promise<void> {
-    await withStorageLock(async () => {
+    const saved = await withStorageLock(async () => {
       try {
         const pending = await loadPendingEntries();
-        if (pending.some(e => e.id === entry.id)) return;
+        if (pending.some(e => e.id === entry.id)) return false;
 
         const settings = await loadSettings();
         if (settings.mergeSameDaySessions) {
@@ -358,8 +390,7 @@ export default defineBackground(() => {
             }
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
             log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
-            await updateStats(entry);
-            return;
+            return true;
           }
         }
 
@@ -367,11 +398,13 @@ export default defineBackground(() => {
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
         log('[JP343] Entry saved. Pending:', pending.length);
         updateBadge();
-        await updateStats(entry);
+        return true;
       } catch (error) {
         log('[JP343] Failed to save entry:', error);
+        return false;
       }
     });
+    if (saved) await updateStats(entry);
     await triggerSync();
   }
 
@@ -388,6 +421,7 @@ export default defineBackground(() => {
       log('[JP343] Sync started');
       const result = await syncEntriesDirect();
       log('[JP343] Sync result:', result.succeeded, 'synced,', result.failed, 'failed');
+      fetchAndCacheServerSessions().catch(() => {});
     } catch (error) {
       log('[JP343] Sync error:', error);
     } finally {
@@ -398,6 +432,7 @@ export default defineBackground(() => {
   browser.alarms.create('jp343-auto-sync-retry', { periodInMinutes: 5 });
   browser.alarms.create('jp343-cleanup-synced', { periodInMinutes: 360 });
   browser.alarms.create('jp343-diagnostics-send', { periodInMinutes: 360 });
+  browser.alarms.create('jp343-error-flush', { periodInMinutes: 1 });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
@@ -410,6 +445,9 @@ export default defineBackground(() => {
     }
     if (alarm.name === 'jp343-diagnostics-send') {
       maybeSendDiagnostics();
+    }
+    if (alarm.name === 'jp343-error-flush') {
+      flushErrors().catch(() => {});
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {
@@ -486,11 +524,15 @@ export default defineBackground(() => {
       return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !hasToken && !hasNonce };
     }
 
+    const MAX_BATCH_SIZE = 50;
+    const MAX_SYNC_ATTEMPTS = 10;
+
     const pending = await loadPendingEntries();
-    const unsynced = pending.filter(e => !e.synced);
+    const unsynced = pending.filter(e => !e.synced && e.syncAttempts < MAX_SYNC_ATTEMPTS);
     if (unsynced.length === 0) {
       return { attempted: 0, succeeded: 0, failed: 0, noAuth: false, nonceMissing: false };
     }
+    const batch = unsynced.slice(0, MAX_BATCH_SIZE);
 
     let succeeded = 0;
     let failed = 0;
@@ -501,13 +543,25 @@ export default defineBackground(() => {
         const batchParams = new URLSearchParams({
           action: 'jp343_extension_log_time_batch',
           ext_api_token: userState.extApiToken!,
-          entries: JSON.stringify(unsynced.map(buildEntryParams))
+          entries: JSON.stringify(batch.map(buildEntryParams))
         });
-        const response = await fetch(ajaxUrl, {
-          method: 'POST',
-          credentials: 'include',
-          body: batchParams
-        });
+        const controller = new AbortController();
+        const batchTimeout = setTimeout(() => controller.abort(), 20000);
+        let response: Response;
+        try {
+          response = await fetch(ajaxUrl, {
+            method: 'POST',
+            credentials: 'include',
+            signal: controller.signal,
+            body: batchParams
+          });
+        } finally {
+          clearTimeout(batchTimeout);
+        }
+        if (!response.ok) {
+          log('[JP343] Batch sync HTTP error', response.status, ', falling back to sequential');
+          throw new Error(`HTTP ${response.status}`);
+        }
         const responseText = await response.text();
         log('[JP343] Batch sync response:', response.status, responseText.slice(0, 200));
 
@@ -528,7 +582,7 @@ export default defineBackground(() => {
             for (const r of batchResult.data.results) {
               if (r.session_id) resultMap.set(r.session_id, r);
             }
-            const unsyncedMap = new Map(unsynced.map(e => [e.id, e]));
+            const unsyncedMap = new Map(batch.map(e => [e.id, e]));
 
             await withStorageLock(async () => {
               const current = await loadPendingEntries();
@@ -547,14 +601,15 @@ export default defineBackground(() => {
 
             succeeded = (batchResult.data.synced || 0) + (batchResult.data.duplicates || 0);
             failed = batchResult.data.failed || 0;
+            await onAuthSuccess();
             scheduleStatusBadgeUpdate();
-            return { attempted: unsynced.length, succeeded, failed, noAuth: false, nonceMissing: false };
+            return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
           }
 
           // Auth error from batch endpoint
           if (isAuthFailure(batchResult)) {
-            log('[JP343] Auth error (transient), will retry next cycle');
-            return { attempted: unsynced.length, succeeded: 0, failed: unsynced.length, noAuth: true, nonceMissing: false };
+            await onAuthFailure();
+            return { attempted: batch.length, succeeded: 0, failed: batch.length, noAuth: true, nonceMissing: false };
           }
 
           // Other batch error — fall through to sequential
@@ -567,7 +622,7 @@ export default defineBackground(() => {
 
     // Sequential fallback (nonce path or batch failure)
     let authFailed = false;
-    for (const entry of unsynced) {
+    for (const entry of batch) {
       try {
         const params: Record<string, string> = {
           action: 'jp343_extension_log_time',
@@ -578,11 +633,24 @@ export default defineBackground(() => {
           ...buildEntryParams(entry)
         };
 
-        const response = await fetch(ajaxUrl, {
-          method: 'POST',
-          credentials: 'include',
-          body: new URLSearchParams(params)
-        });
+        const controller = new AbortController();
+        const seqTimeout = setTimeout(() => controller.abort(), 15000);
+        let response: Response;
+        try {
+          response = await fetch(ajaxUrl, {
+            method: 'POST',
+            credentials: 'include',
+            signal: controller.signal,
+            body: new URLSearchParams(params)
+          });
+        } finally {
+          clearTimeout(seqTimeout);
+        }
+        if (!response.ok) {
+          log('[JP343] Sync HTTP error', response.status, 'for', entry.project);
+          failed++;
+          continue;
+        }
 
         const responseText = await response.text();
         log('[JP343] Sync response for', entry.project, ':', response.status);
@@ -607,12 +675,13 @@ export default defineBackground(() => {
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
           });
           succeeded++;
+          await onAuthSuccess();
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
           if (isAuthFailure(result)) {
-            log('[JP343] Auth error (transient), will retry next cycle');
+            await onAuthFailure();
             authFailed = true;
-            failed += (unsynced.length - succeeded - failed);
+            failed += (batch.length - succeeded - failed);
             break;
           }
           await withStorageLock(async () => {
@@ -643,7 +712,7 @@ export default defineBackground(() => {
     }
 
     scheduleStatusBadgeUpdate();
-    return { attempted: unsynced.length, succeeded, failed, noAuth: authFailed, nonceMissing: false };
+    return { attempted: batch.length, succeeded, failed, noAuth: authFailed, nonceMissing: false };
   }
 
   async function saveSessionState(session: TrackingSession | null): Promise<void> {
@@ -683,56 +752,67 @@ export default defineBackground(() => {
         return;
       }
 
-      const response = await fetch(ajaxUrl, { method: 'POST', body: params });
+      const controller = new AbortController();
+      const statsTimeout = setTimeout(() => controller.abort(), 10000);
+      let response: Response;
+      try {
+        response = await fetch(ajaxUrl, { method: 'POST', signal: controller.signal, body: params });
+      } finally {
+        clearTimeout(statsTimeout);
+      }
+      if (!response.ok) return;
       const result = await response.json();
       if (result.success && result.data) {
         await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: result.data });
+        await onAuthSuccess();
       } else if (isAuthFailure(result)) {
-        log('[JP343] Auth error (transient), will retry next cycle');
+        await onAuthFailure();
       }
     } catch { /* server unreachable */ }
   }
 
   async function updateStats(entry: PendingEntry): Promise<void> {
-    try {
-      const stats = await loadStats();
-      const settings = await loadSettings();
-      const dsh = settings.dayStartHour || 0;
-      const entryDate = getLocalDateString(new Date(entry.date), dsh);
-      const logicalNow = getLogicalNow(dsh);
-      const today = getLocalDateString(logicalNow);
+    await withStorageLock(async () => {
+      try {
+        const stats = await loadStats();
+        const settings = await loadSettings();
+        const dsh = settings.dayStartHour || 0;
+        const entryDate = getLocalDateString(new Date(entry.date), dsh);
+        const logicalNow = getLogicalNow(dsh);
+        const today = getLocalDateString(logicalNow);
 
-      stats.totalMinutes += entry.duration_min;
-      stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
-      addHourlyMinutes(stats, entry);
+        stats.totalMinutes += entry.duration_min;
+        stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
+        addHourlyMinutes(stats, entry);
 
-      if (stats.lastActiveDate !== today) {
-        const yesterday = new Date(logicalNow);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = getLocalDateString(yesterday);
+        if (stats.lastActiveDate !== today) {
+          const yesterday = new Date(logicalNow);
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = getLocalDateString(yesterday);
 
-        if (stats.lastActiveDate === yesterdayStr) {
-          stats.currentStreak += 1;
-        } else if (stats.lastActiveDate !== today) {
-          stats.currentStreak = 1;
+          if (stats.lastActiveDate === yesterdayStr) {
+            stats.currentStreak += 1;
+          } else if (stats.lastActiveDate !== today) {
+            stats.currentStreak = 1;
+          }
+          stats.lastActiveDate = today;
         }
-        stats.lastActiveDate = today;
-      }
 
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 90);
-      const cutoffStr = getLocalDateString(cutoff);
-      for (const dateKey of Object.keys(stats.dailyMinutes)) {
-        if (dateKey < cutoffStr) {
-          delete stats.dailyMinutes[dateKey];
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        const cutoffStr = getLocalDateString(cutoff);
+        for (const dateKey of Object.keys(stats.dailyMinutes)) {
+          if (dateKey < cutoffStr) {
+            delete stats.dailyMinutes[dateKey];
+          }
         }
-      }
 
-      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
-      log('[JP343] Stats updated: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
-    } catch (error) {
-      log('[JP343] Failed to update stats:', error);
-    }
+        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+        log('[JP343] Stats updated: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+      } catch (error) {
+        log('[JP343] Failed to update stats:', error);
+      }
+    });
   }
 
   function recalculateStreak(dailyMinutes: Record<string, number>, dayStartHour = 0): number {
@@ -758,30 +838,32 @@ export default defineBackground(() => {
   }
 
   async function subtractFromStats(entry: PendingEntry): Promise<void> {
-    try {
-      const stats = await loadStats();
-      const settings = await loadSettings();
-      const entryDate = getLocalDateString(new Date(entry.date), settings.dayStartHour || 0);
+    await withStorageLock(async () => {
+      try {
+        const stats = await loadStats();
+        const settings = await loadSettings();
+        const entryDate = getLocalDateString(new Date(entry.date), settings.dayStartHour || 0);
 
-      stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
-      if (stats.dailyMinutes[entryDate]) {
-        stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
-        if (stats.dailyMinutes[entryDate] <= 0) {
-          delete stats.dailyMinutes[entryDate];
+        stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
+        if (stats.dailyMinutes[entryDate]) {
+          stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
+          if (stats.dailyMinutes[entryDate] <= 0) {
+            delete stats.dailyMinutes[entryDate];
+          }
         }
+        subtractHourlyMinutes(stats, entry);
+
+        stats.currentStreak = recalculateStreak(stats.dailyMinutes, settings.dayStartHour || 0);
+
+        const dates = Object.keys(stats.dailyMinutes).sort();
+        stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
+
+        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+        log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+      } catch (error) {
+        log('[JP343] Failed to subtract stats:', error);
       }
-      subtractHourlyMinutes(stats, entry);
-
-      stats.currentStreak = recalculateStreak(stats.dailyMinutes, settings.dayStartHour || 0);
-
-      const dates = Object.keys(stats.dailyMinutes).sort();
-      stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
-
-      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
-      log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
-    } catch (error) {
-      log('[JP343] Failed to subtract stats:', error);
-    }
+    });
   }
 
   async function ensureFreshSettings(): Promise<void> {
@@ -979,6 +1061,7 @@ export default defineBackground(() => {
   migrateHourlyMinutes().catch(() => {});
   recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
+  fetchAndCacheServerSessions();
 
   // Channel sync: migration + init on SW start
   migrateToChannelSync().catch(() => {});

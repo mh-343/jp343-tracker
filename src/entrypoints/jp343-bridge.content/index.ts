@@ -1,6 +1,7 @@
 import type { JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { loadBackground } from '../../lib/background-image';
+import { createDebugLogger } from '../../lib/debug-logger';
 
 export default defineContentScript({
   matches: [
@@ -14,8 +15,7 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const { log } = createDebugLogger('jp343-bridge');
 
     log('[JP343 Bridge] Content script loaded');
 

@@ -3,6 +3,7 @@ import {
   VIDEO_CARD_SELECTORS, CARD_TITLE_SELECTORS, WATCH_TITLE_SELECTORS,
   extractVideoIdFromUrl, extractVideoIdFromElement, fetchOembedTitle
 } from '../../lib/youtube-utils';
+import { createDebugLogger } from '../../lib/debug-logger';
 
 interface CacheEntry {
   title: string;
@@ -31,8 +32,7 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', cleanup);
 
-    const DEBUG_MODE = import.meta.env.DEV;
-    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    const { log } = createDebugLogger('youtube-titles');
 
     const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
     const CACHE_MAX_ENTRIES = 1000;

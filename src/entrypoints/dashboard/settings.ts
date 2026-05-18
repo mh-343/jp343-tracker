@@ -1,4 +1,4 @@
-import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme } from '../../types';
+import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme, JP343UserState } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
@@ -770,7 +770,8 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
       imported.dayStartHour = Math.max(0, Math.min(6, imported.dayStartHour || 0));
 
       const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
-      isLoggedIn = !!userResult[STORAGE_KEYS.USER]?.token;
+      const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
+      isLoggedIn = !!userState?.extApiToken;
       if (isLoggedIn) {
         delete (imported as Record<string, unknown>).blockedChannels;
         delete (imported as Record<string, unknown>).whitelistedChannels;

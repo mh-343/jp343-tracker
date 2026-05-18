@@ -5,6 +5,7 @@ import {
   updateStatusBadge,
 } from '../badge-service';
 import { isJapaneseContent } from '../language-detection';
+import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../server-sessions';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -43,10 +44,15 @@ export async function handleSettingsMessage(
         if ('displayName' in message && message.displayName) {
           await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
         }
+        const identityChanged = existing?.userId && merged.userId && existing.userId !== merged.userId;
         context.log('[JP343] User state updated:', merged.isLoggedIn);
         if (merged.isLoggedIn && merged.extApiToken) {
+          if (identityChanged) clearCachedServerSessions().catch(() => {});
           await context.pullAndMergeSettingsFromServer().catch(() => {});
           context.fetchAndCacheServerStats();
+          fetchAndCacheServerSessions().catch(() => {});
+        } else if (!merged.isLoggedIn) {
+          clearCachedServerSessions().catch(() => {});
         }
       }
       return { success: true };
