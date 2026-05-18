@@ -49,9 +49,10 @@ export function renderGoalBar(todayMinutes: number, goalMinutes: number): void {
   const fill = document.getElementById('goalBarFill') as HTMLDivElement | null;
   if (!done || !pct || !fill) return;
 
-  const progress = Math.round((todayMinutes / goalMinutes) * 100);
+  const safeGoal = goalMinutes || 60;
+  const progress = Math.round((todayMinutes / safeGoal) * 100);
   done.textContent = formatStatDuration(todayMinutes);
-  pct.textContent = ` / ${formatStatDuration(goalMinutes)} (${progress}%)`;
+  pct.textContent = ` / ${formatStatDuration(safeGoal)} (${progress}%)`;
   fill.style.width = `${Math.min(progress, 100)}%`;
   const isOverflow = progress >= 100;
   const track = fill.parentElement;

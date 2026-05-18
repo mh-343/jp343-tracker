@@ -1,5 +1,5 @@
 export function formatStatDuration(minutes: number): string {
-  const totalSec = Math.round(minutes * 60);
+  const totalSec = Math.round(Math.max(0, minutes) * 60);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
@@ -9,7 +9,7 @@ export function formatStatDuration(minutes: number): string {
 }
 
 export function formatDuration(minutes: number): string {
-  const totalSec = Math.round(minutes * 60);
+  const totalSec = Math.round(Math.max(0, minutes) * 60);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;

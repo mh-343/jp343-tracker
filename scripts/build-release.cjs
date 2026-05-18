@@ -70,8 +70,10 @@ async function buildRelease() {
       await createZip(browser.distDir, zipPath, browser.zipName);
       createdFiles.push(browser.zipName);
     } catch (error) {
-      console.error(`   ❌ ${browser.name} build failed:`, error.message);
+      console.error(`\n   ❌ ${browser.name} build failed:`, error.message);
+      process.exit(1);
     }
+
   }
 
   // Summary

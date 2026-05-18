@@ -1,4 +1,4 @@
-import type { ExtensionMessage } from '../../types';
+import type { ExtensionMessage, PendingEntry, CachedServerSession, Platform, ActivityType } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { updateBadge } from '../badge-service';
 import { loadPendingEntries } from '../pending-entries';
@@ -12,41 +12,70 @@ export async function handlePendingMessage(
   switch (message.type) {
     case 'GET_PENDING_ENTRIES': {
       const pending = await loadPendingEntries();
-      return {
-        success: true,
-        data: { entries: pending }
-      };
+      const cached = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
+      const serverSessions: CachedServerSession[] = cached[STORAGE_KEYS.CACHED_SERVER_SESSIONS] || [];
+      if (serverSessions.length > 0) {
+        const localServerIds = new Set(pending.filter(e => e.serverEntryId).map(e => String(e.serverEntryId)));
+        const serverEntries: PendingEntry[] = serverSessions
+          .filter(s => !localServerIds.has(String(s.id)))
+          .map(s => ({
+            id: `server-${s.id}`,
+            date: s.date,
+            duration_min: s.duration_min,
+            project: s.title,
+            project_id: '',
+            platform: (s.platform || 'generic') as Platform,
+            source: 'extension' as const,
+            url: s.url || '',
+            thumbnail: s.thumbnail || null,
+            synced: true,
+            syncedAt: s.date,
+            syncAttempts: 0,
+            lastSyncError: null,
+            serverEntryId: typeof s.id === 'number' ? s.id : null,
+            channelId: null,
+            channelName: null,
+            channelUrl: null,
+            activityType: s.activityType as ActivityType | undefined,
+          }));
+        return { success: true, data: { entries: [...pending, ...serverEntries] } };
+      }
+      return { success: true, data: { entries: pending } };
     }
 
     case 'DELETE_PENDING_ENTRY': {
       if ('entryId' in message && typeof message.entryId === 'string') {
-        return withStorageLock(async () => {
+        const { deletedEntry, remaining } = await withStorageLock(async () => {
           const pending = await loadPendingEntries();
           const deletedEntry = pending.find(e => e.id === message.entryId);
           const filtered = pending.filter(e => e.id !== message.entryId);
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
           updateBadge();
-          if (deletedEntry) {
-            await context.subtractFromStats(deletedEntry);
-          }
-          return { success: true, data: { remaining: filtered.length } };
+          return { deletedEntry, remaining: filtered.length };
         });
+        if (deletedEntry) {
+          await context.subtractFromStats(deletedEntry);
+        }
+        return { success: true, data: { remaining } };
       }
       return { success: false, error: 'No entryId provided' };
     }
 
     case 'DELETE_PENDING_BY_SERVER_ID': {
       if ('serverEntryId' in message && typeof message.serverEntryId === 'number') {
-        return withStorageLock(async () => {
+        const { match, found } = await withStorageLock(async () => {
           const pending = await loadPendingEntries();
           const match = pending.find(e => e.serverEntryId === message.serverEntryId);
-          if (!match) return { success: true, data: { found: false } };
+          if (!match) return { match: undefined, found: false };
           const filtered = pending.filter(e => e.serverEntryId !== message.serverEntryId);
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
           updateBadge();
-          await context.subtractFromStats(match);
-          return { success: true, data: { found: true } };
+          return { match, found: true };
         });
+        if (match) {
+          await context.subtractFromStats(match);
+        }
+        return { success: true, data: { found } };
       }
       return { success: false, error: 'No serverEntryId provided' };
     }
@@ -67,7 +96,7 @@ export async function handlePendingMessage(
           const pending = await loadPendingEntries();
           const updated = pending.map(e => {
             if (e.id === message.entryId) {
-              return { ...e, project: message.title as string };
+              return { ...e, project: message.title as string, syncAttempts: 0, lastSyncError: null };
             }
             return e;
           });

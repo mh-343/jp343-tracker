@@ -42,12 +42,20 @@ export interface ServerSession {
 
 export async function ajaxPost(action: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
   const body = new URLSearchParams({ action, ...params });
-  const response = await fetch(AJAX_URL, {
-    method: 'POST',
-    credentials: 'include',
-    body
-  });
-  return response.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(AJAX_URL, {
+      method: 'POST',
+      credentials: 'include',
+      signal: controller.signal,
+      body
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function fetchServerStats(userState: JP343UserState): Promise<ServerStatsResponse | null> {

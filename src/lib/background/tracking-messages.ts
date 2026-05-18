@@ -130,6 +130,13 @@ export async function handleTrackingMessage(
     case 'VIDEO_ENDED': {
       if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
+      if ('state' in message && message.state?.channelName) {
+        tracker.updateSessionChannelInfo(
+          message.state.channelId || null,
+          message.state.channelName,
+          message.state.channelUrl || null
+        );
+      }
       const entry = tracker.finalizeSession();
       if (entry) {
         await context.savePendingEntry(entry);

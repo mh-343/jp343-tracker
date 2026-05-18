@@ -158,17 +158,19 @@ export function renderSessions(entries: PendingEntry[]): void {
         if (userState?.extApiToken || userState?.nonce) {
           try {
             if (userState.extApiToken) {
-              await ajaxPost('jp343_extension_delete_time_entry', {
+              const result = await ajaxPost('jp343_extension_delete_time_entry', {
                 ext_api_token: userState.extApiToken,
                 entry_id: String(entry.serverEntryId)
               });
+              if (!result.success) return;
             } else {
-              await ajaxPost('jp343_delete_time_entry', {
+              const result = await ajaxPost('jp343_delete_time_entry', {
                 nonce: userState.nonce!,
                 entry_id: String(entry.serverEntryId)
               });
+              if (!result.success) return;
             }
-          } catch {}
+          } catch { return; }
         }
       }
       await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id });
@@ -315,17 +317,19 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
     if ((userState?.extApiToken || userState?.nonce) && session.id) {
       try {
         if (userState.extApiToken) {
-          await ajaxPost('jp343_extension_delete_time_entry', {
+          const result = await ajaxPost('jp343_extension_delete_time_entry', {
             ext_api_token: userState.extApiToken,
             entry_id: String(session.id)
           });
+          if (!result.success) return;
         } else {
-          await ajaxPost('jp343_delete_time_entry', {
+          const result = await ajaxPost('jp343_delete_time_entry', {
             nonce: userState.nonce!,
             entry_id: String(session.id)
           });
+          if (!result.success) return;
         }
-      } catch {}
+      } catch { return; }
     }
     if (session.id) {
       browser.runtime.sendMessage({

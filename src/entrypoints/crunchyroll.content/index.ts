@@ -20,9 +20,11 @@ export default defineContentScript({
   main() {
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
+    let stateUpdateIntervalId: ReturnType<typeof setInterval> | null = null;
     function cleanup(): void {
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
+      if (stateUpdateIntervalId) { clearInterval(stateUpdateIntervalId); stateUpdateIntervalId = null; }
       observers.length = 0;
       intervalIds.length = 0;
     }
@@ -62,125 +64,14 @@ export default defineContentScript({
     }
 
     const isIframe = window !== window.top;
-    const isMainFrame = !isIframe;
     log('[JP343] Context:', isIframe ? 'iframe' : 'main frame');
 
-    function sendVideoMetadataToIframe() {
-      const videoId = window.location.pathname.match(/\/watch\/([A-Z0-9]+)/i)?.[1];
-      if (!videoId) return;
-
-      log('[JP343] Main frame: Video ID detected:', videoId);
-
-      let thumbnail: string | null = null;
-
-      let iframeFound = false;
-      let messagesSent = 0;
-      const maxMessages = 25;
-      let ackReceived = false;
-
-      const ackListener = (event: MessageEvent) => {
-        if (event.origin && !event.origin.endsWith('.crunchyroll.com') && !event.origin.endsWith('.crunchyroll.co.jp')) {
-          return;
-        }
-        if (event.data && event.data.type === 'JP343_VIDEO_ID_ACK' && event.data.videoId === videoId) {
-          if (!ackReceived) {
-            ackReceived = true;
-            log('[JP343] Main frame: Acknowledgment from iframe received after', messagesSent, 'messages');
-            clearInterval(checkIframe);
-            window.removeEventListener('message', ackListener);
-          }
-        }
-      };
-      window.addEventListener('message', ackListener);
-
-      const checkIframe = setInterval(() => {
-        if (ackReceived) return;
-
-        const iframe = document.querySelector('iframe[src*="vilos"]') as HTMLIFrameElement;
-        if (iframe && iframe.contentWindow) {
-          if (!iframeFound) {
-            log('[JP343] Main frame: iframe found, sending Video ID repeatedly...');
-            iframeFound = true;
-          }
-
-          if (!thumbnail) {
-            const ogImage = document.querySelector('meta[property="og:image"]');
-            thumbnail = ogImage?.getAttribute('content') || null;
-            if (thumbnail) {
-              log('[JP343] Main frame: Thumbnail extracted:', thumbnail.substring(0, 60) + '...');
-            }
-          }
-
-          const episodeHeading = document.querySelector('h1[class*="heading"][class*="title"]')
-            || document.querySelector('h1.title');
-          const episodeText = episodeHeading?.textContent?.trim() || null;
-
-          let seriesName: string | null = null;
-          let seriesUrl: string | null = null;
-          let seriesId: string | null = null;
-          const seriesLink = document.querySelector('[data-t="show-title-link"]')
-            || document.querySelector('a[href*="/series/"]');
-          if (seriesLink instanceof HTMLAnchorElement) {
-            seriesName = seriesLink.textContent?.trim() || null;
-            seriesUrl = seriesLink.href || null;
-            const seriesMatch = seriesLink.href?.match(/\/series\/([A-Z0-9]+)/i);
-            if (seriesMatch) {
-              seriesId = seriesMatch[1];
-            }
-          }
-
-          let targetOrigin = 'https://www.crunchyroll.com';
-          try {
-            const iframeUrl = new URL(iframe.src);
-            targetOrigin = iframeUrl.origin;
-          } catch { /* cross-origin fallback */ }
-
-          iframe.contentWindow.postMessage({
-            type: 'JP343_VIDEO_ID',
-            videoId: videoId,
-            title: document.title,
-            thumbnail: thumbnail,
-            episodeText: episodeText,
-            seriesName: seriesName,
-            seriesUrl: seriesUrl,
-            seriesId: seriesId,
-            watchUrl: window.location.href
-          }, targetOrigin);
-
-          messagesSent++;
-
-          if (messagesSent === 1) {
-            log('[JP343] Main frame: Sending Video ID:', videoId);
-          }
-
-          if (messagesSent >= maxMessages) {
-            log('[JP343] Main frame: Video ID sent', maxMessages, 'times (no acknowledgment received)');
-            clearInterval(checkIframe);
-            window.removeEventListener('message', ackListener);
-          }
-        }
-      }, 200);
-
-      setTimeout(() => {
-        clearInterval(checkIframe);
-        window.removeEventListener('message', ackListener);
-      }, 10000);
-    }
-
-    if (isMainFrame) {
-      sendVideoMetadataToIframe();
-
-      let lastMainFrameUrl = window.location.href;
-      intervalIds.push(setInterval(() => {
-        if (window.location.href !== lastMainFrameUrl) {
-          log('[JP343] Main frame: URL change detected:', lastMainFrameUrl, '->', window.location.href);
-          lastMainFrameUrl = window.location.href;
-
-          setTimeout(() => {
-            sendVideoMetadataToIframe();
-          }, 500);
-        }
-      }, 1000));
+    function isAllowedOrigin(origin: string): boolean {
+      try {
+        const host = new URL(origin).hostname;
+        return host === 'crunchyroll.com' || host.endsWith('.crunchyroll.com')
+          || host === 'crunchyroll.co.jp' || host.endsWith('.crunchyroll.co.jp');
+      } catch { return false; }
     }
 
     let currentVideoElement: HTMLVideoElement | null = null;
@@ -280,37 +171,6 @@ export default defineContentScript({
     function isAdPlaying(): boolean {
       return false;
     }
-
-    function handleAdStateChange(): void {
-      const adPlaying = isAdPlaying();
-
-      if (adPlaying && !isCurrentlyInAd) {
-        isCurrentlyInAd = true;
-        debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
-        log('[JP343] Crunchyroll: Ad started');
-        sendMessage('AD_START');
-      } else if (!adPlaying && isCurrentlyInAd) {
-        isCurrentlyInAd = false;
-        debugLog('AD_STATE', '=== AD ENDED ===', collectUIState());
-        log('[JP343] Crunchyroll: Ad ended');
-        sendMessage('AD_END');
-
-        if (pendingVideoId) {
-          debugLog('AD_STATE', 'Starting saved session', { pendingVideoId });
-          log('[JP343] Crunchyroll: Starting saved session after ad ended');
-          setTimeout(() => {
-            const state = getCurrentVideoState();
-            if (state && state.isPlaying && !isAdPlaying()) {
-              lastVideoId = pendingVideoId;
-              sendVideoPlay(state);
-            }
-            pendingVideoId = null;
-          }, 500);
-        }
-      }
-    }
-
-    intervalIds.push(setInterval(handleAdStateChange, 500));
 
     if (DEBUG_MODE) {
       intervalIds.push(setInterval(() => {
@@ -644,9 +504,7 @@ export default defineContentScript({
 
     if (window !== window.top) {
       window.addEventListener('message', (event) => {
-        if (event.origin && !event.origin.endsWith('.crunchyroll.com') && !event.origin.endsWith('.crunchyroll.co.jp')) {
-          return;
-        }
+        if (!isAllowedOrigin(event.origin)) return;
         if (event.data && event.data.type === 'JP343_VIDEO_ID') {
           const videoId = event.data.videoId;
           const title = event.data.title;
@@ -856,7 +714,8 @@ export default defineContentScript({
         debugLog('VIDEO_SEEK', 'Seeking', { currentTime: video.currentTime });
       });
 
-      setInterval(() => {
+      if (stateUpdateIntervalId) clearInterval(stateUpdateIntervalId);
+      stateUpdateIntervalId = setInterval(() => {
         if (isCurrentlyInAd) {
           return;
         }

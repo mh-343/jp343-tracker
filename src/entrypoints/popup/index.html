@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https:; style-src 'self' 'unsafe-inline'; script-src 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jp343 Tracker</title>
   <script src="/theme-init.js"></script>
@@ -129,6 +128,10 @@
   </div>
 
   <div class="pending-section" id="pendingSection" style="display: none;">
+    <div class="pending-header" id="pendingHeader">
+      <span>Sessions</span>
+      <span class="pending-collapse-arrow" id="pendingCollapseArrow">&#x25BE;</span>
+    </div>
     <div class="pending-list" id="pendingList"></div>
   </div>
   </div><!-- /popup-content -->

@@ -14,6 +14,8 @@ interface SettingsSyncDeps {
   loadSettings: () => Promise<ExtensionSettings>;
   saveSettings: (settings: ExtensionSettings) => Promise<void>;
   pullChannelsFromServer: () => Promise<void>;
+  onAuthFailure: () => Promise<void>;
+  onAuthSuccess: () => Promise<void>;
 }
 
 let deps: SettingsSyncDeps = {
@@ -21,6 +23,8 @@ let deps: SettingsSyncDeps = {
   loadSettings: () => Promise.reject(new Error('not initialized')),
   saveSettings: () => Promise.reject(new Error('not initialized')),
   pullChannelsFromServer: () => Promise.resolve(),
+  onAuthFailure: () => Promise.resolve(),
+  onAuthSuccess: () => Promise.resolve(),
 };
 
 export function normalizeTargetStartTimes(raw: unknown): (string | null)[] {
@@ -66,16 +70,29 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
       daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
       target_start_times: JSON.stringify(settings.targetStartTimes ?? [null, null, null, null, null, null, null]),
     };
-    const resp = await fetch(ajaxUrl, {
-      method: 'POST',
-      body: new URLSearchParams(pushParams),
-    });
+    const controller = new AbortController();
+    const pushTimeout = setTimeout(() => controller.abort(), 10000);
+    let resp: Response;
+    try {
+      resp = await fetch(ajaxUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        body: new URLSearchParams(pushParams),
+      });
+    } finally {
+      clearTimeout(pushTimeout);
+    }
+    if (!resp.ok) {
+      deps.log('[JP343] Settings push HTTP error:', resp.status);
+      return;
+    }
     const result: { success: boolean; data?: { message?: string; code?: string } } = await resp.json();
     if (result.success) {
       deps.log('[JP343] Settings pushed to server');
+      await deps.onAuthSuccess();
     } else {
       if (isAuthFailure(result)) {
-        deps.log('[JP343] Auth error (transient), will retry next cycle');
+        await deps.onAuthFailure();
         return;
       }
       deps.log('[JP343] Settings push failed:', result.data?.message);
@@ -102,19 +119,33 @@ export async function pullAndMergeSettingsFromServer(): Promise<boolean> {
     };
     if (settingsLastUpdated) params.since = settingsLastUpdated;
 
-    const resp = await fetch(ajaxUrl, {
-      method: 'POST',
-      body: new URLSearchParams(params),
-    });
+    const controller = new AbortController();
+    const pullTimeout = setTimeout(() => controller.abort(), 15000);
+    let resp: Response;
+    try {
+      resp = await fetch(ajaxUrl, {
+        method: 'POST',
+        signal: controller.signal,
+        body: new URLSearchParams(params),
+      });
+    } finally {
+      clearTimeout(pullTimeout);
+    }
+    if (!resp.ok) {
+      deps.log('[JP343] Settings pull HTTP error:', resp.status);
+      return false;
+    }
     const result: SettingsPullResponse = await resp.json();
     if (!result.success) {
       if (isAuthFailure(result)) {
-        deps.log('[JP343] Auth error (transient), will retry next cycle');
+        await deps.onAuthFailure();
         return false;
       }
       deps.log('[JP343] Settings pull failed:', result.data?.message);
       return false;
     }
+
+    await deps.onAuthSuccess();
 
     if (result.data?.changed === false) {
       deps.log('[JP343] Settings unchanged on server, merging meta fields');

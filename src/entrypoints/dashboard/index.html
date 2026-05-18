@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src https: blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https://jp343.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>jp343 Dashboard</title>
   <script src="/theme-init.js"></script>
@@ -35,13 +34,7 @@
     </div>
   </header>
 
-  <div id="newsBanner" class="news-banner" style="display: none;">
-    <div class="news-banner-inner">
-      <span class="news-banner-icon">&#9432;</span>
-      <span class="news-banner-text" id="newsBannerText"></span>
-      <button class="news-banner-close" id="newsBannerClose" title="Dismiss">&times;</button>
-    </div>
-  </div>
+  <div id="newsContainer"></div>
 
   <main class="wrap">
     <!-- User Bar (logged in) -->

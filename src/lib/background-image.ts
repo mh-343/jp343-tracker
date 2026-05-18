@@ -35,17 +35,6 @@ export async function saveBackground(blob: Blob): Promise<void> {
     reader.readAsDataURL(blob);
   });
   await browser.storage.local.set({ [STORAGE_KEYS.BACKGROUND_IMAGE]: base64 });
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(blob, BG_KEY);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    });
-  } catch {
-    /* ignore */
-  }
   await bumpRevision();
 }
 
@@ -87,17 +76,6 @@ export async function loadBackground(): Promise<Blob | null> {
 
 export async function removeBackground(): Promise<void> {
   cachedBlob = null;
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete(BG_KEY);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    });
-  } catch {
-    // IndexedDB unavailable
-  }
   await browser.storage.local.remove(STORAGE_KEYS.BACKGROUND_IMAGE);
   await bumpRevision();
 }

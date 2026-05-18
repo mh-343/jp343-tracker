@@ -2,7 +2,7 @@
 
 import type { VideoState, WhitelistedChannel, BlockedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
-import { createDebugLogger, DEBUG_MODE, downloadBuffer } from '../../lib/debug-logger';
+import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
 import { isJapaneseContent } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
@@ -47,7 +47,8 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
-        sendMessage('VIDEO_ENDED');
+        const state = getCurrentVideoState();
+        sendMessage('VIDEO_ENDED', state ? { state } : undefined);
       }
       cleanup();
     });
@@ -64,7 +65,8 @@ export default defineContentScript({
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
-        sendMessage('VIDEO_ENDED');
+        const state = getCurrentVideoState();
+        sendMessage('VIDEO_ENDED', state ? { state } : undefined);
       }
     });
     document.addEventListener('visibilitychange', () => {
@@ -73,7 +75,8 @@ export default defineContentScript({
         const video = currentVideoElement;
         if (!video) return;
         if (video.ended) {
-          sendMessage('VIDEO_ENDED');
+          const state = getCurrentVideoState();
+          sendMessage('VIDEO_ENDED', state ? { state } : undefined);
         } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
@@ -85,7 +88,8 @@ export default defineContentScript({
       }
     });
 
-    const { log, debugLog, getBuffer, clearBuffer } = createDebugLogger('youtube');
+    const logger = createDebugLogger('youtube');
+    const { log, debugLog } = logger;
     log('[JP343] YouTube Content Script loaded');
 
     const isIncognito = browser.extension?.inIncognitoContext ?? false;
@@ -98,6 +102,7 @@ export default defineContentScript({
     }
 
     function sendVideoPlay(state: VideoState): void {
+      if (window.location.pathname.startsWith('/shorts/')) return;
       const now = Date.now();
       if (now - lastVideoPlayTime < DEDUP_WINDOW_MS) return;
       lastVideoPlayTime = now;
@@ -149,18 +154,7 @@ export default defineContentScript({
       }
     });
 
-    if (DEBUG_MODE) {
-      window.addEventListener('message', (event) => {
-        if (event.source !== window || !event.data?.type) return;
-        if (event.data.type === 'JP343_DOWNLOAD_LOGS') downloadBuffer(getBuffer(), 'youtube');
-        else if (event.data.type === 'JP343_CLEAR_LOGS') { clearBuffer(); console.log('[JP343] Log buffer cleared'); }
-        else if (event.data.type === 'JP343_LOG_STATUS') console.log('[JP343] Log buffer:', getBuffer().length, 'entries');
-      });
-      console.log('[JP343] Debug logging active. Console commands:');
-      console.log('  postMessage({type:"JP343_DOWNLOAD_LOGS"})');
-      console.log('  postMessage({type:"JP343_CLEAR_LOGS"})');
-      console.log('  postMessage({type:"JP343_LOG_STATUS"})');
-    }
+    if (DEBUG_MODE) { setupDebugCommands(logger, 'youtube'); }
 
     function collectUIState(): Record<string, unknown> {
       const video = document.querySelector('video.html5-main-video') as HTMLVideoElement | null;
@@ -608,6 +602,7 @@ export default defineContentScript({
     }
 
     function attachVideoEvents(video: HTMLVideoElement): void {
+      if (window.location.pathname.startsWith('/shorts/')) return;
       if (video.hasAttribute('data-jp343-tracked')) {
         return;
       }
@@ -665,7 +660,8 @@ export default defineContentScript({
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
-        sendMessage('VIDEO_ENDED');
+        const endState = getCurrentVideoState();
+        sendMessage('VIDEO_ENDED', endState ? { state: endState } : undefined);
         hideTrackingToast();
       });
 
@@ -785,6 +781,7 @@ export default defineContentScript({
         if (urlChangeInProgress) return;
         urlChangeInProgress = true;
 
+        try {
         debugLog('URL_CHANGE', '=== URL CHANGED ===', {
           oldUrl: lastVideoUrl,
           newUrl: currentUrl
@@ -792,7 +789,8 @@ export default defineContentScript({
 
         if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
           log('[JP343] URL change - ending previous session');
-          sendMessage('VIDEO_ENDED');
+          const urlChangeState = getCurrentVideoState();
+          sendMessage('VIDEO_ENDED', urlChangeState ? { state: urlChangeState } : undefined);
         }
 
         hideTrackingToast();
@@ -816,6 +814,7 @@ export default defineContentScript({
         currentVideoElement = null;
 
         disconnectObserver();
+        } catch (err) { log('[JP343] URL change cleanup error:', err); }
 
         setTimeout(() => {
           urlChangeInProgress = false;
@@ -944,7 +943,8 @@ export default defineContentScript({
         const video = currentVideoElement;
         if (!video) return;
         if (video.ended) {
-          sendMessage('VIDEO_ENDED');
+          const state = getCurrentVideoState();
+          sendMessage('VIDEO_ENDED', state ? { state } : undefined);
         } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {

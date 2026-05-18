@@ -197,7 +197,7 @@ export interface SettingsPullResponse {
 export type ExtensionMessage =
   | { type: 'VIDEO_PLAY'; platform: Platform; state: VideoState; tabId?: number }
   | { type: 'VIDEO_PAUSE'; platform: Platform }
-  | { type: 'VIDEO_ENDED'; platform: Platform }
+  | { type: 'VIDEO_ENDED'; platform: Platform; state?: VideoState }
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
@@ -318,8 +318,21 @@ export const STORAGE_KEYS = {
   AVATAR_DATA: 'jp343_avatar_data',
   AVATAR_USER_ID: 'jp343_avatar_user_id',
   CHANNEL_SYNC: 'jp343_channel_sync',
-  COLLAPSED_CARDS: 'jp343_collapsed_cards'
+  COLLAPSED_CARDS: 'jp343_collapsed_cards',
+  AUTH_FAILURE_COUNT: 'jp343_auth_failure_count',
+  CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions'
 } as const;
+
+export interface CachedServerSession {
+  id: number | string;
+  title: string;
+  platform: string;
+  duration_min: number;
+  date: string;
+  url?: string;
+  thumbnail?: string;
+  activityType?: string;
+}
 
 export interface PlatformHealth {
   contentScriptLoaded: number;

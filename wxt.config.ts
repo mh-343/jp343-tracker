@@ -6,7 +6,7 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.7.7',
+    version: '2.7.8',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
@@ -57,6 +57,10 @@ export default defineConfig({
       32: 'icon/icon-32.png',
       48: 'icon/icon-48.png',
       128: 'icon/icon-128.png'
+    },
+
+    content_security_policy: {
+      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com; object-src 'self'"
     },
 
     web_accessible_resources: [

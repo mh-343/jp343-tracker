@@ -1,6 +1,7 @@
 import type { ExtensionMessage } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
+import { withStorageLock } from '../storage-lock';
 import type { BackgroundMessageContext } from './message-context';
 
 interface CachedServerStats {
@@ -79,8 +80,11 @@ export async function handleStatsSyncMessage(
           weekMinutes = Math.max(weekMinutes, Math.round(serverWeekSec / 60));
         if (cached.streak !== undefined)
           streak = Math.max(streak, cached.streak);
-        if (cached.total_seconds !== undefined)
-          totalMinutes = Math.max(totalMinutes, Math.round(cached.total_seconds / 60));
+        if (cached.total_seconds !== undefined) {
+          const serverMinutes = Math.round(cached.total_seconds / 60);
+          const MAX_UNSYNCED_DELTA = 1440;
+          totalMinutes = Math.min(Math.max(totalMinutes, serverMinutes), serverMinutes + MAX_UNSYNCED_DELTA);
+        }
         if (cached.daily_minutes) {
           const merged: Record<string, number> = { ...rawDailyMinutes };
           for (const [date, minutes] of Object.entries(cached.daily_minutes)) {
@@ -103,7 +107,9 @@ export async function handleStatsSyncMessage(
     }
 
     case 'RESET_STATS': {
-      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
+      await withStorageLock(async () => {
+        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
+      });
       context.log('[JP343] Stats reset');
       return { success: true };
     }
