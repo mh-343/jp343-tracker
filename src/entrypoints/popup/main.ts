@@ -578,7 +578,7 @@ function updateSessionDisplay(
 }
 
 function updatePendingDisplay(entries: PendingEntry[]): void {
-  elements.pendingSection.style.display = entries.length > 0 ? 'block' : 'none';
+  elements.pendingSection.style.display = entries.length > 0 ? 'flex' : 'none';
 }
 
 // Grouped entry for popup display
@@ -992,7 +992,7 @@ elements.pendingHeader.addEventListener('click', () => {
   });
 });
 
-const POPUP_MIN_HEIGHT = 380;
+const POPUP_MIN_HEIGHT = 450;
 const POPUP_MAX_HEIGHT = 600;
 
 function initResizeGrabber(): void {
