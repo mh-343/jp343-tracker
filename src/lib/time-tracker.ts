@@ -22,18 +22,25 @@ export function generateProjectId(platform: Platform, title: string, videoId: st
 }
 
 const MAX_HEARTBEAT_GAP_MS = 45_000;
+const MAX_HEARTBEAT_STALE_MS = 90_000;
 
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;
   private pendingGapMs: number = 0;
+  private lastHeartbeat: number = 0;
 
   constructor() {
     setInterval(() => this.tick(), 1000);
   }
 
+  markHeartbeat(): void {
+    this.lastHeartbeat = Date.now();
+  }
+
   startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
     const now = Date.now();
+    this.lastHeartbeat = now;
 
     if (this.session && this.session.url === videoState.url) {
       this.session.isActive = true;
@@ -106,12 +113,14 @@ export class TimeTracker {
       this.session.isActive = true;
       this.session.isPaused = false;
       this.session.lastUpdate = Date.now();
+      this.lastHeartbeat = Date.now();
       log('[JP343] Session resumed');
     }
   }
 
   restoreSession(saved: TrackingSession): void {
     const now = Date.now();
+    this.lastHeartbeat = now;
     if (saved.isActive && !saved.isPaused && saved.platform !== 'generic') {
       this.pendingGapMs = Math.max(0, now - saved.lastUpdate);
     } else {
@@ -157,6 +166,11 @@ export class TimeTracker {
 
     const now = Date.now();
     const delta = now - this.session.lastUpdate;
+
+    if (this.session.platform !== 'generic' && now - this.lastHeartbeat > MAX_HEARTBEAT_STALE_MS) {
+      this.session.lastUpdate = now;
+      return;
+    }
 
     if (delta > 0 && delta < 5000) {
       this.session.accumulatedMs += delta;

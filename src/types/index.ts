@@ -320,7 +320,8 @@ export const STORAGE_KEYS = {
   CHANNEL_SYNC: 'jp343_channel_sync',
   COLLAPSED_CARDS: 'jp343_collapsed_cards',
   AUTH_FAILURE_COUNT: 'jp343_auth_failure_count',
-  CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions'
+  CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions',
+  POPUP_HEIGHT: 'jp343_popup_height'
 } as const;
 
 export interface CachedServerSession {
