@@ -45,7 +45,7 @@
 body {
   width: 320px;
   min-height: 200px;
-  max-height: 580px;
+  max-height: 600px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -58,7 +58,8 @@ body {
 
 .popup-content {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 /* Header */
@@ -351,7 +352,6 @@ body {
 
 /* Pending Entries List */
 .pending-list {
-  max-height: 170px;
   overflow-y: auto;
 }
 
@@ -1250,3 +1250,40 @@ body {
   padding: 0;
 }
 .theme-toggle-popup:hover { border-color: var(--accent); color: var(--accent); }
+
+.resize-grabber {
+  height: 6px;
+  cursor: ns-resize;
+  flex-shrink: 0;
+  background: transparent;
+  position: relative;
+  user-select: none;
+}
+
+.resize-grabber::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.25);
+  transition: background 0.15s ease;
+}
+
+.resize-grabber:hover::before,
+.resize-grabber.dragging::before {
+  background: rgba(var(--accent-rgb), 0.6);
+}
+
+@media (pointer: coarse) {
+  .resize-grabber {
+    height: 14px;
+  }
+  .resize-grabber::before {
+    width: 40px;
+    height: 4px;
+  }
+}

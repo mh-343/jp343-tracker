@@ -111,6 +111,7 @@ export async function handleTrackingMessage(
         context.setLastSkippedChannel(null);
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
+        tracker.markHeartbeat();
         await context.saveSessionState(session);
         scheduleStatusBadgeUpdate();
       }
@@ -156,6 +157,7 @@ export async function handleTrackingMessage(
     case 'AD_END': {
       if (isWrongTab) return { success: true };
       tracker.onAdEnd();
+      tracker.markHeartbeat();
       scheduleStatusBadgeUpdate();
       return { success: true };
     }
@@ -163,6 +165,7 @@ export async function handleTrackingMessage(
     case 'VIDEO_STATE_UPDATE': {
       if (isWrongTab) return { success: true };
       tracker.confirmPlayback();
+      tracker.markHeartbeat();
       if ('state' in message && message.state && typeof message.state === 'object') {
         if (message.state.isPlaying) {
           const session = tracker.getCurrentSession();
