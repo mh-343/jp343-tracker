@@ -21,26 +21,16 @@ export function generateProjectId(platform: Platform, title: string, videoId: st
   return `ext_${platform}_${normalized}`;
 }
 
-const MAX_HEARTBEAT_GAP_MS = 45_000;
-const MAX_HEARTBEAT_STALE_MS = 90_000;
-
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;
-  private pendingGapMs: number = 0;
-  private lastHeartbeat: number = 0;
 
   constructor() {
     setInterval(() => this.tick(), 1000);
   }
 
-  markHeartbeat(): void {
-    this.lastHeartbeat = Date.now();
-  }
-
   startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
     const now = Date.now();
-    this.lastHeartbeat = now;
 
     if (this.session && this.session.url === videoState.url) {
       this.session.isActive = true;
@@ -72,7 +62,6 @@ export class TimeTracker {
     }
 
     if (this.session) {
-      this.confirmPlayback();
       this.finalizeSession();
     }
 
@@ -101,7 +90,7 @@ export class TimeTracker {
 
   pauseSession(): void {
     if (this.session && this.session.isActive) {
-      this.tick();
+      if (this.session.platform === 'generic') this.tick();
       this.session.isActive = false;
       this.session.isPaused = true;
       log('[JP343] Session paused');
@@ -113,33 +102,14 @@ export class TimeTracker {
       this.session.isActive = true;
       this.session.isPaused = false;
       this.session.lastUpdate = Date.now();
-      this.lastHeartbeat = Date.now();
       log('[JP343] Session resumed');
     }
   }
 
   restoreSession(saved: TrackingSession): void {
     const now = Date.now();
-    this.lastHeartbeat = now;
-    if (saved.isActive && !saved.isPaused && saved.platform !== 'generic') {
-      this.pendingGapMs = Math.max(0, now - saved.lastUpdate);
-    } else {
-      this.pendingGapMs = 0;
-    }
     this.session = { ...saved, lastUpdate: now };
-    log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's',
-      this.pendingGapMs > 0 ? `(pending gap: ${Math.round(this.pendingGapMs / 1000)}s)` : '');
-  }
-
-  confirmPlayback(): void {
-    if (!this.session || this.pendingGapMs <= 0) return;
-    if (this.pendingGapMs < MAX_HEARTBEAT_GAP_MS) {
-      this.session.accumulatedMs += this.pendingGapMs;
-      log('[JP343] Gap compensated:', Math.round(this.pendingGapMs / 1000), 's');
-    } else {
-      log('[JP343] Gap too large, discarded:', Math.round(this.pendingGapMs / 1000), 's');
-    }
-    this.pendingGapMs = 0;
+    log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
   }
 
   onAdStart(): void {
@@ -160,17 +130,11 @@ export class TimeTracker {
   }
 
   private tick(): void {
-    if (!this.session || !this.session.isActive || this.isInAd) {
-      return;
-    }
+    if (!this.session || !this.session.isActive || this.isInAd) return;
+    if (this.session.platform !== 'generic') return;
 
     const now = Date.now();
     const delta = now - this.session.lastUpdate;
-
-    if (this.session.platform !== 'generic' && now - this.lastHeartbeat > MAX_HEARTBEAT_STALE_MS) {
-      this.session.lastUpdate = now;
-      return;
-    }
 
     if (delta > 0 && delta < 5000) {
       this.session.accumulatedMs += delta;
@@ -184,7 +148,7 @@ export class TimeTracker {
       return null;
     }
 
-    this.tick();
+    if (this.session.platform === 'generic') this.tick();
 
     if (this.session.accumulatedMs < 60000) {
       log('[JP343] Session too short (<1min), discarded');
@@ -233,16 +197,24 @@ export class TimeTracker {
     return this.session;
   }
 
-  getCurrentDuration(): string {
-    if (!this.session) {
-      return '0m';
-    }
-
+  getCurrentDurationMs(): number {
+    if (!this.session) return 0;
     let totalMs = this.session.accumulatedMs;
     if (this.session.isActive && !this.isInAd) {
       totalMs += Date.now() - this.session.lastUpdate;
     }
+    return totalMs;
+  }
 
+  getCurrentDuration(): string {
+    return this.formatMs(this.getCurrentDurationMs());
+  }
+
+  formatDurationFromMs(ms: number): string {
+    return this.formatMs(ms);
+  }
+
+  private formatMs(totalMs: number): string {
     const totalSeconds = Math.floor(totalMs / 1000);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -310,6 +282,18 @@ export class TimeTracker {
       return true;
     }
     return false;
+  }
+
+  addDelta(deltaMs: number): void {
+    if (!this.session || !this.session.isActive || this.isInAd) return;
+    if (deltaMs > 0) {
+      this.session.accumulatedMs += deltaMs;
+      this.session.lastUpdate = Date.now();
+    }
+  }
+
+  getSessionId(): string | null {
+    return this.session?.id ?? null;
   }
 
   updateSessionUrl(newUrl: string): void {

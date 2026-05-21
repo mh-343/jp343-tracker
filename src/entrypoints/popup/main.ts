@@ -2,7 +2,7 @@
 
 import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
-import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates } from '../../lib/format-utils';
+import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
 
@@ -81,6 +81,11 @@ let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: st
 let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let fetchSeq = 0;
+let isFetchingState = false;
+let baseDurationMs = 0;
+let baseTimestamp = 0;
+let sessionTicking = false;
+let lastDisplayedSecond = -1;
 
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
   if (toastTimeout) {
@@ -531,9 +536,23 @@ function updateStatus(session: TrackingSession | null, isAd: boolean): void {
   }
 }
 
+function tickTimerDisplay(): void {
+  if (!currentSession) {
+    lastDisplayedSecond = -1;
+    return;
+  }
+  let displayMs = baseDurationMs;
+  if (sessionTicking) {
+    displayMs += Date.now() - baseTimestamp;
+  }
+  const displaySecond = Math.floor(displayMs / 1000);
+  if (displaySecond < lastDisplayedSecond) return;
+  lastDisplayedSecond = displaySecond;
+  elements.sessionTimer.textContent = formatDurationMs(displayMs);
+}
+
 function updateSessionDisplay(
   session: TrackingSession | null,
-  duration: string,
   isAd: boolean
 ): void {
   if (!session) {
@@ -545,7 +564,6 @@ function updateSessionDisplay(
   elements.noSession.style.display = 'none';
   elements.activeSession.style.display = 'block';
 
-  // XSS-safe: createElement instead of innerHTML
   if (session.thumbnailUrl && isValidImageUrl(session.thumbnailUrl)) {
     elements.thumbnail.textContent = '';
     const img = document.createElement('img');
@@ -570,7 +588,6 @@ function updateSessionDisplay(
     elements.sessionPlatform.textContent = session.platform + '.com';
   }
 
-  elements.sessionTimer.textContent = duration;
   elements.sessionTimer.className = isAd ? 'session-timer ad' : 'session-timer';
   elements.adLabel.style.display = isAd ? 'block' : 'none';
 
@@ -830,19 +847,35 @@ async function fetchPendingEntries(): Promise<void> {
 }
 
 async function fetchCurrentState(): Promise<void> {
+  if (isFetchingState) return;
+  isFetchingState = true;
   const seq = ++fetchSeq;
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_CURRENT_SESSION' });
     if (seq !== fetchSeq) return;
 
     if (response.success && response.data) {
-      const { session, duration, isAd, skippedChannel } = response.data;
+      const { session, durationMs, isAd, skippedChannel } = response.data;
       lastSkippedChannel = skippedChannel || null;
+
+      const newDurationMs = typeof durationMs === 'number' ? durationMs : 0;
+      const newTicking = !!session && session.isActive && !session.isPaused && !isAd;
+      const sessionChanged = session?.id !== currentSession?.id;
+      const stateChanged = newTicking !== sessionTicking;
+
+      if (sessionChanged) lastDisplayedSecond = -1;
+
+      if (sessionChanged || stateChanged || !sessionTicking) {
+        baseDurationMs = newDurationMs;
+        baseTimestamp = Date.now();
+      }
+      sessionTicking = newTicking;
 
       const platformChanged = currentSession?.platform !== session?.platform;
       currentSession = session;
       updateStatus(session, isAd);
-      updateSessionDisplay(session, duration, isAd);
+      updateSessionDisplay(session, isAd);
+      tickTimerDisplay();
       updateChannelDisplay(session, skippedChannel);
       updateManualTrackDisplay();
       if (platformChanged) {
@@ -851,6 +884,8 @@ async function fetchCurrentState(): Promise<void> {
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load:', error);
+  } finally {
+    isFetchingState = false;
   }
 }
 
@@ -1064,7 +1099,10 @@ loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
 
-updateInterval = setInterval(fetchCurrentState, 1000);
+updateInterval = setInterval(() => {
+  tickTimerDisplay();
+  fetchCurrentState();
+}, 1000);
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
 const statsInterval = setInterval(fetchAndRenderStats, 60000);
 

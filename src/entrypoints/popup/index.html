@@ -37,19 +37,21 @@
         <span class="manual-track-domain" id="currentDomain">example.com</span>
       </div>
 
-      <div class="manual-track-input">
-        <label for="manualTitle">Title</label>
-        <input type="text" id="manualTitle" placeholder="Enter a title..." />
-      </div>
-
-      <div class="manual-track-input">
-        <label for="activityType">Type</label>
-        <select id="activityType">
-          <option value="watching">Watching</option>
-          <option value="listening">Listening</option>
-          <option value="reading">Reading</option>
-          <option value="speaking">Speaking</option>
-        </select>
+      <div class="manual-track-row">
+        <div class="manual-track-input manual-track-title">
+          <label for="manualTitle">Title</label>
+          <input type="text" id="manualTitle" placeholder="Enter a title..." />
+        </div>
+        <div class="manual-track-input manual-track-type">
+          <label for="activityType">Type</label>
+          <select id="activityType">
+            <option value="watching">Watching</option>
+            <option value="listening">Listening</option>
+            <option value="reading">Reading</option>
+            <option value="speaking">Speaking</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
       </div>
 
       <button class="btn btn-primary btn-track" id="btnStartManual">

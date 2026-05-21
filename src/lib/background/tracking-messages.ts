@@ -1,4 +1,4 @@
-import type { ActivityType, ExtensionMessage, VideoState } from '../../types';
+import type { ActivityType, ExtensionMessage, TrackingSession, VideoState } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
@@ -20,6 +20,22 @@ async function checkJapaneseVideo(videoId: string, domTitle: string, originalTit
   } catch {
     jpCheckCache.set(videoId, false);
     return false;
+  }
+}
+
+async function collectUnflushedTime(
+  session: TrackingSession,
+  recordDiagnostic?: (code: string, platform?: string) => void
+): Promise<void> {
+  if (!session.tabId || session.platform === 'generic') return;
+  try {
+    const response = await browser.tabs.sendMessage(session.tabId, { type: 'GET_CONTENT_TIME' });
+    if (response && typeof response.unflushedMs === 'number' && response.sessionId === session.id && response.unflushedMs > 0) {
+      tracker.addDelta(response.unflushedMs);
+      recordDiagnostic?.('unflushed_collected', session.platform);
+    }
+  } catch {
+    recordDiagnostic?.('unflushed_failed', session.platform);
   }
 }
 
@@ -90,10 +106,13 @@ export async function handleTrackingMessage(
 
         const currentSession = tracker.getCurrentSession();
         if (currentSession && currentSession.url !== message.state.url) {
+          await collectUnflushedTime(currentSession, recordDiagnostic);
           const previousEntry = tracker.finalizeSession();
           if (previousEntry) {
             await context.savePendingEntry(previousEntry);
             context.log('[JP343] Previous session saved on video switch:', previousEntry.project, previousEntry.duration_min, 'min');
+          } else {
+            recordDiagnostic?.('session_discarded', currentSession.platform);
           }
         }
 
@@ -111,16 +130,14 @@ export async function handleTrackingMessage(
         context.setLastSkippedChannel(null);
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
-        tracker.markHeartbeat();
         await context.saveSessionState(session);
         scheduleStatusBadgeUpdate();
       }
-      return { success: true };
+      return { success: true, sessionId: tracker.getSessionId() };
     }
 
     case 'VIDEO_PAUSE': {
       if (isWrongTab) return { success: true };
-      tracker.confirmPlayback();
       tracker.pauseSession();
       const session = tracker.getCurrentSession();
       await context.saveSessionState(session);
@@ -130,7 +147,6 @@ export async function handleTrackingMessage(
 
     case 'VIDEO_ENDED': {
       if (isWrongTab) return { success: true };
-      tracker.confirmPlayback();
       if ('state' in message && message.state?.channelName) {
         tracker.updateSessionChannelInfo(
           message.state.channelId || null,
@@ -138,9 +154,13 @@ export async function handleTrackingMessage(
           message.state.channelUrl || null
         );
       }
+      const preSession = tracker.getCurrentSession();
+      if (preSession) await collectUnflushedTime(preSession, recordDiagnostic);
       const entry = tracker.finalizeSession();
       if (entry) {
         await context.savePendingEntry(entry);
+      } else if (preSession) {
+        recordDiagnostic?.('session_discarded', preSession.platform);
       }
       await context.saveSessionState(null);
       scheduleStatusBadgeUpdate();
@@ -157,20 +177,18 @@ export async function handleTrackingMessage(
     case 'AD_END': {
       if (isWrongTab) return { success: true };
       tracker.onAdEnd();
-      tracker.markHeartbeat();
       scheduleStatusBadgeUpdate();
       return { success: true };
     }
 
     case 'VIDEO_STATE_UPDATE': {
       if (isWrongTab) return { success: true };
-      tracker.confirmPlayback();
-      tracker.markHeartbeat();
       if ('state' in message && message.state && typeof message.state === 'object') {
         if (message.state.isPlaying) {
           const session = tracker.getCurrentSession();
           if (session && session.isPaused) {
             tracker.resumeSession();
+            scheduleStatusBadgeUpdate();
             recordDiagnostic?.('heartbeat_resume', message.platform);
           }
         }
@@ -201,6 +219,8 @@ export async function handleTrackingMessage(
               });
             }
             context.log('[JP343] Channel blocked on STATE_UPDATE - stopping session:', message.state.channelId);
+            const blockedSession = tracker.getCurrentSession();
+            if (blockedSession) await collectUnflushedTime(blockedSession, recordDiagnostic);
             tracker.stopSession();
             await context.saveSessionState(null);
             scheduleStatusBadgeUpdate();
@@ -228,6 +248,8 @@ export async function handleTrackingMessage(
                   });
                 }
                 context.log('[JP343] Non-JP title confirmed on STATE_UPDATE - stopping session');
+                const nonJpSession = tracker.getCurrentSession();
+                if (nonJpSession) await collectUnflushedTime(nonJpSession, recordDiagnostic);
                 tracker.stopSession();
                 await context.saveSessionState(null);
                 scheduleStatusBadgeUpdate();
@@ -270,10 +292,43 @@ export async function handleTrackingMessage(
       return { success: true };
     }
 
+    case 'TIME_DELTA': {
+      if (isWrongTab) return { success: true };
+      if ('deltaMs' in message && typeof message.deltaMs === 'number' && message.deltaMs > 0) {
+        const session = tracker.getCurrentSession();
+        if (!session) return { success: true };
+        if ('sessionId' in message && message.sessionId !== session.id) return { success: true };
+        if (session.isPaused) {
+          tracker.resumeSession();
+          recordDiagnostic?.('heartbeat_resume', message.platform);
+        }
+        tracker.addDelta(message.deltaMs);
+        await context.saveSessionState(tracker.getCurrentSession());
+        scheduleStatusBadgeUpdate();
+      }
+      return { success: true };
+    }
+
     case 'GET_CURRENT_SESSION': {
       const session = tracker.getCurrentSession();
-      const duration = tracker.getCurrentDuration();
       const isAd = tracker.isAdPlaying();
+
+      let durationMs = tracker.getCurrentDurationMs();
+
+      if (session && session.tabId && session.platform !== 'generic') {
+        try {
+          const response = await browser.tabs.sendMessage(session.tabId, { type: 'GET_CONTENT_TIME' });
+          if (response && typeof response.unflushedMs === 'number' && response.sessionId === session.id) {
+            durationMs = session.accumulatedMs + response.unflushedMs;
+            if (response.unflushedMs > 0 && session.isPaused) {
+              tracker.resumeSession();
+              recordDiagnostic?.('heartbeat_resume', session.platform);
+            }
+          }
+        } catch { /* tab gone or content script not ready */ }
+      }
+
+      const duration = tracker.formatDurationFromMs(durationMs);
 
       let skippedChannel: { channelId: string; channelName: string; channelUrl: string | null; platform: 'youtube' } | null = null;
       if (!session) {
@@ -293,7 +348,7 @@ export async function handleTrackingMessage(
 
       return {
         success: true,
-        data: { session, duration, isAd, skippedChannel }
+        data: { session, duration, durationMs, isAd, skippedChannel }
       };
     }
 
@@ -304,9 +359,12 @@ export async function handleTrackingMessage(
           await browser.tabs.sendMessage(sessionBeforeStop.tabId, { type: 'PAUSE_VIDEO' });
         } catch { /* ignore */ }
       }
+      if (sessionBeforeStop) await collectUnflushedTime(sessionBeforeStop, recordDiagnostic);
       const entry = tracker.stopSession();
       if (entry) {
         await context.savePendingEntry(entry);
+      } else if (sessionBeforeStop) {
+        recordDiagnostic?.('session_discarded', sessionBeforeStop.platform);
       }
       await context.saveSessionState(null);
       scheduleStatusBadgeUpdate();

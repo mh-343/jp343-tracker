@@ -33,6 +33,7 @@ export function createBackgroundMessageHandler(
         case 'AD_START':
         case 'AD_END':
         case 'VIDEO_STATE_UPDATE':
+        case 'TIME_DELTA':
         case 'GET_CURRENT_SESSION':
         case 'STOP_SESSION':
         case 'PAUSE_SESSION':

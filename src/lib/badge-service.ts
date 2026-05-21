@@ -22,11 +22,11 @@ function getCurrentStatus(): TrackingStatus {
 }
 
 export function scheduleStatusBadgeUpdate(): void {
-  if (badgeUpdateTimer) return;
+  if (badgeUpdateTimer) clearTimeout(badgeUpdateTimer);
   badgeUpdateTimer = setTimeout(async () => {
     badgeUpdateTimer = null;
     await updateStatusBadge();
-  }, 500);
+  }, 300);
 }
 
 export async function updateStatusBadge(): Promise<void> {

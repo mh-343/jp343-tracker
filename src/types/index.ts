@@ -1,6 +1,6 @@
 export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'spotify' | 'generic';
 
-export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking';
+export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
 export type SpotifyContentType = 'music' | 'podcast' | 'audiobook';
 
@@ -201,6 +201,7 @@ export type ExtensionMessage =
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
+  | { type: 'TIME_DELTA'; platform: Platform; deltaMs: number; sessionId: string }
   | { type: 'JP343_SITE_LOADED'; userState: JP343UserState; displayName?: string }
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
@@ -344,6 +345,10 @@ export interface PlatformHealth {
   videoPlaySent: number;
   heartbeatResume: number;
   adStateRecovered: number;
+  sessionDiscarded: number;
+  unflushedCollected: number;
+  unflushedFailed: number;
+  pauseDebounced: number;
 }
 
 export interface SyncHealth {
@@ -392,5 +397,9 @@ export const DEFAULT_PLATFORM_HEALTH: PlatformHealth = {
   metadataMissing: 0,
   videoPlaySent: 0,
   heartbeatResume: 0,
-  adStateRecovered: 0
+  adStateRecovered: 0,
+  sessionDiscarded: 0,
+  unflushedCollected: 0,
+  unflushedFailed: 0,
+  pauseDebounced: 0
 };
