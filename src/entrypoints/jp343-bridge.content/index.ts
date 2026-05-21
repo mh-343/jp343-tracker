@@ -143,8 +143,9 @@ export default defineContentScript({
     browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === 'JP343_GET_USER_STATE') {
         sendResponse(getUserState());
+        return true;
       }
-      return true;
+      return undefined;
     });
 
     async function provideExtensionData(): Promise<void> {

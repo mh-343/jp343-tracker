@@ -1003,12 +1003,12 @@ body {
 
 /* Manual Track Mode */
 #manualTrackMode {
-  padding: 16px;
+  padding: 12px 16px;
 }
 
 .manual-track-header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .manual-track-domain {
@@ -1020,27 +1020,38 @@ body {
   border: 1px solid var(--border-subtle);
 }
 
-.manual-track-input {
-  margin-bottom: 16px;
+.manual-track-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.manual-track-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.manual-track-type {
+  flex: 0 0 105px;
 }
 
 .manual-track-input label {
   display: block;
   font-size: 11px;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .manual-track-input input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   outline: none;
   transition: border-color 0.2s;
 }
@@ -1053,13 +1064,13 @@ body {
 
 .manual-track-input select {
   width: 100%;
-  padding: 10px 12px;
-  padding-right: 32px;
+  padding: 8px 10px;
+  padding-right: 28px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-family: inherit;
   outline: none;
   cursor: pointer;
@@ -1067,7 +1078,7 @@ body {
   transition: border-color 0.2s;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239090b0' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
+  background-position: right 8px center;
 }
 
 .btn-track {

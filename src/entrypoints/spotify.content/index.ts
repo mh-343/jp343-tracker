@@ -16,13 +16,20 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', () => {
       if (wasPlaying) {
+        flushSpotifyDelta();
         sendMessage('VIDEO_ENDED');
       }
       cleanup();
     });
     window.addEventListener('beforeunload', () => {
       if (wasPlaying) {
+        flushSpotifyDelta();
         sendMessage('VIDEO_ENDED');
+      }
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        flushSpotifyDelta();
       }
     });
 
@@ -39,8 +46,21 @@ export default defineContentScript({
         browser.runtime.sendMessage({ type: 'DIAGNOSTIC_EVENT', code, platform: 'spotify' }).catch(() => {});
       } catch { /* best-effort */ }
     }
+    function flushSpotifyDelta(): void {
+      if (spotifyAccumulatedMs <= 0 || !currentSessionId) return;
+      const ms = spotifyAccumulatedMs;
+      spotifyAccumulatedMs = 0;
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+    }
+
     function sendVideoPlay(state: VideoState): void {
-      sendMessage('VIDEO_PLAY', { state });
+      flushSpotifyDelta();
+      spotifyAccumulatedMs = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (response && typeof response === 'object' && 'sessionId' in response) {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+        }
+      });
       sendDiagnostic('video_play_sent');
       sendDiagnostic('metadata_found');
     }
@@ -55,6 +75,9 @@ export default defineContentScript({
     let lastTrackTitle = '';
     let lastTrackHref = '';
     let isCurrentlyInAd = false;
+    let spotifyAccumulatedMs = 0;
+    let spotifyLastPlayTime = 0;
+    let currentSessionId: string | null = null;
     let metadataMissingReported = false;
     let metadataMissRetries = 0;
     const METADATA_MISS_THRESHOLD = 3;
@@ -188,9 +211,9 @@ export default defineContentScript({
       };
     }
 
-    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
+    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       try {
-        await browser.runtime.sendMessage({
+        return await browser.runtime.sendMessage({
           type,
           platform: 'spotify',
           ...data
@@ -198,6 +221,7 @@ export default defineContentScript({
       } catch (error) {
         if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Message error:', error);
+        return undefined;
       }
     }
 
@@ -205,7 +229,23 @@ export default defineContentScript({
       const playing = isPlaying();
       const adPlaying = isAdPlaying();
 
+      if (wasPlaying && !isCurrentlyInAd) {
+        const now = Date.now();
+        if (spotifyLastPlayTime > 0) {
+          const delta = now - spotifyLastPlayTime;
+          if (delta > 0 && delta <= 5000) {
+            spotifyAccumulatedMs += delta;
+            if (spotifyAccumulatedMs >= 10_000) {
+              flushSpotifyDelta();
+            }
+          }
+        }
+        spotifyLastPlayTime = now;
+      }
+
       if (adPlaying && !isCurrentlyInAd) {
+        flushSpotifyDelta();
+        spotifyLastPlayTime = 0;
         isCurrentlyInAd = true;
         log('[JP343] Spotify: Ad started');
         sendMessage('AD_START');
@@ -213,6 +253,7 @@ export default defineContentScript({
       }
       if (!adPlaying && isCurrentlyInAd) {
         isCurrentlyInAd = false;
+        spotifyLastPlayTime = 0;
         log('[JP343] Spotify: Ad ended');
         sendMessage('AD_END');
       }
@@ -225,6 +266,8 @@ export default defineContentScript({
 
       if (playing && trackHref && trackHref !== lastTrackHref && lastTrackHref) {
         log('[JP343] Spotify: Track changed:', lastTrackTitle, '->', trackTitle);
+        flushSpotifyDelta();
+        spotifyLastPlayTime = 0;
         sendMessage('VIDEO_ENDED');
         lastTrackHref = trackHref;
         lastTrackTitle = trackTitle;
@@ -232,6 +275,7 @@ export default defineContentScript({
         if (state) {
           sendVideoPlay(state);
           wasPlaying = true;
+          spotifyLastPlayTime = Date.now();
         } else {
           wasPlaying = false;
           metadataMissRetries = 0;
@@ -249,6 +293,7 @@ export default defineContentScript({
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
           sendVideoPlay(state);
           wasPlaying = true;
+          spotifyLastPlayTime = Date.now();
           metadataMissingReported = false;
           metadataMissRetries = 0;
         } else {
@@ -260,6 +305,8 @@ export default defineContentScript({
         }
       } else if (!playing && wasPlaying) {
         log('[JP343] Spotify: Paused');
+        flushSpotifyDelta();
+        spotifyLastPlayTime = 0;
         sendMessage('VIDEO_PAUSE');
         wasPlaying = false;
         metadataMissingReported = false;
@@ -307,6 +354,10 @@ export default defineContentScript({
     }
 
     browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') {
+        if (!currentSessionId) return undefined;
+        return Promise.resolve({ unflushedMs: Math.round(spotifyAccumulatedMs), sessionId: currentSessionId });
+      }
       const btn = document.querySelector('[data-testid="control-button-playpause"]') as HTMLElement | null;
       if (!btn) return;
       if (message?.type === 'PAUSE_VIDEO' && isPlaying()) {
@@ -315,6 +366,7 @@ export default defineContentScript({
       if (message?.type === 'RESUME_VIDEO' && !isPlaying()) {
         btn.click();
       }
+      return undefined;
     });
   }
 });

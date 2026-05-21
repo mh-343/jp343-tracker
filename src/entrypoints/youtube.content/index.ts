@@ -30,6 +30,10 @@ export default defineContentScript({
     let whitelistedChannels: WhitelistedChannel[] = [];
     let blockedChannels: BlockedChannel[] = [];
     const DEDUP_WINDOW_MS = 200;
+    let lastVideoTime = 0;
+    let accumulatedDeltaMs = 0;
+    let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let currentSessionId: string | null = null;
 
     document.querySelectorAll('video[data-jp343-tracked]').forEach(v => {
       v.removeAttribute('data-jp343-tracked');
@@ -47,6 +51,7 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+        flushDelta();
         const state = getCurrentVideoState();
         sendMessage('VIDEO_ENDED', state ? { state } : undefined);
       }
@@ -65,12 +70,16 @@ export default defineContentScript({
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+        flushDelta();
         const state = getCurrentVideoState();
         sendMessage('VIDEO_ENDED', state ? { state } : undefined);
       }
     });
     document.addEventListener('visibilitychange', () => {
       if (!extensionContextValid) return;
+      if (document.hidden) {
+        flushDelta();
+      }
       if (!document.hidden) {
         const video = currentVideoElement;
         if (!video) return;
@@ -106,7 +115,13 @@ export default defineContentScript({
       const now = Date.now();
       if (now - lastVideoPlayTime < DEDUP_WINDOW_MS) return;
       lastVideoPlayTime = now;
-      sendMessage('VIDEO_PLAY', { state });
+      flushDelta();
+      accumulatedDeltaMs = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (response && typeof response === 'object' && 'sessionId' in response) {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+        }
+      });
       sendDiagnostic('video_play_sent');
       sendDiagnostic(state.title && state.title !== 'YouTube Video' ? 'metadata_found' : 'metadata_missing');
     }
@@ -580,14 +595,21 @@ export default defineContentScript({
       };
     }
 
-    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
+    function flushDelta(): void {
+      if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
+      const ms = accumulatedDeltaMs;
+      accumulatedDeltaMs = 0;
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+    }
+
+    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       if (!isExtensionContextValid()) {
         invalidateExtensionContext();
         return;
       }
 
       try {
-        await browser.runtime.sendMessage({
+        return await browser.runtime.sendMessage({
           type,
           platform: 'youtube',
           ...data
@@ -598,6 +620,7 @@ export default defineContentScript({
           return;
         }
         log('[JP343] Message error:', error);
+        return undefined;
       }
     }
 
@@ -611,6 +634,10 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         if (DEBUG_MODE) debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
         requestOriginalTitle(getVideoId());
         const state = getCurrentVideoState();
@@ -653,13 +680,21 @@ export default defineContentScript({
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_PAUSE', '=== VIDEO PAUSE EVENT ===', collectUIState());
-        sendVideoPause();
+        flushDelta();
+        if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+        pauseDebounceTimer = setTimeout(() => {
+          pauseDebounceTimer = null;
+          if (video.paused && !video.ended) {
+            sendVideoPause();
+          }
+        }, 300);
       });
 
       video.addEventListener('ended', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
+        flushDelta();
         const endState = getCurrentVideoState();
         sendMessage('VIDEO_ENDED', endState ? { state: endState } : undefined);
         hideTrackingToast();
@@ -669,7 +704,7 @@ export default defineContentScript({
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (!isCurrentlyAd) {
-          sendVideoPause();
+          flushDelta();
         }
       });
 
@@ -677,6 +712,7 @@ export default defineContentScript({
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (document.hidden && video.paused && video.readyState === 0) {
+          flushDelta();
           sendVideoPause();
         }
       });
@@ -684,9 +720,29 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
           sendVideoPlay(state);
+        }
+      });
+
+      video.addEventListener('timeupdate', () => {
+        if (!isExtensionContextValid()) return;
+        if (isCurrentlyAd) return;
+        if (video.paused || video.ended) return;
+        const ct = video.currentTime;
+        const d = ct - lastVideoTime;
+        lastVideoTime = ct;
+        if (d > 0 && d <= 10) {
+          const realDelta = d / (video.playbackRate || 1);
+          accumulatedDeltaMs += realDelta * 1000;
+          if (accumulatedDeltaMs >= 10_000) {
+            flushDelta();
+          }
         }
       });
 
@@ -742,10 +798,13 @@ export default defineContentScript({
         }
 
         if (isAd && !isCurrentlyAd) {
+          flushDelta();
+          lastVideoTime = 0;
           isCurrentlyAd = true;
           sendMessage('AD_START');
         } else if (!isAd && isCurrentlyAd) {
           isCurrentlyAd = false;
+          lastVideoTime = 0;
           sendMessage('AD_END');
         }
       }, 2000);
@@ -789,6 +848,7 @@ export default defineContentScript({
 
         if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
           log('[JP343] URL change - ending previous session');
+          flushDelta();
           const urlChangeState = getCurrentVideoState();
           sendMessage('VIDEO_ENDED', urlChangeState ? { state: urlChangeState } : undefined);
         }
@@ -932,6 +992,10 @@ export default defineContentScript({
     lastVideoUrl = window.location.href;
 
     browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') {
+        if (!currentSessionId) return undefined;
+        return Promise.resolve({ unflushedMs: Math.round(accumulatedDeltaMs), sessionId: currentSessionId });
+      }
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();
       }
@@ -954,6 +1018,7 @@ export default defineContentScript({
           sendVideoPause();
         }
       }
+      return undefined;
     });
 
     debugLog('INIT', 'YouTube Content Script fully initialized', {

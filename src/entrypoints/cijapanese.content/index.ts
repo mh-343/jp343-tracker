@@ -9,6 +9,10 @@ export default defineContentScript({
     let currentVideoElement: HTMLVideoElement | null = null;
     let lastTitle: string = '';
     let lastVideoId: string | null = null;
+    let lastVideoTime = 0;
+    let accumulatedDeltaMs = 0;
+    let currentSessionId: string | null = null;
+    let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
@@ -21,16 +25,21 @@ export default defineContentScript({
 
     window.addEventListener('pagehide', () => {
       if (lastVideoId) {
+        flushDelta();
         sendMessage('VIDEO_ENDED');
       }
       cleanup();
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoId) {
+        flushDelta();
         sendMessage('VIDEO_ENDED');
       }
     });
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        flushDelta();
+      }
       if (!document.hidden) {
         if (!isWatchPage()) return;
         const video = findVideoElement();
@@ -62,9 +71,22 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     function sendVideoPlay(state: VideoState): void {
-      sendMessage('VIDEO_PLAY', { state });
+      flushDelta();
+      accumulatedDeltaMs = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (response && typeof response === 'object' && 'sessionId' in response) {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+        }
+      });
       sendDiagnostic('video_play_sent');
       sendDiagnostic(state.title && state.title !== 'CI Japanese Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
+    function flushDelta(): void {
+      if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
+      const ms = accumulatedDeltaMs;
+      accumulatedDeltaMs = 0;
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
     }
 
     sendDiagnostic('content_script_loaded');
@@ -198,9 +220,9 @@ export default defineContentScript({
       };
     }
 
-    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
+    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       try {
-        await browser.runtime.sendMessage({
+        return await browser.runtime.sendMessage({
           type,
           platform: 'cijapanese',
           ...data
@@ -208,6 +230,7 @@ export default defineContentScript({
       } catch (error) {
         if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] CI Japanese: Message error:', error);
+        return undefined;
       }
     }
 
@@ -216,6 +239,10 @@ export default defineContentScript({
       video.setAttribute('data-jp343-tracked', 'true');
 
       video.addEventListener('play', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         if (!isWatchPage()) {
           log('[JP343] CI Japanese: Play on non-watch page ignored');
           return;
@@ -224,6 +251,7 @@ export default defineContentScript({
 
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
+          flushDelta();
           sendMessage('VIDEO_ENDED');
         }
 
@@ -238,29 +266,56 @@ export default defineContentScript({
 
       video.addEventListener('pause', () => {
         debugLog('VIDEO_PAUSE', '=== PAUSE ===', collectUIState());
-        sendMessage('VIDEO_PAUSE');
+        flushDelta();
+        if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+        pauseDebounceTimer = setTimeout(() => {
+          pauseDebounceTimer = null;
+          if (video.paused && !video.ended) {
+            sendMessage('VIDEO_PAUSE');
+          }
+        }, 300);
       });
 
       video.addEventListener('ended', () => {
         debugLog('VIDEO_ENDED', '=== ENDED ===', collectUIState());
+        flushDelta();
         sendMessage('VIDEO_ENDED');
         lastVideoId = null;
       });
 
       video.addEventListener('waiting', () => {
-        sendMessage('VIDEO_PAUSE');
+        flushDelta();
       });
 
       video.addEventListener('emptied', () => {
         if (document.hidden && video.paused && video.readyState === 0) {
+          flushDelta();
           sendMessage('VIDEO_PAUSE');
         }
       });
 
       video.addEventListener('playing', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         const state = getCurrentVideoState();
         if (state) {
           sendVideoPlay(state);
+        }
+      });
+
+      video.addEventListener('timeupdate', () => {
+        if (video.paused || video.ended) return;
+        const ct = video.currentTime;
+        const d = ct - lastVideoTime;
+        lastVideoTime = ct;
+        if (d > 0 && d <= 10) {
+          const realDelta = d / (video.playbackRate || 1);
+          accumulatedDeltaMs += realDelta * 1000;
+          if (accumulatedDeltaMs >= 10_000) {
+            flushDelta();
+          }
         }
       });
 
@@ -355,6 +410,7 @@ export default defineContentScript({
         log('[JP343] CI Japanese: URL change:', oldUrl, '->', lastUrl);
 
         if (lastVideoId) {
+          flushDelta();
           sendMessage('VIDEO_ENDED');
           lastVideoId = null;
           lastTitle = '';
@@ -399,6 +455,10 @@ export default defineContentScript({
     }, 3000);
 
     browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') {
+        if (!currentSessionId) return undefined;
+        return Promise.resolve({ unflushedMs: Math.round(accumulatedDeltaMs), sessionId: currentSessionId });
+      }
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();
       }
@@ -419,6 +479,7 @@ export default defineContentScript({
           sendMessage('VIDEO_PAUSE');
         }
       }
+      return undefined;
     });
   }
 });

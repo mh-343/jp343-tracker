@@ -33,6 +33,10 @@ export default defineContentScript({
     let lastEpisodeChangeTime = 0;
     let lastCurrentTime = 0;
     let lastSubtitleText = '';
+    let lastVideoTime = 0;
+    let accumulatedDeltaMs = 0;
+    let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let currentSessionId: string | null = null;
 
     function findVideoElement(): HTMLVideoElement | null {
       return (document.querySelector('.dv-player-fullscreen video') as HTMLVideoElement)
@@ -58,6 +62,7 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', () => {
       if (lastVideoId) {
+        flushDelta();
         log('[JP343] Prime Video: Page is being left - VIDEO_ENDED');
         sendMessage('VIDEO_ENDED');
       }
@@ -65,6 +70,7 @@ export default defineContentScript({
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoId) {
+        flushDelta();
         log('[JP343] Prime Video: beforeunload - VIDEO_ENDED');
         sendMessage('VIDEO_ENDED');
       }
@@ -83,9 +89,22 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     function sendVideoPlay(state: VideoState): void {
-      sendMessage('VIDEO_PLAY', { state });
+      flushDelta();
+      accumulatedDeltaMs = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (response && typeof response === 'object' && 'sessionId' in response) {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+        }
+      });
       sendDiagnostic('video_play_sent');
       sendDiagnostic(state.title && state.title !== 'Prime Video Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
+    function flushDelta(): void {
+      if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
+      const ms = accumulatedDeltaMs;
+      accumulatedDeltaMs = 0;
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
     }
 
     sendDiagnostic('content_script_loaded');
@@ -475,7 +494,9 @@ export default defineContentScript({
       const adPlaying = isAdPlaying();
 
       if (adPlaying && !isCurrentlyInAd) {
+        flushDelta();
         isCurrentlyInAd = true;
+        lastVideoTime = 0;
         log('[JP343] Prime Video: Ad started');
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
@@ -509,6 +530,7 @@ export default defineContentScript({
         episodeChangeCounter++;
         effectiveUrl = window.location.href + '#ep' + episodeChangeCounter;
         log('[JP343] Prime Video: Episode change #' + episodeChangeCounter + ' (subtitle: "' + lastSubtitleText + '" -> "' + text + '")');
+        flushDelta();
         sendMessage('VIDEO_ENDED');
         bestKnownTitle = '';
         lastCurrentTime = 0;
@@ -574,9 +596,9 @@ export default defineContentScript({
       };
     }
 
-    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
+    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       try {
-        await browser.runtime.sendMessage({
+        return await browser.runtime.sendMessage({
           type,
           platform: 'primevideo',
           ...data
@@ -584,6 +606,7 @@ export default defineContentScript({
       } catch (error) {
         if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Prime Video: Message error:', error);
+        return undefined;
       }
     }
 
@@ -592,6 +615,10 @@ export default defineContentScript({
       video.setAttribute('data-jp343-tracked', 'true');
 
       video.addEventListener('play', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
 
         if (!isWatchPage()) {
@@ -618,6 +645,7 @@ export default defineContentScript({
           episodeChangeCounter++;
           effectiveUrl = window.location.href + '#ep' + episodeChangeCounter;
           log('[JP343] Prime Video: Episode change #' + episodeChangeCounter + ' (currentTime reset: ' + lastCurrentTime.toFixed(0) + 's -> ' + video.currentTime.toFixed(0) + 's)');
+          flushDelta();
           sendMessage('VIDEO_ENDED');
           bestKnownTitle = '';
           lastCurrentTime = 0;
@@ -661,7 +689,14 @@ export default defineContentScript({
       video.addEventListener('pause', () => {
         debugLog('VIDEO_PAUSE', '=== VIDEO PAUSE EVENT ===', collectUIState());
         if (isCurrentlyInAd) return;
-        sendMessage('VIDEO_PAUSE');
+        flushDelta();
+        if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+        pauseDebounceTimer = setTimeout(() => {
+          pauseDebounceTimer = null;
+          if (video.paused && !video.ended) {
+            sendMessage('VIDEO_PAUSE');
+          }
+        }, 300);
       });
 
       video.addEventListener('ended', () => {
@@ -670,7 +705,41 @@ export default defineContentScript({
           log('[JP343] Prime Video: ended during ad ignored');
           return;
         }
+        flushDelta();
         sendMessage('VIDEO_ENDED');
+      });
+
+      video.addEventListener('waiting', () => {
+        if (!isCurrentlyInAd) {
+          flushDelta();
+        }
+      });
+
+      video.addEventListener('playing', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
+        if (isCurrentlyInAd) return;
+        const state = getCurrentVideoState();
+        if (state) {
+          sendVideoPlay(state);
+        }
+      });
+
+      video.addEventListener('timeupdate', () => {
+        if (isCurrentlyInAd) return;
+        if (video.paused || video.ended) return;
+        const ct = video.currentTime;
+        const d = ct - lastVideoTime;
+        lastVideoTime = ct;
+        if (d > 0 && d <= 10) {
+          const realDelta = d / (video.playbackRate || 1);
+          accumulatedDeltaMs += realDelta * 1000;
+          if (accumulatedDeltaMs >= 10_000) {
+            flushDelta();
+          }
+        }
       });
 
       const updateInterval = setInterval(() => {
@@ -685,6 +754,7 @@ export default defineContentScript({
 
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
             log('[JP343] Prime Video: Video change:', lastVideoId, '->', currentVideoId);
+            flushDelta();
             sendMessage('VIDEO_ENDED');
             bestKnownTitle = '';
             lastVideoId = currentVideoId;
@@ -709,6 +779,7 @@ export default defineContentScript({
     const observer = new MutationObserver(() => {
       if (currentVideoElement && lastVideoId && !isPlayerActive()) {
         log('[JP343] Prime Video: Player closed - ending session');
+        flushDelta();
         sendMessage('VIDEO_ENDED');
         currentVideoElement = null;
         bestKnownTitle = '';
@@ -787,6 +858,7 @@ export default defineContentScript({
 
         if (wasOnWatch && !isOnWatch) {
           log('[JP343] Prime Video: Left watch page');
+          flushDelta();
           sendMessage('VIDEO_ENDED');
           bestKnownTitle = '';
           return;
@@ -843,12 +915,17 @@ export default defineContentScript({
     }, 3000);
 
     browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') {
+        if (!currentSessionId) return undefined;
+        return Promise.resolve({ unflushedMs: Math.round(accumulatedDeltaMs), sessionId: currentSessionId });
+      }
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement) {
         currentVideoElement.pause();
       }
       if (message?.type === 'RESUME_VIDEO' && currentVideoElement) {
         currentVideoElement.play();
       }
+      return undefined;
     });
   }
 });

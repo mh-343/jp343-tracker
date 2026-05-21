@@ -126,7 +126,11 @@ export default defineBackground(() => {
           'metadata_missing': 'metadataMissing',
           'video_play_sent': 'videoPlaySent',
           'heartbeat_resume': 'heartbeatResume',
-          'ad_state_recovered': 'adStateRecovered'
+          'ad_state_recovered': 'adStateRecovered',
+          'session_discarded': 'sessionDiscarded',
+          'unflushed_collected': 'unflushedCollected',
+          'unflushed_failed': 'unflushedFailed',
+          'pause_debounced': 'pauseDebounced'
         };
         const milestone = milestoneMap[code];
         if (milestone) {
@@ -969,54 +973,52 @@ export default defineBackground(() => {
         return;
       }
 
-      if (savedSession.isPaused || sessionAge < 90_000) {
-        if (savedSession.tabId) {
-          try {
-            await browser.tabs.get(savedSession.tabId);
-          } catch {
-            log('[JP343] Recovery: Tab gone - finalizing session');
-            if (savedSession.accumulatedMs >= 60000) {
-              const durationMinutes = savedSession.accumulatedMs / 60000;
-              const projectId = generateProjectId(savedSession.platform, savedSession.title, savedSession.videoId);
-              const entry: PendingEntry = {
-                id: savedSession.id,
-                date: new Date(savedSession.startTime).toISOString(),
-                duration_min: durationMinutes,
-                project: savedSession.title,
-                project_id: projectId,
-                platform: savedSession.platform,
-                source: 'extension',
-                url: savedSession.url,
-                thumbnail: savedSession.thumbnailUrl,
-                synced: false,
-                syncedAt: null,
-                syncAttempts: 0,
-                lastSyncError: null,
-                channelId: savedSession.channelId,
-                channelName: savedSession.channelName,
-                channelUrl: savedSession.channelUrl,
-                activityType: savedSession.activityType,
-                serverEntryId: null
-              };
-              await savePendingEntry(entry);
-            }
-            await saveSessionState(null);
-            scheduleStatusBadgeUpdate();
-            return;
+      if (savedSession.tabId) {
+        try {
+          await browser.tabs.get(savedSession.tabId);
+        } catch {
+          log('[JP343] Recovery: Tab gone - finalizing session');
+          if (savedSession.accumulatedMs >= 60000) {
+            const durationMinutes = savedSession.accumulatedMs / 60000;
+            const projectId = generateProjectId(savedSession.platform, savedSession.title, savedSession.videoId);
+            const entry: PendingEntry = {
+              id: savedSession.id,
+              date: new Date(savedSession.startTime).toISOString(),
+              duration_min: durationMinutes,
+              project: savedSession.title,
+              project_id: projectId,
+              platform: savedSession.platform,
+              source: 'extension',
+              url: savedSession.url,
+              thumbnail: savedSession.thumbnailUrl,
+              synced: false,
+              syncedAt: null,
+              syncAttempts: 0,
+              lastSyncError: null,
+              channelId: savedSession.channelId,
+              channelName: savedSession.channelName,
+              channelUrl: savedSession.channelUrl,
+              activityType: savedSession.activityType,
+              serverEntryId: null
+            };
+            await savePendingEntry(entry);
           }
+          await saveSessionState(null);
+          scheduleStatusBadgeUpdate();
+          return;
         }
-
-        tracker.restoreSession(savedSession);
-        const restored = tracker.getCurrentSession();
-        if (restored) {
-          restored.isActive = false;
-          restored.isPaused = true;
-        }
-        await saveSessionState(restored);
-        log('[JP343] Recovery: Video session restored as paused (age:', Math.round(sessionAge / 1000), 's, wasPaused:', savedSession.isPaused, ')');
-        scheduleStatusBadgeUpdate();
-        return;
       }
+
+      tracker.restoreSession(savedSession);
+      const restored = tracker.getCurrentSession();
+      if (restored) {
+        restored.isActive = false;
+        restored.isPaused = true;
+      }
+      await saveSessionState(restored);
+      log('[JP343] Recovery: Video session restored as paused (age:', Math.round(sessionAge / 1000), 's)');
+      scheduleStatusBadgeUpdate();
+      return;
     }
 
     if (savedSession.accumulatedMs < 60000) {

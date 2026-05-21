@@ -27,6 +27,10 @@ export default defineContentScript({
     let interceptedSubtitle: string | null = null;
 
     let interceptedThumbnail: string | null = null;
+    let lastVideoTime = 0;
+    let accumulatedDeltaMs = 0;
+    let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let currentSessionId: string | null = null;
 
     window.addEventListener('jp343-disney-meta', ((event: CustomEvent<{ title: string; subtitle: string | null; thumbnail: string | null }>) => {
       interceptedTitle = event.detail.title;
@@ -52,16 +56,21 @@ export default defineContentScript({
 
     window.addEventListener('pagehide', () => {
       if (lastVideoId) {
+        flushDelta();
         sendMessage('VIDEO_ENDED');
       }
       cleanup();
     });
     window.addEventListener('beforeunload', () => {
       if (lastVideoId) {
+        flushDelta();
         sendMessage('VIDEO_ENDED');
       }
     });
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        flushDelta();
+      }
       if (!document.hidden) {
         if (!isWatchPage()) return;
         const video = findVideoElement();
@@ -87,9 +96,22 @@ export default defineContentScript({
       } catch { /* best-effort */ }
     }
     function sendVideoPlay(state: VideoState): void {
-      sendMessage('VIDEO_PLAY', { state });
+      flushDelta();
+      accumulatedDeltaMs = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (response && typeof response === 'object' && 'sessionId' in response) {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+        }
+      });
       sendDiagnostic('video_play_sent');
       sendDiagnostic(state.title && state.title !== 'Disney+ Content' ? 'metadata_found' : 'metadata_missing');
+    }
+
+    function flushDelta(): void {
+      if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
+      const ms = accumulatedDeltaMs;
+      accumulatedDeltaMs = 0;
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
     }
 
     sendDiagnostic('content_script_loaded');
@@ -449,7 +471,9 @@ export default defineContentScript({
           adEndDebounce = null;
         }
         if (!isCurrentlyInAd) {
+          flushDelta();
           isCurrentlyInAd = true;
+          lastVideoTime = 0;
           log('[JP343] Disney+: Ad started');
           sendMessage('AD_START');
         }
@@ -506,9 +530,9 @@ export default defineContentScript({
       };
     }
 
-    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<void> {
+    async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       try {
-        await browser.runtime.sendMessage({
+        return await browser.runtime.sendMessage({
           type,
           platform: 'disneyplus',
           ...data
@@ -516,6 +540,7 @@ export default defineContentScript({
       } catch (error) {
         if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
         log('[JP343] Disney+: Message error:', error);
+        return undefined;
       }
     }
 
@@ -524,6 +549,10 @@ export default defineContentScript({
       video.setAttribute('data-jp343-tracked', 'true');
 
       video.addEventListener('play', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         if (!isWatchPage()) {
           log('[JP343] Disney+: Play on non-watch page ignored');
           return;
@@ -541,6 +570,7 @@ export default defineContentScript({
 
         const videoId = getVideoId();
         if (videoId && lastVideoId && videoId !== lastVideoId) {
+          flushDelta();
           sendMessage('VIDEO_ENDED');
           bestKnownSeriesName = '';
           cachedMetadata = null;
@@ -558,7 +588,14 @@ export default defineContentScript({
       video.addEventListener('pause', () => {
         if (!isWatchPage()) return;
         if (isCurrentlyInAd) return;
-        sendMessage('VIDEO_PAUSE');
+        flushDelta();
+        if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
+        pauseDebounceTimer = setTimeout(() => {
+          pauseDebounceTimer = null;
+          if (video.paused && !video.ended) {
+            sendMessage('VIDEO_PAUSE');
+          }
+        }, 300);
       });
 
       video.addEventListener('ended', () => {
@@ -566,26 +603,47 @@ export default defineContentScript({
           log('[JP343] Disney+: Ended during ad ignored');
           return;
         }
+        flushDelta();
         sendMessage('VIDEO_ENDED');
         lastVideoId = null;
       });
 
       video.addEventListener('waiting', () => {
         if (!isCurrentlyInAd) {
-          sendMessage('VIDEO_PAUSE');
+          flushDelta();
         }
       });
 
       video.addEventListener('emptied', () => {
         if (document.hidden && video.paused && video.readyState === 0) {
+          flushDelta();
           sendMessage('VIDEO_PAUSE');
         }
       });
 
       video.addEventListener('playing', () => {
+        if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
+        lastVideoTime = video.currentTime;
+        flushDelta();
+        accumulatedDeltaMs = 0;
         const state = getCurrentVideoState();
         if (state && !state.isAd) {
           sendVideoPlay(state);
+        }
+      });
+
+      video.addEventListener('timeupdate', () => {
+        if (isCurrentlyInAd) return;
+        if (video.paused || video.ended) return;
+        const ct = video.currentTime;
+        const d = ct - lastVideoTime;
+        lastVideoTime = ct;
+        if (d > 0 && d <= 10) {
+          const realDelta = d / (video.playbackRate || 1);
+          accumulatedDeltaMs += realDelta * 1000;
+          if (accumulatedDeltaMs >= 10_000) {
+            flushDelta();
+          }
         }
       });
 
@@ -597,6 +655,7 @@ export default defineContentScript({
           const currentVideoId = getVideoId();
           if (currentVideoId && lastVideoId && currentVideoId !== lastVideoId) {
             log('[JP343] Disney+: Video switch:', lastVideoId, '->', currentVideoId);
+            flushDelta();
             sendMessage('VIDEO_ENDED');
             bestKnownSeriesName = '';
             cachedMetadata = null;
@@ -702,6 +761,7 @@ export default defineContentScript({
 
         if (wasOnWatch && !isOnWatch) {
           log('[JP343] Disney+: Left watch page');
+          flushDelta();
           sendMessage('VIDEO_ENDED');
           lastVideoId = null;
           lastTitle = '';
@@ -778,6 +838,10 @@ export default defineContentScript({
     }, 3000);
 
     browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') {
+        if (!currentSessionId) return undefined;
+        return Promise.resolve({ unflushedMs: Math.round(accumulatedDeltaMs), sessionId: currentSessionId });
+      }
       if (message?.type === 'PAUSE_VIDEO' && currentVideoElement && isWatchPage()) {
         currentVideoElement.pause();
       }
@@ -794,6 +858,7 @@ export default defineContentScript({
           }
         }
       }
+      return undefined;
     });
   }
 });
