@@ -10,6 +10,7 @@ import { showSessionsLoading, renderSessions, renderServerSessions, getCachedSer
 import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
+import { renderStretchGoals } from './stretch-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
@@ -22,6 +23,7 @@ interface DashboardData {
   goalMinutes: number;
   dayStartHour: number;
   targetStartTimes: (string | null)[];
+  stretchGoalsEnabled: boolean;
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -40,7 +42,8 @@ async function loadData(): Promise<DashboardData> {
     activeSession: result[STORAGE_KEYS.SESSION] || null,
     goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60,
     dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0)),
-    targetStartTimes: result[STORAGE_KEYS.SETTINGS]?.targetStartTimes ?? [null, null, null, null, null, null, null]
+    targetStartTimes: result[STORAGE_KEYS.SETTINGS]?.targetStartTimes ?? [null, null, null, null, null, null, null],
+    stretchGoalsEnabled: result[STORAGE_KEYS.SETTINGS]?.stretchGoalsEnabled ?? true
   };
 }
 
@@ -61,7 +64,9 @@ async function refresh(): Promise<void> {
     setLocalHourlyMinutes({ ...(data.stats.hourlyMinutes || {}) });
     setGoalMinutes(data.goalMinutes);
     setDayStartHour(data.dayStartHour);
-    renderGoalBar(data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0, data.goalMinutes);
+    const todayMinutes = data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0;
+    renderGoalBar(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
+    renderStretchGoals(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
     renderHeatmap(data.stats.dailyMinutes);
@@ -181,7 +186,7 @@ window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason;
   reportError(reason?.message || String(reason), 'dashboard.ts', reason?.stack || '', 'dashboard');
 });
-window.addEventListener('beforeunload', () => { flushErrors(); });
+window.addEventListener('pagehide', () => { flushErrors(); });
 
 setupThemeToggle();
 setupAuthUI();

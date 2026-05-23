@@ -30,12 +30,6 @@ export default defineContentScript({
       }
       cleanup();
     });
-    window.addEventListener('beforeunload', () => {
-      if (lastVideoId) {
-        flushDelta();
-        sendMessage('VIDEO_ENDED');
-      }
-    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         flushDelta();

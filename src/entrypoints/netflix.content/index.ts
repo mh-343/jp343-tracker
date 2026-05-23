@@ -38,13 +38,6 @@ export default defineContentScript({
       }
       cleanup();
     });
-    window.addEventListener('beforeunload', () => {
-      if (lastVideoId) {
-        flushDelta();
-        sendMessage('VIDEO_ENDED');
-      }
-    });
-
     let cachedPlayerTitle: { series: string; episode: string | null; episodeTitle: string | null } | null = null;
 
     let cachedBrowseThumbnail: string | null = null;

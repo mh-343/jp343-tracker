@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import type { ServerStatsResponse } from './api';
 import { mergeFirstSessions, renderTargetStartChart, setDayStartHourForTargetStart } from './target-start';
+import { renderStretchGoals } from './stretch-goals';
 
 export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
@@ -43,10 +44,14 @@ const GOAL_PRESETS = [
   { label: '2h', minutes: 120 },
 ];
 
-export function renderGoalBar(todayMinutes: number, goalMinutes: number): void {
+let _stretchEnabled = true;
+
+export function renderGoalBar(todayMinutes: number, goalMinutes: number, stretchEnabled: boolean): void {
+  _stretchEnabled = stretchEnabled;
   const done = document.getElementById('goalDone');
   const pct = document.getElementById('goalPct');
   const fill = document.getElementById('goalBarFill') as HTMLDivElement | null;
+  const wrap = document.getElementById('goalBarWrap');
   if (!done || !pct || !fill) return;
 
   const safeGoal = goalMinutes || 60;
@@ -56,15 +61,23 @@ export function renderGoalBar(todayMinutes: number, goalMinutes: number): void {
   fill.style.width = `${Math.min(progress, 100)}%`;
   const isOverflow = progress >= 100;
   const track = fill.parentElement;
-  fill.classList.toggle('overflow', isOverflow);
-  if (track) track.classList.toggle('overflow', isOverflow);
-  if (isOverflow) {
+
+  fill.classList.remove('overflow', 'completed');
+  if (track) track.classList.remove('overflow');
+  fill.style.background = '';
+  fill.style.removeProperty('--goal-cutoff');
+
+  const stretchActive = isOverflow && stretchEnabled;
+  wrap?.classList.toggle('stretch-active', stretchActive);
+
+  if (isOverflow && stretchEnabled) {
+    fill.classList.add('completed');
+  } else if (isOverflow) {
+    fill.classList.add('overflow');
+    if (track) track.classList.add('overflow');
     const cutoff = (100 / progress) * 100;
     fill.style.background = `linear-gradient(90deg, var(--accent) ${cutoff}%, var(--gradient-secondary) ${cutoff}%)`;
     fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
-  } else {
-    fill.style.background = '';
-    fill.style.removeProperty('--goal-cutoff');
   }
 }
 
@@ -141,7 +154,7 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
     });
 
     _goalMinutes = newGoal;
-    renderGoalBar(_localDailyMinutes[getLocalDateString(new Date(), _dayStartHour)] || 0, newGoal);
+    renderGoalBar(_localDailyMinutes[getLocalDateString(new Date(), _dayStartHour)] || 0, newGoal, _stretchEnabled);
     editor.classList.remove('open');
   });
 
@@ -538,7 +551,8 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
       const todayMin = Math.max(_localDailyMinutes[todayKey] || 0, serverData.today_seconds / 60);
       _localDailyMinutes[todayKey] = todayMin;
       setText('statToday', formatStatDuration(todayMin));
-      renderGoalBar(todayMin, _goalMinutes);
+      renderGoalBar(todayMin, _goalMinutes, _stretchEnabled);
+      renderStretchGoals(todayMin, _goalMinutes, _stretchEnabled);
     }
   }
   if (!fromCache && !_dayStartHourSynced && serverData.day_boundary_hour !== undefined) {
