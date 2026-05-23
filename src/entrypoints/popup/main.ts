@@ -110,25 +110,66 @@ function updateToggleDisplay(enabled: boolean): void {
 
 let _popupGoalMinutes = 60;
 let _popupDayStartHour = 0;
+let _popupStretchEnabled = true;
 
 function renderGoalMicroBar(todayMinutes: number): void {
   const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
   if (!fill) return;
   const bar = fill.parentElement;
+  const wrap = document.getElementById('goalMicroWrap');
+  const levelEl = document.getElementById('stretchLevel');
   const safeGoal = _popupGoalMinutes || 60;
   const progress = Math.round((todayMinutes / safeGoal) * 100);
   const isOverflow = progress >= 100;
-  if (bar) bar.title = `Daily goal: ${progress}%`;
-  fill.style.width = `${Math.min(progress, 100)}%`;
-  fill.classList.toggle('overflow', isOverflow);
-  if (bar) bar.classList.toggle('overflow', isOverflow);
-  if (isOverflow) {
+
+  fill.classList.remove('overflow', 'stretch');
+  if (bar) bar.classList.remove('overflow');
+  fill.style.background = '';
+  fill.style.removeProperty('--goal-cutoff');
+  if (wrap) delete wrap.dataset.level;
+
+  if (isOverflow && _popupStretchEnabled) {
+    const ratio = todayMinutes / safeGoal;
+    const thresholds = [1.0, 1.5, 2.0, 2.5, 3.0];
+    let currentLevel = 1;
+    for (let i = thresholds.length - 1; i >= 0; i--) {
+      if (ratio >= thresholds[i]) { currentLevel = i + 1; break; }
+    }
+
+    if (wrap) wrap.dataset.level = String(currentLevel);
+    if (levelEl) levelEl.textContent = `L${currentLevel}`;
+    if (bar) bar.title = `Stretch L${currentLevel}: ${progress}%`;
+
+    const levelIdx = currentLevel - 1;
+    const start = thresholds[levelIdx];
+    const end = levelIdx + 1 < thresholds.length ? thresholds[levelIdx + 1] : null;
+
+    if (end !== null) {
+      const intra = Math.round(((ratio - start) / (end - start)) * 100);
+      fill.style.width = `${Math.min(intra, 100)}%`;
+      fill.classList.add('stretch');
+    } else if (ratio > 3.0) {
+      fill.style.width = '100%';
+      fill.classList.add('stretch', 'overflow');
+      if (bar) bar.classList.add('overflow');
+      const overProgress = Math.round(((ratio - 2.5) / 0.5) * 100);
+      const cutoff = Math.round((100 / overProgress) * 100);
+      fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
+    } else {
+      fill.style.width = '100%';
+      fill.classList.add('stretch');
+    }
+  } else if (isOverflow) {
+    fill.style.width = '100%';
+    fill.classList.add('overflow');
+    if (bar) bar.classList.add('overflow');
     const cutoff = (100 / progress) * 100;
     fill.style.background = `linear-gradient(90deg, var(--accent) ${cutoff}%, var(--gradient-secondary) ${cutoff}%)`;
     fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
+    if (bar) bar.title = `Daily goal: ${progress}%`;
   } else {
-    fill.style.background = '';
-    fill.style.removeProperty('--goal-cutoff');
+    fill.style.width = `${progress}%`;
+    if (bar) bar.title = `Daily goal: ${progress}%`;
   }
 }
 
@@ -142,6 +183,7 @@ async function loadAndApplySettings(): Promise<void> {
       updateSpotifyFilterUI(settings);
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
       _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
+      _popupStretchEnabled = settings.stretchGoalsEnabled ?? true;
       whitelistedChannels = settings.whitelistedChannels || [];
       hideNonJapanese = settings.hideNonJapanese ?? false;
       trackJapaneseOnly = settings.trackJapaneseOnly ?? false;
@@ -1106,7 +1148,7 @@ updateInterval = setInterval(() => {
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
 const statsInterval = setInterval(fetchAndRenderStats, 60000);
 
-window.addEventListener('unload', () => {
+window.addEventListener('pagehide', () => {
   if (updateInterval) {
     clearInterval(updateInterval);
   }

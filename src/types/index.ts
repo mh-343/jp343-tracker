@@ -119,6 +119,7 @@ export interface ExtensionSettings {
   backgroundOpacity: number;
   colorTheme: ColorTheme;
   targetStartTimes: (string | null)[];
+  stretchGoalsEnabled: boolean;
 }
 
 export interface BlockedChannel {
@@ -299,7 +300,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   backgroundEnabled: false,
   backgroundOpacity: 75,
   colorTheme: 'magenta' as ColorTheme,
-  targetStartTimes: [null, null, null, null, null, null, null]
+  targetStartTimes: [null, null, null, null, null, null, null],
+  stretchGoalsEnabled: true
 };
 
 export const STORAGE_KEYS = {

@@ -261,6 +261,13 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
   sliderRow.appendChild(valueLabel);
   section.appendChild(sliderRow);
 
+  section.appendChild(createToggleRow(
+    'Stretch Goals',
+    'Show level tiers beyond daily goal (or classic overflow bar)',
+    settings.stretchGoalsEnabled,
+    async (val) => { await updateSettings({ stretchGoalsEnabled: val }); }
+  ));
+
   container.appendChild(section);
 }
 

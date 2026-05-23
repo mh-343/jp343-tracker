@@ -35,13 +35,6 @@ export default defineContentScript({
       }
       cleanup();
     });
-    window.addEventListener('beforeunload', () => {
-      if (lastVideoId) {
-        flushDelta();
-        sendMessage('VIDEO_ENDED');
-      }
-    });
-
     const logger = createDebugLogger('crunchyroll');
     const { log, debugLog } = logger;
     log('[JP343] Crunchyroll Content Script loaded');

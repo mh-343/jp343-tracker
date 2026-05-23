@@ -68,13 +68,7 @@ export default defineContentScript({
       }
       cleanup();
     });
-    window.addEventListener('beforeunload', () => {
-      if (lastVideoId) {
-        flushDelta();
-        log('[JP343] Prime Video: beforeunload - VIDEO_ENDED');
-        sendMessage('VIDEO_ENDED');
-      }
-    });
+
 
     const logger = createDebugLogger('primevideo');
     const { log, debugLog } = logger;

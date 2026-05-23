@@ -21,12 +21,6 @@ export default defineContentScript({
       }
       cleanup();
     });
-    window.addEventListener('beforeunload', () => {
-      if (wasPlaying) {
-        flushSpotifyDelta();
-        sendMessage('VIDEO_ENDED');
-      }
-    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         flushSpotifyDelta();

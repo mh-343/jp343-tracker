@@ -840,6 +840,24 @@ body {
 }
 
 /* Goal micro-bar */
+.goal-micro-wrap {
+  --level-color: var(--accent);
+}
+.goal-micro-wrap[data-level="2"] { --level-color: color-mix(in oklch, var(--accent) 80%, var(--gradient-secondary)); }
+.goal-micro-wrap[data-level="3"] { --level-color: color-mix(in oklch, var(--accent) 55%, var(--gradient-secondary)); }
+.goal-micro-wrap[data-level="4"] { --level-color: color-mix(in oklch, var(--accent) 30%, var(--gradient-secondary)); }
+.goal-micro-wrap[data-level="5"] { --level-color: color-mix(in oklch, var(--accent) 10%, var(--gradient-secondary)); }
+.stretch-level-badge {
+  display: none;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--level-color);
+  letter-spacing: 0.3px;
+  line-height: 1;
+  opacity: 0.85;
+  margin-bottom: 1px;
+}
+.goal-micro-wrap[data-level] .stretch-level-badge { display: block; }
 .goal-micro-bar {
   height: 3px;
   background: rgba(255, 255, 255, 0.06);
@@ -847,14 +865,24 @@ body {
 }
 .goal-micro-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--accent));
+  background: var(--accent);
   max-width: 100%;
+}
+.goal-micro-fill.stretch {
+  background: var(--level-color);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--level-color) 30%, transparent);
 }
 .goal-micro-bar.overflow { overflow: visible; }
 .goal-micro-fill.overflow {
-  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.4);
   position: relative;
   max-width: none;
+}
+.goal-micro-fill.overflow:not(.stretch) {
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.4);
+}
+.goal-micro-fill.stretch.overflow {
+  background: linear-gradient(90deg, var(--level-color) var(--goal-cutoff), color-mix(in srgb, var(--level-color) 50%, #fff) var(--goal-cutoff));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--level-color) 40%, transparent);
 }
 .goal-micro-fill.overflow::after {
   content: '';
@@ -866,16 +894,15 @@ body {
   height: 7px;
   border-radius: 50%;
   background: #fff;
-  border: 1.5px solid var(--accent);
-  box-shadow: 0 0 4px rgba(var(--accent-rgb), 0.5);
+  border: 1.5px solid var(--level-color);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--level-color) 50%, transparent);
 }
 [data-theme="light"] .goal-micro-bar { background: rgba(0, 0, 0, 0.05); }
 [data-theme="light"] .goal-micro-fill.overflow {
-  box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.15);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--level-color) 15%, transparent);
 }
 [data-theme="light"] .goal-micro-fill.overflow::after {
   background: #fff;
-  border-color: var(--accent);
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
 }
 

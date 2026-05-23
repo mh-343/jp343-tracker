@@ -68,13 +68,6 @@ export default defineContentScript({
         }
       }
     });
-    window.addEventListener('beforeunload', () => {
-      if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
-        flushDelta();
-        const state = getCurrentVideoState();
-        sendMessage('VIDEO_ENDED', state ? { state } : undefined);
-      }
-    });
     document.addEventListener('visibilitychange', () => {
       if (!extensionContextValid) return;
       if (document.hidden) {
