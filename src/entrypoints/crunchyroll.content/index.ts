@@ -2,6 +2,7 @@
 
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { showUpdateNotification } from '../../lib/update-notification';
 
 interface CrunchyrollMetadata {
   title: string;
@@ -642,7 +643,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+          showUpdateNotification();
+          return;
+        }
         log('[JP343] Message error:', error);
         return undefined;
       }
