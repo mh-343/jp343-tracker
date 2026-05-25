@@ -1,5 +1,6 @@
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { showUpdateNotification } from '../../lib/update-notification';
 
 export default defineContentScript({
   matches: ['*://*.cijapanese.com/*'],
@@ -222,7 +223,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+          showUpdateNotification();
+          return;
+        }
         log('[JP343] CI Japanese: Message error:', error);
         return undefined;
       }

@@ -2,6 +2,7 @@
 
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { showUpdateNotification } from '../../lib/update-notification';
 import { parseSeasonOnly } from '../../lib/title-parsing';
 
 interface PrimeVideoMetadata {
@@ -598,7 +599,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+          showUpdateNotification();
+          return;
+        }
         log('[JP343] Prime Video: Message error:', error);
         return undefined;
       }

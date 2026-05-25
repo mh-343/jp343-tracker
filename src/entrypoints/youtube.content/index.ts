@@ -6,6 +6,7 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
 import { isJapaneseContent } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
+import { showUpdateNotification } from '../../lib/update-notification';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -295,11 +296,12 @@ export default defineContentScript({
     }
 
     function isExtensionContextValid(): boolean {
+      if (!extensionContextValid) return false;
       try {
-        return extensionContextValid && !!browser.runtime?.id;
-      } catch {
-        return false;
-      }
+        if (browser.runtime?.id) return true;
+      } catch { /* context gone */ }
+      invalidateExtensionContext();
+      return false;
     }
 
     function invalidateExtensionContext(): void {
@@ -307,6 +309,7 @@ export default defineContentScript({
         log('[JP343] Extension context invalid - stopping tracking');
         debugLog('CONTEXT', 'Extension context invalid - stopping tracking');
         extensionContextValid = false;
+        showUpdateNotification();
         if (adCheckInterval) {
           clearInterval(adCheckInterval);
           adCheckInterval = null;
@@ -596,10 +599,7 @@ export default defineContentScript({
     }
 
     async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
-      if (!isExtensionContextValid()) {
-        invalidateExtensionContext();
-        return;
-      }
+      if (!isExtensionContextValid()) return;
 
       try {
         return await browser.runtime.sendMessage({
@@ -741,10 +741,7 @@ export default defineContentScript({
 
       if (!stateUpdateInterval) {
         stateUpdateInterval = setInterval(() => {
-          if (!isExtensionContextValid()) {
-            invalidateExtensionContext();
-            return;
-          }
+          if (!isExtensionContextValid()) return;
           const state = getCurrentVideoState();
           if (state && state.isPlaying && !state.isAd) {
             sendMessage('VIDEO_STATE_UPDATE', { state });
@@ -774,10 +771,7 @@ export default defineContentScript({
       if (adCheckInterval) return;
 
       adCheckInterval = setInterval(() => {
-        if (!isExtensionContextValid()) {
-          invalidateExtensionContext();
-          return;
-        }
+        if (!isExtensionContextValid()) return;
 
         const isAd = isAdPlaying();
 

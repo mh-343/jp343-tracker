@@ -176,7 +176,7 @@ function renderGoalMicroBar(todayMinutes: number): void {
       fill.style.width = '100%';
       fill.classList.add('stretch', 'overflow');
       if (bar) bar.classList.add('overflow');
-      const overProgress = Math.round(((ratio - 2.5) / 0.5) * 100);
+      const overProgress = Math.round(((ratio - 3.0) / 0.5) * 100);
       const cutoff = Math.round((100 / overProgress) * 100);
       fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
       if (wrap) wrap.dataset.goalState = 'overflow';
@@ -218,7 +218,7 @@ function renderGoalMicroBar(todayMinutes: number): void {
     detailText = `${formatDuration(safeGoal - todayMinutes)} left to reach your goal`;
   } else if (currentLevel > 0) {
     if (currentLevel >= 5) {
-      detailText = `${formatDuration(todayMinutes - safeGoal * 2.5)} past the final stretch`;
+      detailText = `${formatDuration(todayMinutes - safeGoal * 3)} past the final stretch`;
     } else {
       const nextThreshold = [1.5, 2.0, 2.5, 3.0][currentLevel - 1];
       const nextTime = safeGoal * nextThreshold;
@@ -1045,16 +1045,26 @@ elements.btnStop.addEventListener('click', async () => {
   }
 });
 
-document.getElementById('btnDashboard')?.addEventListener('click', () => {
-  const dashboardUrl = browser.runtime.getURL('/dashboard.html');
-  browser.tabs.create({ url: dashboardUrl });
+async function openOrFocusDashboard(path: string): Promise<void> {
+  const baseUrl = browser.runtime.getURL('/dashboard.html');
+  const existing = await browser.tabs.query({ url: baseUrl });
+  if (existing.length > 0 && existing[0].id != null) {
+    const tab = existing[0];
+    const targetUrl = browser.runtime.getURL(path);
+    await browser.tabs.update(tab.id!, { active: true, url: targetUrl });
+    try { await browser.windows.update(tab.windowId!, { focused: true }); } catch { /* unavailable on Android */ }
+  } else {
+    await browser.tabs.create({ url: browser.runtime.getURL(path) });
+  }
   window.close();
+}
+
+document.getElementById('btnDashboard')?.addEventListener('click', async () => {
+  await openOrFocusDashboard('/dashboard.html');
 });
 
-document.getElementById('btnSettings')?.addEventListener('click', () => {
-  const settingsUrl = browser.runtime.getURL('/dashboard.html') + '?tab=settings';
-  browser.tabs.create({ url: settingsUrl });
-  window.close();
+document.getElementById('btnSettings')?.addEventListener('click', async () => {
+  await openOrFocusDashboard('/dashboard.html?tab=settings');
 });
 
 document.getElementById('btnJpFilter')?.addEventListener('click', async () => {

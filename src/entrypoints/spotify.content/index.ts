@@ -1,5 +1,6 @@
 import type { VideoState, SpotifyContentType } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
+import { showUpdateNotification } from '../../lib/update-notification';
 
 export default defineContentScript({
   matches: ['*://open.spotify.com/*'],
@@ -213,7 +214,10 @@ export default defineContentScript({
           ...data
         });
       } catch (error) {
-        if (error instanceof Error && error.message.includes('Extension context invalidated')) return;
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+          showUpdateNotification();
+          return;
+        }
         log('[JP343] Message error:', error);
         return undefined;
       }
