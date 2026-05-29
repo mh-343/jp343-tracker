@@ -203,6 +203,10 @@ body {
   border-color: rgba(232,67,147,0.25);
 }
 
+.card-podcasts {
+  border-color: rgba(232,67,147,0.25);
+}
+
 .account-actions {
   display: flex;
   gap: 12px;

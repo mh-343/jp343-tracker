@@ -29,7 +29,7 @@
         <span class="badge"><span class="badge-dot" style="background:#1db954"></span>Spotify</span>
         <span class="badge"><span class="badge-dot" style="background:#e84393"></span>CI Japanese</span>
       </div>
-      <p class="platforms-hint">Works in the background while you watch.</p>
+      <p class="platforms-hint">Tracking runs in the background while you watch.</p>
       <p class="platforms-hint">If you already had streaming tabs open, reload them to start tracking.</p>
     </section>
 
@@ -40,7 +40,7 @@
         </div>
         <div class="card-body">
           <h2>YouTube: Track Japanese only</h2>
-          <p>Only YouTube videos with Japanese in the title are counted. Non-Japanese YouTube content is skipped.</p>
+          <p>Only YouTube videos with Japanese in the title are counted. Anything else is skipped.</p>
         </div>
         <label class="toggle" id="trackJpToggle">
           <input type="checkbox" id="trackJpCheckbox">
@@ -53,7 +53,7 @@
         </div>
         <div class="card-body">
           <h2>YouTube feed filter</h2>
-          <p>Hide non-Japanese videos on your YouTube feed. Toggle it anytime in the popup.</p>
+          <p>Hide non-Japanese videos on your YouTube feed. Toggle it anytime.</p>
         </div>
         <div class="feed-filter-hint">
           <svg width="30" height="20" viewBox="0 0 30 20"><rect width="30" height="20" rx="2" fill="white"/><circle cx="15" cy="10" r="5" fill="#bc002d"/></svg>
@@ -73,6 +73,19 @@
       <div class="account-actions">
         <a class="btn btn-primary" id="btnCreateAccount">Create Account</a>
         <a class="btn btn-ghost" id="btnMaybeLater">Maybe Later</a>
+      </div>
+    </section>
+
+    <section class="card card-podcasts">
+      <div class="card-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+      </div>
+      <div class="card-body">
+        <h2>Listen to Japanese podcasts</h2>
+        <p>A free podcast player on jp343.com, built for learners. Listen in any browser on your phone or laptop, and with a jp343 account your time counts as immersion automatically.</p>
+      </div>
+      <div class="account-actions">
+        <a class="btn btn-primary" href="https://jp343.com/podcasts/?src=ext_welcome" target="_blank">Open Podcasts</a>
       </div>
     </section>
 
