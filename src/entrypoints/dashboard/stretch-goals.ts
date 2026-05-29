@@ -176,9 +176,8 @@ export function renderStretchGoals(todayMinutes: number, goalMinutes: number, en
     const target = Math.round(safeGoal * level.multiplier);
     const state = getState(todayMinutes, prevTarget, target);
     const isLastLevel = level === STRETCH_LEVELS[STRETCH_LEVELS.length - 1];
-    const range = target - prevTarget;
-    const progress = isLastLevel && state === 'unlocked' && range > 0
-      ? Math.round(((todayMinutes - prevTarget) / range) * 100)
+    const progress = isLastLevel && state === 'unlocked'
+      ? Math.round((todayMinutes / target) * 100)
       : getProgress(todayMinutes, prevTarget, target);
     states.push(state);
     slider.appendChild(createSlide(level, state, progress, todayMinutes, target));
