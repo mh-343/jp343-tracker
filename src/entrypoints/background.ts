@@ -927,7 +927,7 @@ export default defineBackground(() => {
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
 
-  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify', 'generic'];
+  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000;
 
   function isValidSavedSession(session: unknown): session is TrackingSession {

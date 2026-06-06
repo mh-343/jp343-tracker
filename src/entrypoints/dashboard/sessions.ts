@@ -20,7 +20,9 @@ const platformIcons: Record<string, string> = {
   primevideo: 'P',
   disneyplus: 'D',
   cijapanese: '漢',
+  nihongojikan: '時',
   spotify: '♪',
+  twitch: 'T',
   generic: '⏵'
 };
 

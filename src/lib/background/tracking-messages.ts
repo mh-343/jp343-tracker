@@ -1,24 +1,28 @@
-import type { ActivityType, ExtensionMessage, TrackingSession, VideoState } from '../../types';
+import type { ActivityType, ExtensionMessage, Platform, TrackingSession, VideoState } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
-import { isJapaneseContent } from '../language-detection';
+import { isJapaneseContent, isLikelyJapaneseVideo } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
 
-async function checkJapaneseVideo(videoId: string, domTitle: string, originalTitle?: string): Promise<boolean> {
-  if (originalTitle && isJapaneseContent(originalTitle)) return true;
-  if (isJapaneseContent(domTitle)) return true;
-  if (jpCheckCache.has(videoId)) return jpCheckCache.get(videoId)!;
+function isJapaneseGatedPlatform(platform: Platform): boolean {
+  return platform === 'youtube' || platform === 'twitch';
+}
+
+async function checkJapaneseVideo(state: VideoState): Promise<boolean> {
+  if (isLikelyJapaneseVideo(state)) return true;
+  if (!state.videoId || state.platform !== 'youtube') return false;
+  if (jpCheckCache.has(state.videoId)) return jpCheckCache.get(state.videoId)!;
   try {
-    const title = await fetchOembedTitle(videoId);
+    const title = await fetchOembedTitle(state.videoId);
     const result = isJapaneseContent(title ?? '');
-    jpCheckCache.set(videoId, result);
+    jpCheckCache.set(state.videoId, result);
     return result;
   } catch {
-    jpCheckCache.set(videoId, false);
+    jpCheckCache.set(state.videoId, false);
     return false;
   }
 }
@@ -61,7 +65,7 @@ export async function handleTrackingMessage(
       if ('state' in message && message.state && typeof message.state === 'object') {
         const channelId = message.state.channelId;
         if (channelId && isChannelInList(settings.blockedChannels, channelId, message.state.channelUrl)) {
-          if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
+          if (settings.trackJapaneseOnly && isJapaneseGatedPlatform(message.state.platform)) {
             context.setLastSkippedChannel({
               channelId,
               channelName: message.state.channelName || channelId,
@@ -81,15 +85,12 @@ export async function handleTrackingMessage(
 
         if (
           settings.trackJapaneseOnly &&
-          message.state.platform === 'youtube'
+          isJapaneseGatedPlatform(message.state.platform)
         ) {
           const isWhitelisted = channelId &&
             isChannelInList(settings.whitelistedChannels, channelId, message.state.channelUrl);
           if (!isWhitelisted && message.state.title) {
-            const origTitle = message.state.originalTitle ?? undefined;
-            const isJP = message.state.videoId
-              ? await checkJapaneseVideo(message.state.videoId, message.state.title, origTitle)
-              : isJapaneseContent(origTitle || message.state.title);
+            const isJP = await checkJapaneseVideo(message.state);
             if (!isJP) {
               if (channelId) {
                 context.setLastSkippedChannel({
@@ -211,7 +212,7 @@ export async function handleTrackingMessage(
         if (message.state.channelId || message.state.title) {
           const settings = await context.loadSettings();
           if (message.state.channelId && isChannelInList(settings.blockedChannels, message.state.channelId, message.state.channelUrl)) {
-            if (settings.trackJapaneseOnly && message.state.platform === 'youtube') {
+            if (settings.trackJapaneseOnly && isJapaneseGatedPlatform(message.state.platform)) {
               context.setLastSkippedChannel({
                 channelId: message.state.channelId,
                 channelName: message.state.channelName || message.state.channelId,
@@ -228,17 +229,14 @@ export async function handleTrackingMessage(
           }
           if (
             settings.trackJapaneseOnly &&
-            message.state.platform === 'youtube' &&
+            isJapaneseGatedPlatform(message.state.platform) &&
             message.state.title
           ) {
             const chId = message.state.channelId;
             const isWhitelisted = chId &&
               isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
             if (!isWhitelisted) {
-              const origTitle = message.state.originalTitle ?? undefined;
-              const isJP = message.state.videoId
-                ? await checkJapaneseVideo(message.state.videoId, message.state.title, origTitle)
-                : isJapaneseContent(origTitle || message.state.title);
+              const isJP = await checkJapaneseVideo(message.state);
               if (!isJP) {
                 if (chId) {
                   context.setLastSkippedChannel({
@@ -261,8 +259,8 @@ export async function handleTrackingMessage(
 
         if (
           !tracker.getCurrentSession() &&
-          message.state.originalTitle &&
-          message.state.platform === 'youtube' &&
+          (message.state.originalTitle || message.state.audioLanguage) &&
+          isJapaneseGatedPlatform(message.state.platform) &&
           message.state.isPlaying
         ) {
           const settings = await context.loadSettings();
@@ -272,9 +270,7 @@ export async function handleTrackingMessage(
             if (lastSkipped && chId && (lastSkipped.channelId === chId || (lastSkipped.channelUrl && message.state.channelUrl && lastSkipped.channelUrl === message.state.channelUrl))) {
               const isWhitelisted = isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
               if (!isWhitelisted) {
-                const isJP = message.state.videoId
-                  ? await checkJapaneseVideo(message.state.videoId, message.state.title, message.state.originalTitle)
-                  : isJapaneseContent(message.state.originalTitle);
+                const isJP = await checkJapaneseVideo(message.state);
                 if (isJP) {
                   context.log('[JP343] Re-evaluation: original title is JP, starting session');
                   context.setLastSkippedChannel(null);
@@ -463,6 +459,8 @@ export async function handleTrackingMessage(
         /amazon\.\w+.*\/gp\/video/,
         /disneyplus\.com/,
         /cijapanese\.com/,
+        /nijapanese\.com/,
+        /nihongo-jikan\.com/,
         /open\.spotify\.com/
       ];
       const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));

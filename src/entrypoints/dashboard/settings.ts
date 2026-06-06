@@ -24,7 +24,9 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   primevideo: 'Prime Video',
   disneyplus: 'Disney+',
   cijapanese: 'CI Japanese',
+  nihongojikan: 'Nihongo no Jikan',
   spotify: 'Spotify',
+  twitch: 'Twitch',
   generic: 'Generic'
 };
 
@@ -301,7 +303,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
 
   section.appendChild(createToggleRow(
     'Track Japanese only',
-    'Only track videos YouTube identifies as Japanese',
+    'Only track YouTube videos and Twitch streams identified as Japanese',
     settings.trackJapaneseOnly ?? false,
     async (val) => { await updateSettings({ trackJapaneseOnly: val }); }
   ));

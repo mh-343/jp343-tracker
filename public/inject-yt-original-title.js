@@ -5,6 +5,7 @@
   var player = document.getElementById(targetId);
   var title = null;
   var videoId = null;
+  var audioLang = null;
 
   try {
     var path = window.location.pathname;
@@ -20,11 +21,17 @@
     try {
       var response = player.getPlayerResponse();
       title = (response && response.videoDetails && response.videoDetails.title) || null;
+      var tl = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
+      var tracks = tl && tl.captionTracks;
+      if (tracks && tracks.length) {
+        var asr = tracks.filter(function(t){ return t && t.kind === 'asr'; })[0];
+        audioLang = (asr && asr.languageCode) || null;
+      }
     } catch(e) {}
   }
 
   window.dispatchEvent(new CustomEvent('jp343-original-title', {
-    detail: { title: title, videoId: videoId }
+    detail: { title: title, videoId: videoId, audioLang: audioLang }
   }));
 
   var me = document.currentScript;

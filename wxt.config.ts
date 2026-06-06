@@ -6,7 +6,7 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.8.3',
+    version: '2.8.4',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
@@ -43,7 +43,10 @@ export default defineConfig({
       '*://*.amazon.com.br/*',
       '*://*.disneyplus.com/*',
       '*://*.cijapanese.com/*',
+      '*://*.nijapanese.com/*',
+      '*://*.nihongo-jikan.com/*',
       '*://open.spotify.com/*',
+      '*://*.twitch.tv/*',
       '*://jp343.com/*',
       '*://*.jp343.com/*',
       ...(process.env.NODE_ENV !== 'production' ? [
@@ -82,6 +85,10 @@ export default defineConfig({
       {
         resources: ['inject-yt-innertube-title.js'],
         matches: ['*://*.youtube.com/*']
+      },
+      {
+        resources: ['inject-twitch-meta.js'],
+        matches: ['*://*.twitch.tv/*']
       }
     ]
   },
