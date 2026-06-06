@@ -741,6 +741,7 @@
     .session-platform.platform-nihongojikan { background: rgba(120, 180, 140, 0.12); color: #78b48c; }
     .session-platform.platform-spotify { background: rgba(30, 215, 96, 0.12); color: #1ed760; }
     .session-platform.platform-twitch { background: rgba(145, 70, 255, 0.14); color: #9146ff; }
+    .session-platform.platform-asbplayer { background: linear-gradient(90deg, #e6157a, #a01b6c); color: #fff; }
 
     .session-activity-type {
       padding: 1px 6px;
@@ -949,6 +950,7 @@
     [data-theme="light"] .session-platform.platform-nihongojikan { background: rgba(120, 180, 140, 0.10); color: #3f7a52; }
     [data-theme="light"] .session-platform.platform-spotify { background: rgba(30, 215, 96, 0.08); color: #158c3f; }
     [data-theme="light"] .session-platform.platform-twitch { background: rgba(145, 70, 255, 0.10); color: #7c3aed; }
+    [data-theme="light"] .session-platform.platform-asbplayer { background: linear-gradient(90deg, #e6157a, #a01b6c); color: #fff; }
     [data-theme="light"] .session-activity-type { background: var(--accent-soft); color: var(--accent); }
     [data-theme="light"] .skeleton {
       background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);

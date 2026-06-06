@@ -68,6 +68,7 @@ const platformIcons: Record<Platform, string> = {
   nihongojikan: '時',
   spotify: '♪',
   twitch: 'T',
+  asbplayer: 'A',
   generic: '⏵'
 };
 

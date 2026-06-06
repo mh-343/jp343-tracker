@@ -47,6 +47,7 @@ export default defineConfig({
       '*://*.nihongo-jikan.com/*',
       '*://open.spotify.com/*',
       '*://*.twitch.tv/*',
+      '*://app.asbplayer.dev/*',
       '*://jp343.com/*',
       '*://*.jp343.com/*',
       ...(process.env.NODE_ENV !== 'production' ? [
