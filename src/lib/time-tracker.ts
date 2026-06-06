@@ -57,6 +57,10 @@ export class TimeTracker {
         log('[JP343] Thumbnail updated on session resume');
       }
 
+      if (this.session.audioLanguage == null && videoState.audioLanguage) {
+        this.session.audioLanguage = videoState.audioLanguage;
+      }
+
       log('[JP343] Session resumed:', this.session.title);
       return this.session;
     }
@@ -81,6 +85,7 @@ export class TimeTracker {
       channelId: videoState.channelId || null,
       channelName: videoState.channelName || null,
       channelUrl: videoState.channelUrl || null,
+      audioLanguage: videoState.audioLanguage ?? null,
       activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
 

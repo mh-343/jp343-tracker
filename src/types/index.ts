@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'spotify' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -19,7 +19,9 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   primevideo: 'watching',
   disneyplus: 'watching',
   cijapanese: 'watching',
+  nihongojikan: 'watching',
   spotify: 'listening',
+  twitch: 'watching',
   generic: 'watching',
 };
 
@@ -37,6 +39,7 @@ export interface VideoState {
   channelName: string | null;
   channelUrl: string | null;
   originalTitle?: string | null;
+  audioLanguage?: string | null;
   contentType?: SpotifyContentType;
 }
 
@@ -57,6 +60,7 @@ export interface TrackingSession {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
+  audioLanguage?: string | null;
   activityType?: ActivityType;
 }
 
@@ -287,7 +291,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSync: true,
   mergeSameDaySessions: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'spotify'],
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch'],
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
   dailyGoalMinutes: 60,

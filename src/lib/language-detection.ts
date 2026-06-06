@@ -24,3 +24,30 @@ export function isJapaneseContent(text: string): boolean {
 
   return KANA_PATTERN.test(input);
 }
+
+export function isJapaneseLanguageCode(code: string | null | undefined): boolean {
+  if (!code) return false;
+  const c = code.toLowerCase();
+  return c === 'ja' || c.startsWith('ja-');
+}
+
+export function containsKanji(text: string): boolean {
+  return KANJI_PATTERN.test(text);
+}
+
+interface JapaneseVideoSignals {
+  title: string;
+  originalTitle?: string | null;
+  channelName?: string | null;
+  audioLanguage?: string | null;
+}
+
+export function isLikelyJapaneseVideo(signals: JapaneseVideoSignals): boolean {
+  if (isJapaneseLanguageCode(signals.audioLanguage)) return true;
+  if (isJapaneseContent(signals.title)) return true;
+  if (signals.originalTitle && isJapaneseContent(signals.originalTitle)) return true;
+  const titleHasKanji = containsKanji(signals.title)
+    || (!!signals.originalTitle && containsKanji(signals.originalTitle));
+  if (titleHasKanji && !!signals.channelName && isJapaneseContent(signals.channelName)) return true;
+  return false;
+}

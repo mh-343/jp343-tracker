@@ -4,7 +4,7 @@ import {
   scheduleStatusBadgeUpdate,
   updateStatusBadge,
 } from '../badge-service';
-import { isJapaneseContent } from '../language-detection';
+import { isLikelyJapaneseVideo } from '../language-detection';
 import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../server-sessions';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
@@ -167,7 +167,11 @@ export async function handleSettingsMessage(
         if (settings.trackJapaneseOnly) {
           const currentSession = tracker.getCurrentSession();
           if (currentSession && currentSession.channelId === message.channelId) {
-            const videoIsJp = isJapaneseContent(currentSession.title || '');
+            const videoIsJp = isLikelyJapaneseVideo({
+              title: currentSession.title,
+              channelName: currentSession.channelName,
+              audioLanguage: currentSession.audioLanguage
+            });
             if (!videoIsJp) {
               const entry = tracker.finalizeSession();
               if (entry) {

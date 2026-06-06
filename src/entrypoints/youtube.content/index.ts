@@ -4,7 +4,7 @@ import type { VideoState, WhitelistedChannel, BlockedChannel } from '../../types
 import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
-import { isJapaneseContent } from '../../lib/language-detection';
+import { isJapaneseContent, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { showUpdateNotification } from '../../lib/update-notification';
 
@@ -23,8 +23,10 @@ export default defineContentScript({
     let lastVideoPauseTime = 0;
     let pendingRetryTimeouts: ReturnType<typeof setTimeout>[] = [];
     let originalTitle: string | null = null;
+    let videoAudioLanguage: string | null = null;
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    let originalTitleResponsePending = false;
     let useOriginalTitles = false;
     let trackJapaneseOnly = false;
     let hideNonJapanese = false;
@@ -469,28 +471,51 @@ export default defineContentScript({
       return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
+    interface OriginalTitleDetail {
+      title: string | null;
+      videoId: string | null;
+      audioLang?: string | null;
+    }
+
     function handleOriginalTitleResponse(e: Event): void {
-      const detail = (e as CustomEvent).detail;
+      const detail = (e as CustomEvent<OriginalTitleDetail>).detail;
       if (!detail) return;
       if (detail.videoId !== originalTitleVideoId) return;
+      let gotSignal = false;
+      if (typeof detail.audioLang === 'string' && detail.audioLang) {
+        videoAudioLanguage = detail.audioLang;
+        gotSignal = true;
+      }
       if (detail.title && typeof detail.title === 'string') {
         originalTitle = detail.title;
         log('[JP343] Original title:', originalTitle);
         sendDiagnostic('original_title_success');
+        gotSignal = true;
+      }
+      if (gotSignal) {
+        originalTitleResponsePending = false;
         const state = getCurrentVideoState();
         if (state && state.isPlaying && !state.isAd) {
           sendMessage('VIDEO_STATE_UPDATE', { state });
         }
-        checkTrackingToast();
       }
+      checkTrackingToast();
     }
 
     window.addEventListener('jp343-original-title', handleOriginalTitleResponse);
 
     function requestOriginalTitle(videoId: string | null): void {
-      if (!videoId) { originalTitle = null; return; }
+      if (!videoId) {
+        originalTitle = null;
+        videoAudioLanguage = null;
+        originalTitleVideoId = null;
+        originalTitleResponsePending = false;
+        return;
+      }
       originalTitle = null;
+      videoAudioLanguage = null;
       originalTitleVideoId = videoId;
+      originalTitleResponsePending = true;
       if (originalTitleRetryTimer) {
         clearTimeout(originalTitleRetryTimer);
         originalTitleRetryTimer = null;
@@ -500,6 +525,7 @@ export default defineContentScript({
 
     function attemptOriginalTitle(videoId: string | null, attempt: number): void {
       if (attempt >= 3) {
+        originalTitleResponsePending = false;
         sendDiagnostic('original_title_fallback');
         checkTrackingToast();
         return;
@@ -511,14 +537,14 @@ export default defineContentScript({
       } catch {
         log('[JP343] Failed to inject original title script');
       }
-      if (!originalTitle) {
+      if (!originalTitle || !videoAudioLanguage) {
         originalTitleRetryTimer = setTimeout(() => attemptOriginalTitle(videoId, attempt + 1), 1000);
       }
     }
 
     function checkTrackingToast(): void {
       if (!hideNonJapanese || !trackJapaneseOnly) { hideTrackingToast(); return; }
-      if (useOriginalTitles && !originalTitle && originalTitleVideoId === getVideoId()) return;
+      if (originalTitleResponsePending && originalTitleVideoId === getVideoId()) return;
       const state = getCurrentVideoState();
 
       if (state?.channelId) {
@@ -530,7 +556,7 @@ export default defineContentScript({
 
       if (!state || state.isAd) return;
       if (!state.channelId || !state.channelName) return;
-      if (isJapaneseContent(state.title)) return;
+      if (isLikelyJapaneseVideo(state)) return;
       if (!isJapaneseContent(state.channelName)) return;
 
       const player = document.querySelector('#movie_player') || document.querySelector('.player-container');
@@ -587,7 +613,8 @@ export default defineContentScript({
         channelId: channelInfo.id,
         channelName: channelInfo.name,
         channelUrl: channelInfo.url,
-        originalTitle: originalTitle || null
+        originalTitle: originalTitle || null,
+        audioLanguage: videoAudioLanguage
       };
     }
 
@@ -854,6 +881,8 @@ export default defineContentScript({
           originalTitleRetryTimer = null;
         }
         originalTitle = null;
+        videoAudioLanguage = null;
+        originalTitleResponsePending = false;
 
         if (currentVideoElement) {
           currentVideoElement.removeAttribute('data-jp343-tracked');
