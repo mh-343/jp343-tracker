@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -22,6 +22,7 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   nihongojikan: 'watching',
   spotify: 'listening',
   twitch: 'watching',
+  asbplayer: 'watching',
   generic: 'watching',
 };
 
@@ -124,6 +125,7 @@ export interface ExtensionSettings {
   colorTheme: ColorTheme;
   targetStartTimes: (string | null)[];
   stretchGoalsEnabled: boolean;
+  platformDefaultsMigrated?: boolean;
 }
 
 export interface BlockedChannel {
@@ -291,7 +293,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSync: true,
   mergeSameDaySessions: true,
   minDurationMinutes: 1,
-  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch'],
+  enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'asbplayer'],
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'music', 'audiobook'],
   dailyGoalMinutes: 60,

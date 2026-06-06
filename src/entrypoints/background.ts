@@ -235,6 +235,16 @@ export default defineBackground(() => {
         log('[JP343] Migrated to hideNonJapanese/trackJapaneseOnly');
       }
       raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
+
+      if (!raw.platformDefaultsMigrated) {
+        for (const p of ['twitch', 'nihongojikan', 'asbplayer'] as Platform[]) {
+          if (!raw.enabledPlatforms.includes(p)) raw.enabledPlatforms.push(p);
+        }
+        raw.platformDefaultsMigrated = true;
+        await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: raw });
+        log('[JP343] Enabled default platforms for existing install');
+      }
+
       let migrated = false;
 
       // Normalize @handle → UC-ID within each list
@@ -824,7 +834,7 @@ export default defineBackground(() => {
 
   const MAX_RESTORE_AGE_MS = 4 * 60 * 60 * 1000;
 
-  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'generic'];
+  const VALID_PLATFORMS = ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'asbplayer', 'generic'];
   const MIN_VALID_TIMESTAMP = 1704067200000;
 
   function isValidSavedSession(session: unknown): session is TrackingSession {
@@ -1065,6 +1075,7 @@ export default defineBackground(() => {
         primevideo: /primevideo\.com|amazon\.\w+/,
         disneyplus: /disneyplus\.com/,
         spotify: /open\.spotify\.com/,
+        asbplayer: /app\.asbplayer\.dev/,
       };
       const samePlatform = platformDomains[session.platform]?.test(changeInfo.url);
       if (!samePlatform) {

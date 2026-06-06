@@ -461,7 +461,9 @@ export async function handleTrackingMessage(
         /cijapanese\.com/,
         /nijapanese\.com/,
         /nihongo-jikan\.com/,
-        /open\.spotify\.com/
+        /open\.spotify\.com/,
+        /twitch\.tv/,
+        /app\.asbplayer\.dev/
       ];
       const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
 

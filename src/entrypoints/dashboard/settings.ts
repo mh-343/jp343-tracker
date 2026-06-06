@@ -27,6 +27,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   nihongojikan: 'Nihongo no Jikan',
   spotify: 'Spotify',
   twitch: 'Twitch',
+  asbplayer: 'asbplayer',
   generic: 'Generic'
 };
 
