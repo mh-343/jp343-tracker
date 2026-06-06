@@ -15,7 +15,7 @@
 
   if (!login) { fire({ login: null, isLive: false }); return; }
 
-  var query = '{ user(login:"' + login + '"){ displayName profileImageURL(width:70) stream { id type previewImageURL(width:320,height:180) } broadcastSettings { language title } } }';
+  var query = '{ user(login:"' + login + '"){ displayName profileImageURL(width:150) stream { id type } broadcastSettings { language title } } }';
 
   fetch('https://gql.twitch.tv/gql', {
     method: 'POST',
@@ -28,7 +28,7 @@
       if (!u) { fire({ login: login, isLive: false }); return; }
       var bs = u.broadcastSettings || {};
       var stream = u.stream || null;
-      var thumbnail = (stream && stream.previewImageURL) || u.profileImageURL || '';
+      var thumbnail = u.profileImageURL || '';
       fire({
         login: login,
         channelName: u.displayName || login,
