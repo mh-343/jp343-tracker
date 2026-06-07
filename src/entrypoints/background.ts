@@ -19,7 +19,8 @@ import {
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
 import { initContextMenu } from '../lib/background/context-menu';
-import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../lib/server-sessions';
+import { fetchAndCacheServerSessions } from '../lib/server-sessions';
+import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
 import {
   loadDiagnostics,
   saveDiagnostics,
@@ -343,19 +344,12 @@ export default defineBackground(() => {
   }
 
   async function onAuthFailure(): Promise<void> {
-    const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_FAILURE_COUNT);
-    const count = ((result[STORAGE_KEYS.AUTH_FAILURE_COUNT] as number) || 0) + 1;
-    log('[JP343] Auth failure #' + count);
-    if (count >= 3) {
-      log('[JP343] Too many auth failures, clearing credentials');
-      await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.AUTH_FAILURE_COUNT]);
-      clearCachedServerSessions().catch(() => {});
-    } else {
-      await browser.storage.local.set({ [STORAGE_KEYS.AUTH_FAILURE_COUNT]: count });
-    }
+    log('[JP343] Auth failure, attempting recovery');
+    await attemptRecovery();
   }
 
   async function onAuthSuccess(): Promise<void> {
+    await clearReloginHint();
     const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_FAILURE_COUNT);
     if (result[STORAGE_KEYS.AUTH_FAILURE_COUNT]) {
       await browser.storage.local.remove(STORAGE_KEYS.AUTH_FAILURE_COUNT);
@@ -431,7 +425,7 @@ export default defineBackground(() => {
       const userState: JP343UserState | null = (
         await browser.storage.local.get(STORAGE_KEYS.USER)
       )[STORAGE_KEYS.USER] ?? null;
-      if (!userState?.isLoggedIn || (!userState?.extApiToken && !userState?.nonce)) return;
+      if (!userState?.isLoggedIn) return;
       syncInProgress = true;
       log('[JP343] Sync started');
       const result = await syncEntriesDirect();
@@ -522,22 +516,28 @@ export default defineBackground(() => {
     };
   }
 
-  async function syncEntriesDirect(): Promise<DirectSyncResult> {
-    const userState: JP343UserState | null = (
+  async function syncEntriesDirect(retried = false): Promise<DirectSyncResult> {
+    let userState: JP343UserState | null = (
       await browser.storage.local.get(STORAGE_KEYS.USER)
     )[STORAGE_KEYS.USER] ?? null;
 
-    if (!userState) {
-      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
+    if (!userState?.isLoggedIn) {
+      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !userState };
     }
-    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
 
-    const hasToken = !!userState.extApiToken;
-    const hasNonce = !!userState.nonce;
-    const hasAuth = userState.isLoggedIn && (hasToken || hasNonce);
-    if (!hasAuth) {
-      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !hasToken && !hasNonce };
+    // R1: never fire log_time without a token. Obtain one first; otherwise queue
+    // the entries untouched (no failure mark, no syncAttempts bump, no strike).
+    if (!userState.extApiToken) {
+      const rec = await attemptRecovery(userState);
+      if (rec.status === 'healed' && rec.userState?.extApiToken) {
+        userState = rec.userState;
+      } else {
+        return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
+      }
     }
+
+    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+    const extVersion = browser.runtime.getManifest().version;
 
     const MAX_BATCH_SIZE = 50;
     const MAX_SYNC_ATTEMPTS = 10;
@@ -552,99 +552,112 @@ export default defineBackground(() => {
     let succeeded = 0;
     let failed = 0;
 
-    // Batch sync: send all entries in one request (token auth only)
-    if (hasToken) {
-      try {
-        const batchParams = new URLSearchParams({
-          action: 'jp343_extension_log_time_batch',
-          ext_api_token: userState.extApiToken!,
-          entries: JSON.stringify(batch.map(buildEntryParams))
-        });
-        const controller = new AbortController();
-        const batchTimeout = setTimeout(() => controller.abort(), 20000);
-        let response: Response;
-        try {
-          response = await fetch(ajaxUrl, {
-            method: 'POST',
-            credentials: 'include',
-            signal: controller.signal,
-            body: batchParams
-          });
-        } finally {
-          clearTimeout(batchTimeout);
-        }
-        if (!response.ok) {
-          log('[JP343] Batch sync HTTP error', response.status, ', falling back to sequential');
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const responseText = await response.text();
-        log('[JP343] Batch sync response:', response.status, responseText.slice(0, 200));
-
-        // WP returns "0" for unknown actions — fall through to sequential
-        if (responseText === '0') {
-          log('[JP343] Batch endpoint not available, falling back to sequential');
-        } else {
-          let batchResult: { success: boolean; data?: BatchSyncResponse & { code?: string } };
-          try {
-            batchResult = JSON.parse(responseText);
-          } catch {
-            log('[JP343] Batch response not JSON, falling back to sequential');
-            batchResult = { success: false };
-          }
-
-          if (batchResult.success && batchResult.data?.results) {
-            const resultMap = new Map<string, BatchEntryResult>();
-            for (const r of batchResult.data.results) {
-              if (r.session_id) resultMap.set(r.session_id, r);
-            }
-            const unsyncedMap = new Map(batch.map(e => [e.id, e]));
-
-            await withStorageLock(async () => {
-              const current = await loadPendingEntries();
-              const updated = current.map(e => {
-                const entryResult = resultMap.get(e.id);
-                if (!entryResult) return e;
-                const original = unsyncedMap.get(e.id);
-                if (original && e.duration_min !== original.duration_min) return e;
-                if (entryResult.success) {
-                  return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: entryResult.entry_id ?? null, mergeResync: false };
-                }
-                return { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: entryResult.error || 'Server error' };
-              });
-              await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-            });
-
-            succeeded = (batchResult.data.synced || 0) + (batchResult.data.duplicates || 0);
-            failed = batchResult.data.failed || 0;
-            await onAuthSuccess();
-            scheduleStatusBadgeUpdate();
-            return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
-          }
-
-          // Auth error from batch endpoint
-          if (isAuthFailure(batchResult)) {
-            await onAuthFailure();
-            return { attempted: batch.length, succeeded: 0, failed: batch.length, noAuth: true, nonceMissing: false };
-          }
-
-          // Other batch error — fall through to sequential
-          log('[JP343] Batch sync failed, falling back to sequential');
-        }
-      } catch (error) {
-        log('[JP343] Batch sync network error, falling back to sequential:', error);
+    // R3: token held but rejected (site reset the token, or cookie expired).
+    // Heal via nonce_refresh and retry once with a rotated token; otherwise queue
+    // the batch (no failure mark, no strike). Cookie expiry sets the reconnect hint
+    // inside attemptRecovery and never wipes credentials.
+    const handleTokenRejected = async (): Promise<DirectSyncResult> => {
+      const previousToken = userState!.extApiToken;
+      const rec = await attemptRecovery(userState);
+      if (
+        rec.status === 'healed' &&
+        rec.userState?.extApiToken &&
+        rec.userState.extApiToken !== previousToken &&
+        !retried
+      ) {
+        return syncEntriesDirect(true);
       }
+      return { attempted: batch.length, succeeded, failed: batch.length - succeeded, noAuth: true, nonceMissing: false };
+    };
+
+    // Batch sync: send all entries in one request (token auth)
+    try {
+      const batchParams = new URLSearchParams({
+        action: 'jp343_extension_log_time_batch',
+        ext_api_token: userState.extApiToken!,
+        ext_version: extVersion,
+        entries: JSON.stringify(batch.map(buildEntryParams))
+      });
+      const controller = new AbortController();
+      const batchTimeout = setTimeout(() => controller.abort(), 20000);
+      let response: Response;
+      try {
+        response = await fetch(ajaxUrl, {
+          method: 'POST',
+          credentials: 'include',
+          signal: controller.signal,
+          body: batchParams
+        });
+      } finally {
+        clearTimeout(batchTimeout);
+      }
+      if (!response.ok) {
+        log('[JP343] Batch sync HTTP error', response.status, ', falling back to sequential');
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const responseText = await response.text();
+      log('[JP343] Batch sync response:', response.status, responseText.slice(0, 200));
+
+      // WP returns "0" for unknown actions — fall through to sequential
+      if (responseText === '0') {
+        log('[JP343] Batch endpoint not available, falling back to sequential');
+      } else {
+        let batchResult: { success: boolean; data?: BatchSyncResponse & { code?: string } };
+        try {
+          batchResult = JSON.parse(responseText);
+        } catch {
+          log('[JP343] Batch response not JSON, falling back to sequential');
+          batchResult = { success: false };
+        }
+
+        if (batchResult.success && batchResult.data?.results) {
+          const resultMap = new Map<string, BatchEntryResult>();
+          for (const r of batchResult.data.results) {
+            if (r.session_id) resultMap.set(r.session_id, r);
+          }
+          const unsyncedMap = new Map(batch.map(e => [e.id, e]));
+
+          await withStorageLock(async () => {
+            const current = await loadPendingEntries();
+            const updated = current.map(e => {
+              const entryResult = resultMap.get(e.id);
+              if (!entryResult) return e;
+              const original = unsyncedMap.get(e.id);
+              if (original && e.duration_min !== original.duration_min) return e;
+              if (entryResult.success) {
+                return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: entryResult.entry_id ?? null, mergeResync: false };
+              }
+              return { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: entryResult.error || 'Server error' };
+            });
+            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
+          });
+
+          succeeded = (batchResult.data.synced || 0) + (batchResult.data.duplicates || 0);
+          failed = batchResult.data.failed || 0;
+          await onAuthSuccess();
+          scheduleStatusBadgeUpdate();
+          return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
+        }
+
+        if (isAuthFailure(batchResult)) {
+          return handleTokenRejected();
+        }
+
+        // Other batch error — fall through to sequential
+        log('[JP343] Batch sync failed, falling back to sequential');
+      }
+    } catch (error) {
+      log('[JP343] Batch sync network error, falling back to sequential:', error);
     }
 
-    // Sequential fallback (nonce path or batch failure)
-    let authFailed = false;
+    // Sequential fallback (batch unavailable or failed)
     for (const entry of batch) {
       try {
         const params: Record<string, string> = {
           action: 'jp343_extension_log_time',
           user_id: String(userState.userId || 0),
-          ...(hasToken
-            ? { ext_api_token: userState.extApiToken! }
-            : { nonce: userState.nonce || '' }),
+          ext_api_token: userState.extApiToken!,
+          ext_version: extVersion,
           ...buildEntryParams(entry)
         };
 
@@ -694,10 +707,7 @@ export default defineBackground(() => {
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
           if (isAuthFailure(result)) {
-            await onAuthFailure();
-            authFailed = true;
-            failed += (batch.length - succeeded - failed);
-            break;
+            return handleTokenRejected();
           }
           await withStorageLock(async () => {
             const current = await loadPendingEntries();
@@ -727,7 +737,7 @@ export default defineBackground(() => {
     }
 
     scheduleStatusBadgeUpdate();
-    return { attempted: batch.length, succeeded, failed, noAuth: authFailed, nonceMissing: false };
+    return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
   }
 
   async function saveSessionState(session: TrackingSession | null): Promise<void> {
@@ -771,7 +781,7 @@ export default defineBackground(() => {
       if (result.success && result.data) {
         await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: result.data });
         await onAuthSuccess();
-      } else if (isAuthFailure(result)) {
+      } else if (isAuthFailure(result, !!userState.extApiToken)) {
         await onAuthFailure();
       }
     } catch { /* server unreachable */ }

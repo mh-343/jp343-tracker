@@ -1,5 +1,7 @@
-import type { ExtensionMessage, ExtensionSettings } from '../../types';
+import type { ExtensionMessage, ExtensionSettings, JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { withStorageLock } from '../storage-lock';
+import { clearReloginHint } from './auth-recovery';
 import {
   scheduleStatusBadgeUpdate,
   updateStatusBadge,
@@ -23,21 +25,27 @@ export async function handleSettingsMessage(
       }
       if ('userState' in message) {
         const newState = message.userState;
-        const existing = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] ?? null;
-        const merged = {
-          ...newState,
-          extApiToken: newState?.extApiToken || existing?.extApiToken || null,
-          userId: newState?.userId || (existing?.userId ?? null),
-          avatarUrlSmall: newState?.avatarUrlSmall
-            ? newState.avatarUrlSmall
-            : newState?.isLoggedIn
-              ? null
-              : (existing?.avatarUrlSmall ?? null),
-        };
-        if (!merged.isLoggedIn && merged.extApiToken) {
-          merged.isLoggedIn = true;
+        const { merged, existing } = await withStorageLock(async () => {
+          const existingState = ((await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] ?? null) as JP343UserState | null;
+          const mergedState = {
+            ...newState,
+            extApiToken: newState?.extApiToken || existingState?.extApiToken || null,
+            userId: newState?.userId || (existingState?.userId ?? null),
+            avatarUrlSmall: newState?.avatarUrlSmall
+              ? newState.avatarUrlSmall
+              : newState?.isLoggedIn
+                ? null
+                : (existingState?.avatarUrlSmall ?? null),
+          };
+          if (!mergedState.isLoggedIn && mergedState.extApiToken) {
+            mergedState.isLoggedIn = true;
+          }
+          await browser.storage.local.set({ [STORAGE_KEYS.USER]: mergedState });
+          return { merged: mergedState, existing: existingState };
+        });
+        if (merged.isLoggedIn && merged.extApiToken) {
+          await clearReloginHint();
         }
-        await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
         if (newState?.isLoggedIn && !newState?.avatarUrlSmall && existing?.avatarUrlSmall) {
           await browser.storage.local.remove([STORAGE_KEYS.AVATAR_DATA, STORAGE_KEYS.AVATAR_USER_ID]);
         }

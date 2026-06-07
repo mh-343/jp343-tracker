@@ -108,8 +108,57 @@ export default defineContentScript({
       try { return JSON.parse(dataAttr).displayName || null; } catch { return null; }
     }
 
+    let extTokenCached = false;
+
+    function isSameOrigin(url: string): boolean {
+      try { return new URL(url).origin === location.origin; } catch { return false; }
+    }
+
+    async function fetchExtToken(ajaxUrl: string, nonce: string): Promise<string | null> {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        let response: Response;
+        try {
+          response = await fetch(ajaxUrl, {
+            method: 'POST',
+            credentials: 'include',
+            signal: controller.signal,
+            body: new URLSearchParams({
+              action: 'jp343_extension_get_token',
+              nonce,
+              ext_version: browser.runtime.getManifest().version
+            })
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (!response.ok) return null;
+        const result: { success?: boolean; data?: { extApiToken?: string } } = await response.json();
+        return result?.success && result.data?.extApiToken ? result.data.extApiToken : null;
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('Extension context invalidated')) return null;
+        log('[JP343 Bridge] get_token error:', error);
+        return null;
+      }
+    }
+
     async function reportUserState(): Promise<void> {
       const userState = getUserState();
+      if (
+        !extTokenCached &&
+        userState.isLoggedIn &&
+        userState.nonce &&
+        userState.ajaxUrl &&
+        !userState.extApiToken &&
+        isSameOrigin(userState.ajaxUrl)
+      ) {
+        const token = await fetchExtToken(userState.ajaxUrl, userState.nonce);
+        if (token) {
+          userState.extApiToken = token;
+          extTokenCached = true;
+        }
+      }
       try {
         await browser.runtime.sendMessage({
           type: 'JP343_SITE_LOADED',

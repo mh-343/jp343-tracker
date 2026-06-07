@@ -145,6 +145,11 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
   }
   section.appendChild(themeSelector);
 
+  const bgLabel = document.createElement('div');
+  bgLabel.className = 'settings-row-label';
+  bgLabel.textContent = 'Background Image';
+  section.appendChild(bgLabel);
+
   const uploadRow = document.createElement('div');
   uploadRow.className = 'bg-upload-row';
 
@@ -155,7 +160,7 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
 
   const uploadBtn = document.createElement('button');
   uploadBtn.className = 'export-btn';
-  uploadBtn.textContent = 'Upload';
+  uploadBtn.textContent = 'Choose Image';
   uploadBtn.addEventListener('click', () => fileInput.click());
 
   const removeBtn = document.createElement('button');
@@ -190,7 +195,7 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
     await updateSettings({ backgroundEnabled: true });
     const fresh = await getFreshSettings();
     await applyDashboardBackground(true, fresh.backgroundOpacity ?? 75);
-    uploadBtn.textContent = 'Upload';
+    uploadBtn.textContent = 'Choose Image';
     removeBtn.style.display = '';
 
     const existing = section.querySelector('.bg-preview, .bg-no-preview');
@@ -231,7 +236,7 @@ function buildAppearancePanel(container: HTMLElement, settings: ExtensionSetting
 
   const sliderLabel = document.createElement('div');
   sliderLabel.className = 'settings-row-label';
-  sliderLabel.textContent = 'Background Opacity';
+  sliderLabel.textContent = 'Background Dimming';
   sliderLabel.style.flex = '0 0 auto';
 
   const slider = document.createElement('input');

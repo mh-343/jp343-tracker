@@ -36,6 +36,7 @@ export async function tryRefreshNonce(userState: JP343UserState): Promise<JP343U
     if (result.success && result.data?.nonce) {
       const updated = buildUserState(result.data, userState);
       await browser.storage.local.set({ [STORAGE_KEYS.USER]: updated });
+      if (updated.extApiToken) await browser.storage.local.remove(STORAGE_KEYS.RELOGIN_REQUIRED);
       return updated;
     }
   } catch {}
@@ -307,6 +308,7 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
   const registerDrawer = document.getElementById('registerDrawer');
   const userName = document.getElementById('userName');
   const siteLinks = document.getElementById('siteLinks');
+  const reloginNotice = document.getElementById('reloginNotice');
 
   const avatarEl = document.getElementById('userAvatar') as HTMLImageElement | null;
 
@@ -318,6 +320,9 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (registerDrawer) { registerDrawer.style.display = 'none'; registerDrawer.classList.remove('open'); }
     const stored = await browser.storage.local.get(STORAGE_KEYS.DISPLAY_NAME);
     if (userName) userName.textContent = stored[STORAGE_KEYS.DISPLAY_NAME] || 'Connected';
+
+    const reloginResult = await browser.storage.local.get(STORAGE_KEYS.RELOGIN_REQUIRED);
+    if (reloginNotice) reloginNotice.style.display = reloginResult[STORAGE_KEYS.RELOGIN_REQUIRED] ? 'flex' : 'none';
 
     if (avatarEl) {
       const [avatarResult, userIdResult] = await Promise.all([
@@ -352,5 +357,6 @@ export async function renderAuthUI(userState: JP343UserState | null): Promise<vo
     if (loginDrawer) loginDrawer.style.display = '';
     if (registerDrawer) registerDrawer.style.display = '';
     if (avatarEl) avatarEl.style.display = 'none';
+    if (reloginNotice) reloginNotice.style.display = 'none';
   }
 }
