@@ -209,7 +209,8 @@ browser.storage.onChanged.addListener((changes, area) => {
     changes[STORAGE_KEYS.PENDING] ||
     changes[STORAGE_KEYS.STATS] ||
     changes[STORAGE_KEYS.USER] ||
-    changes[STORAGE_KEYS.SETTINGS]
+    changes[STORAGE_KEYS.SETTINGS] ||
+    changes[STORAGE_KEYS.RELOGIN_REQUIRED]
   )) {
     if (changes[STORAGE_KEYS.PENDING]) clearRawCache();
     refresh();

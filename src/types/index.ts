@@ -330,7 +330,8 @@ export const STORAGE_KEYS = {
   COLLAPSED_CARDS: 'jp343_collapsed_cards',
   AUTH_FAILURE_COUNT: 'jp343_auth_failure_count',
   CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions',
-  POPUP_HEIGHT: 'jp343_popup_height'
+  POPUP_HEIGHT: 'jp343_popup_height',
+  RELOGIN_REQUIRED: 'jp343_relogin_required'
 } as const;
 
 export interface CachedServerSession {
