@@ -70,6 +70,7 @@ export default defineContentScript({
     let lastTrackTitle = '';
     let lastTrackHref = '';
     let isCurrentlyInAd = false;
+    let adEndResendsLeft = 0;
     let spotifyAccumulatedMs = 0;
     let spotifyLastPlayTime = 0;
     let currentSessionId: string | null = null;
@@ -227,6 +228,11 @@ export default defineContentScript({
       const playing = isPlaying();
       const adPlaying = isAdPlaying();
 
+      if (adEndResendsLeft > 0 && !isCurrentlyInAd && !adPlaying) {
+        adEndResendsLeft--;
+        sendMessage('AD_END');
+      }
+
       if (wasPlaying && !isCurrentlyInAd) {
         const now = Date.now();
         if (spotifyLastPlayTime > 0) {
@@ -254,6 +260,7 @@ export default defineContentScript({
         spotifyLastPlayTime = 0;
         log('[JP343] Spotify: Ad ended');
         sendMessage('AD_END');
+        adEndResendsLeft = 2;
       }
 
       if (isCurrentlyInAd) return;
