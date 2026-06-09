@@ -26,6 +26,19 @@ async function bumpRevision(): Promise<void> {
   await browser.storage.local.set({ [STORAGE_KEYS.BG_IMAGE_REVISION]: Date.now() });
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const commaIdx = dataUrl.indexOf(',');
+  const header = commaIdx >= 0 ? dataUrl.slice(0, commaIdx) : '';
+  const data = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+  const mime = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg';
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
 export async function saveBackground(blob: Blob): Promise<void> {
   cachedBlob = blob;
   const reader = new FileReader();
@@ -70,8 +83,7 @@ export async function loadBackground(): Promise<Blob | null> {
   const base64 = result[STORAGE_KEYS.BACKGROUND_IMAGE] as string | undefined;
   if (!base64) return null;
 
-  const res = await fetch(base64);
-  return res.blob();
+  return dataUrlToBlob(base64);
 }
 
 export async function removeBackground(): Promise<void> {

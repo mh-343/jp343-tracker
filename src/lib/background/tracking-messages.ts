@@ -43,6 +43,18 @@ async function collectUnflushedTime(
   }
 }
 
+function maybeRecoverAdState(
+  state: VideoState,
+  platform: Platform,
+  recordDiagnostic?: (code: string, platform?: string) => void,
+  emitDiagnostic = false
+): void {
+  if (state.isAd !== false || !tracker.isAdPlaying()) return;
+  tracker.onAdEnd();
+  scheduleStatusBadgeUpdate();
+  if (emitDiagnostic) recordDiagnostic?.('ad_state_recovered', platform);
+}
+
 export async function handleTrackingMessage(
   message: ExtensionMessage,
   messageSender: Browser.runtime.MessageSender,
@@ -131,6 +143,7 @@ export async function handleTrackingMessage(
         context.setLastSkippedChannel(null);
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
+        maybeRecoverAdState(message.state, message.state.platform, recordDiagnostic, false);
         await context.saveSessionState(session);
         scheduleStatusBadgeUpdate();
       }
@@ -192,6 +205,7 @@ export async function handleTrackingMessage(
             scheduleStatusBadgeUpdate();
             recordDiagnostic?.('heartbeat_resume', message.platform);
           }
+          maybeRecoverAdState(message.state, message.platform, recordDiagnostic, true);
         }
         if (message.state.title) {
           tracker.updateSessionTitleFromAutoFetch(message.state.title);
