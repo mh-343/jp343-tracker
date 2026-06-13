@@ -24,6 +24,9 @@ let onSettingsWrittenFn: ((settings: ExtensionSettings) => void) | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let conflictRetries = 0;
 const MAX_CONFLICT_RETRIES = 5;
+let reconcileRetries = 0;
+const MAX_RECONCILE_RETRIES = 3;
+const RECONCILE_FRESH_WINDOW_MS = 5 * 60 * 1000;
 
 export function initChannelSyncCallbacks(callbacks: {
   logger: (...args: unknown[]) => void;
@@ -101,6 +104,37 @@ function applyOps(
     blocked: [...blocked.values()],
     whitelisted: [...whitelisted.values()],
   };
+}
+
+function opReflected(
+  op: ChannelOp,
+  snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] }
+): boolean {
+  const inBlocked = isChannelInList(snapshot.blocked, op.channelId, op.channelUrl);
+  const inWhitelisted = isChannelInList(snapshot.whitelisted, op.channelId, op.channelUrl);
+  switch (op.action) {
+    case 'block': return inBlocked;
+    case 'unblock': return !inBlocked;
+    case 'whitelist': return inWhitelisted;
+    case 'unwhitelist': return !inWhitelisted;
+    default: return true;
+  }
+}
+
+function unreflectedFreshOps(
+  flushedOps: ChannelOp[],
+  snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] },
+  freshSinceMs: number
+): ChannelOp[] {
+  const lastPerChannel = new Map<string, ChannelOp>();
+  for (const op of flushedOps) lastPerChannel.set(op.channelId, op);
+  const pending: ChannelOp[] = [];
+  for (const op of lastPerChannel.values()) {
+    if (opReflected(op, snapshot)) continue;
+    const opTime = Date.parse(op.timestamp);
+    if (Number.isFinite(opTime) && opTime >= freshSinceMs) pending.push(op);
+  }
+  return pending;
 }
 
 function deduplicateSnapshot(snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] }): { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] } {
@@ -262,11 +296,12 @@ export async function flushOpsToServer(): Promise<void> {
       return;
     }
 
+    const flushedOps = state.pendingOps;
     try {
       const result = await callChannelOpsEndpoint(
         userState,
         state.serverVersion,
-        state.pendingOps
+        flushedOps
       );
 
       if (!result.success || !result.data) {
@@ -284,6 +319,7 @@ export async function flushOpsToServer(): Promise<void> {
         await saveSyncState(state);
         await updateSettingsFromView(state);
         conflictRetries++;
+        reconcileRetries = 0;
         if (conflictRetries >= MAX_CONFLICT_RETRIES) {
           logFn('[JP343] Channel flush conflict limit reached, deferring to alarm');
           conflictRetries = 0;
@@ -296,16 +332,31 @@ export async function flushOpsToServer(): Promise<void> {
       }
 
       conflictRetries = 0;
-      state.pendingOps = [];
-      state.serverSnapshot = deduplicateSnapshot({
+      const newSnapshot = deduplicateSnapshot({
         blocked: result.data.blocked || [],
         whitelisted: result.data.whitelisted || [],
       });
+      const pending = unreflectedFreshOps(flushedOps, newSnapshot, Date.now() - RECONCILE_FRESH_WINDOW_MS);
+      state.serverSnapshot = newSnapshot;
       state.serverVersion = result.data.version || 0;
+      state.pendingOps = pending;
       await saveSyncState(state);
       await updateSettingsFromView(state);
-      clearAlarmRetry();
-      logFn('[JP343] Channel flush success, version:', state.serverVersion);
+      if (pending.length > 0 && reconcileRetries < MAX_RECONCILE_RETRIES) {
+        reconcileRetries++;
+        logFn('[JP343] Channel ops not reflected, re-flushing:', pending.length, 'retry:', reconcileRetries);
+        scheduleFlush();
+      } else {
+        if (pending.length > 0) {
+          state.pendingOps = [];
+          await saveSyncState(state);
+          await updateSettingsFromView(state);
+          logFn('[JP343] Channel reconcile limit reached, accepting server state');
+        }
+        reconcileRetries = 0;
+        clearAlarmRetry();
+        logFn('[JP343] Channel flush success, version:', state.serverVersion);
+      }
     } catch (error) {
       logFn('[JP343] Channel flush error:', error);
       scheduleAlarmRetry();
