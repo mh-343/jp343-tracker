@@ -1,5 +1,6 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
 import { getLocalDateString } from '../lib/format-utils';
+import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure } from '../lib/auth-helpers';
 import {
@@ -442,6 +443,7 @@ export default defineBackground(() => {
   browser.alarms.create('jp343-cleanup-synced', { periodInMinutes: 360 });
   browser.alarms.create('jp343-diagnostics-send', { periodInMinutes: 360 });
   browser.alarms.create('jp343-error-flush', { periodInMinutes: 1 });
+  browser.alarms.create('jp343-streak-risk-check', { periodInMinutes: 60 });
 
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
@@ -457,6 +459,9 @@ export default defineBackground(() => {
     }
     if (alarm.name === 'jp343-error-flush') {
       flushErrors().catch(() => {});
+    }
+    if (alarm.name === 'jp343-streak-risk-check') {
+      maybeFireStreakRiskNotification(loadSettings, loadStats).catch(() => {});
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {

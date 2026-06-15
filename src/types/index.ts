@@ -125,6 +125,7 @@ export interface ExtensionSettings {
   colorTheme: ColorTheme;
   targetStartTimes: (string | null)[];
   stretchGoalsEnabled: boolean;
+  streakRiskNotification: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -307,7 +308,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   backgroundOpacity: 75,
   colorTheme: 'magenta' as ColorTheme,
   targetStartTimes: [null, null, null, null, null, null, null],
-  stretchGoalsEnabled: true
+  stretchGoalsEnabled: true,
+  streakRiskNotification: false
 };
 
 export const STORAGE_KEYS = {
@@ -331,7 +333,8 @@ export const STORAGE_KEYS = {
   AUTH_FAILURE_COUNT: 'jp343_auth_failure_count',
   CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions',
   POPUP_HEIGHT: 'jp343_popup_height',
-  RELOGIN_REQUIRED: 'jp343_relogin_required'
+  RELOGIN_REQUIRED: 'jp343_relogin_required',
+  STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date'
 } as const;
 
 export interface CachedServerSession {

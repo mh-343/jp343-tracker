@@ -29,7 +29,8 @@ export default defineConfig({
       'unlimitedStorage',
       'tabs',
       'alarms',
-      'contextMenus'
+      'contextMenus',
+      'notifications'
     ],
 
     host_permissions: [

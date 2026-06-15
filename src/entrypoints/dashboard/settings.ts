@@ -321,6 +321,13 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
     async (val) => { await updateSettings({ useOriginalTitles: val }); }
   ));
 
+  section.appendChild(createToggleRow(
+    'Streak-at-risk reminder',
+    'Browser notification when your streak is about to break, log today to keep it',
+    settings.streakRiskNotification ?? false,
+    async (val) => { await updateSettings({ streakRiskNotification: val }); }
+  ));
+
   container.appendChild(section);
 }
 
