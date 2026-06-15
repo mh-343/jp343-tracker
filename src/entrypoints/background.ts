@@ -779,7 +779,7 @@ export default defineBackground(() => {
       if (!response.ok) return;
       const result = await response.json();
       if (result.success && result.data) {
-        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: result.data });
+        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...result.data, cachedAt: Date.now() } });
         await onAuthSuccess();
       } else if (isAuthFailure(result, !!userState.extApiToken)) {
         await onAuthFailure();

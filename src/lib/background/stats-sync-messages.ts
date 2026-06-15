@@ -13,6 +13,7 @@ interface CachedServerStats {
   timezone?: string;
   calendar_week_seconds?: number;
   day_boundary_hour?: number;
+  cachedAt?: number;
 }
 
 export async function handleStatsSyncMessage(
@@ -58,7 +59,12 @@ export async function handleStatsSyncMessage(
         const yesterday = new Date(now);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = getLocalDateString(yesterday);
-        if (stats.lastActiveDate !== todayStr && stats.lastActiveDate !== yesterdayStr) {
+        const dayBeforeYesterday = new Date(now);
+        dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+        const dayBeforeYesterdayStr = getLocalDateString(dayBeforeYesterday);
+        if (stats.lastActiveDate !== todayStr
+            && stats.lastActiveDate !== yesterdayStr
+            && stats.lastActiveDate !== dayBeforeYesterdayStr) {
           streak = 0;
         }
       }
@@ -78,8 +84,14 @@ export async function handleStatsSyncMessage(
         const serverWeekSec = cached.calendar_week_seconds ?? cached.week_seconds;
         if (serverWeekSec !== undefined)
           weekMinutes = Math.max(weekMinutes, Math.round(serverWeekSec / 60));
-        if (cached.streak !== undefined)
-          streak = Math.max(streak, cached.streak);
+        if (cached.streak !== undefined) {
+          const dayStart = getLogicalNow(dsh);
+          dayStart.setHours(dsh, 0, 0, 0);
+          // trust cache only if fetched today
+          if (cached.cachedAt !== undefined && cached.cachedAt >= dayStart.getTime()) {
+            streak = Math.max(streak, cached.streak);
+          }
+        }
         if (cached.total_seconds !== undefined) {
           const serverMinutes = Math.round(cached.total_seconds / 60);
           const MAX_UNSYNCED_DELTA = 1440;
