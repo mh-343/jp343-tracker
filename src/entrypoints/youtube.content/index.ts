@@ -4,7 +4,7 @@ import type { VideoState, WhitelistedChannel, BlockedChannel } from '../../types
 import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
-import { isJapaneseContent, isLikelyJapaneseVideo } from '../../lib/language-detection';
+import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { showUpdateNotification } from '../../lib/update-notification';
 
@@ -557,6 +557,8 @@ export default defineContentScript({
       if (!state || state.isAd) return;
       if (!state.channelId || !state.channelName) return;
       if (isLikelyJapaneseVideo(state)) return;
+      // require a reliable title signal
+      if (!state.originalTitle && !isJapaneseLanguageCode(state.audioLanguage)) return;
       if (!isJapaneseContent(state.channelName)) return;
 
       const player = document.querySelector('#movie_player') || document.querySelector('.player-container');

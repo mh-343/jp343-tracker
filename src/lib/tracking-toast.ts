@@ -156,7 +156,7 @@ export function showTrackingToast(channelId: string, options: ToastOptions): voi
 
   const label = document.createElement('span');
   label.className = 'jp343-t-label';
-  label.textContent = 'Japanese channel \u00B7 English title';
+  label.textContent = 'Japanese channel \u00B7 maybe not Japanese';
 
   const close = document.createElement('button');
   close.className = 'jp343-t-x';

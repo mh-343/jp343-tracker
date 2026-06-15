@@ -17,15 +17,34 @@
     }
   } catch(e) {}
 
-  if (player && typeof player.getPlayerResponse === 'function') {
-    try {
-      var response = player.getPlayerResponse();
-      title = (response && response.videoDetails && response.videoDetails.title) || null;
-      var tl = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
+  function readResponse(response) {
+    if (!response) return;
+    if (!title) {
+      title = (response.videoDetails && response.videoDetails.title) || null;
+    }
+    if (!audioLang) {
+      var tl = response.captions && response.captions.playerCaptionsTracklistRenderer;
       var tracks = tl && tl.captionTracks;
-      if (tracks && tracks.length) {
+      if (Array.isArray(tracks) && tracks.length) {
         var asr = tracks.filter(function(t){ return t && t.kind === 'asr'; })[0];
         audioLang = (asr && asr.languageCode) || null;
+      }
+    }
+  }
+
+  if (player && typeof player.getPlayerResponse === 'function') {
+    try { readResponse(player.getPlayerResponse()); } catch(e) {}
+  }
+
+  // Mobile has no #movie_player API. The page still exposes the player data as a
+  // global. Use it only when it matches the current video, so a stale response
+  // left from a previous in-app navigation cannot leak in.
+  if (!title || !audioLang) {
+    try {
+      var global = window.ytInitialPlayerResponse;
+      var globalId = global && global.videoDetails && global.videoDetails.videoId;
+      if (global && videoId && globalId === videoId) {
+        readResponse(global);
       }
     } catch(e) {}
   }
