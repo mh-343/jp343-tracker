@@ -41,6 +41,7 @@ export interface VideoState {
   channelUrl: string | null;
   originalTitle?: string | null;
   audioLanguage?: string | null;
+  description?: string | null;
   contentType?: SpotifyContentType;
 }
 

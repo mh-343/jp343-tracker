@@ -24,6 +24,7 @@ export default defineContentScript({
     let pendingRetryTimeouts: ReturnType<typeof setTimeout>[] = [];
     let originalTitle: string | null = null;
     let videoAudioLanguage: string | null = null;
+    let videoDescription: string | null = null;
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let originalTitleResponsePending = false;
@@ -475,6 +476,7 @@ export default defineContentScript({
       title: string | null;
       videoId: string | null;
       audioLang?: string | null;
+      desc?: string | null;
     }
 
     function handleOriginalTitleResponse(e: Event): void {
@@ -485,6 +487,9 @@ export default defineContentScript({
       if (typeof detail.audioLang === 'string' && detail.audioLang) {
         videoAudioLanguage = detail.audioLang;
         gotSignal = true;
+      }
+      if (typeof detail.desc === 'string' && detail.desc) {
+        videoDescription = detail.desc;
       }
       if (detail.title && typeof detail.title === 'string') {
         originalTitle = detail.title;
@@ -508,12 +513,14 @@ export default defineContentScript({
       if (!videoId) {
         originalTitle = null;
         videoAudioLanguage = null;
+        videoDescription = null;
         originalTitleVideoId = null;
         originalTitleResponsePending = false;
         return;
       }
       originalTitle = null;
       videoAudioLanguage = null;
+      videoDescription = null;
       originalTitleVideoId = videoId;
       originalTitleResponsePending = true;
       if (originalTitleRetryTimer) {
@@ -616,7 +623,8 @@ export default defineContentScript({
         channelName: channelInfo.name,
         channelUrl: channelInfo.url,
         originalTitle: originalTitle || null,
-        audioLanguage: videoAudioLanguage
+        audioLanguage: videoAudioLanguage,
+        description: videoDescription
       };
     }
 
@@ -884,6 +892,7 @@ export default defineContentScript({
         }
         originalTitle = null;
         videoAudioLanguage = null;
+        videoDescription = null;
         originalTitleResponsePending = false;
 
         if (currentVideoElement) {

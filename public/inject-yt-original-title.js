@@ -6,6 +6,7 @@
   var title = null;
   var videoId = null;
   var audioLang = null;
+  var desc = null;
 
   try {
     var path = window.location.pathname;
@@ -21,6 +22,9 @@
     if (!response) return;
     if (!title) {
       title = (response.videoDetails && response.videoDetails.title) || null;
+    }
+    if (!desc) {
+      desc = (response.videoDetails && response.videoDetails.shortDescription) || null;
     }
     if (!audioLang) {
       var tl = response.captions && response.captions.playerCaptionsTracklistRenderer;
@@ -50,7 +54,12 @@
   }
 
   window.dispatchEvent(new CustomEvent('jp343-original-title', {
-    detail: { title: title, videoId: videoId, audioLang: audioLang }
+    detail: {
+      title: title,
+      videoId: videoId,
+      audioLang: audioLang,
+      desc: desc ? String(desc).slice(0, 800) : null
+    }
   }));
 
   var me = document.currentScript;
