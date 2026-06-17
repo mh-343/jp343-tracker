@@ -64,6 +64,8 @@ function isClearlyNonJapaneseTitle(text: string | null | undefined): boolean {
 export function isLikelyJapaneseVideo(signals: JapaneseVideoSignals): boolean {
   if (isJapaneseContent(signals.title)) return true;
   if (signals.originalTitle && isJapaneseContent(signals.originalTitle)) return true;
+  // hiragana channel name = Japanese
+  if (signals.channelName && HIRAGANA_PATTERN.test(signals.channelName)) return true;
   if (isPredominantlyJapanese(signals.description)) return true;
   const titleHasKanji = containsKanji(signals.title)
     || (!!signals.originalTitle && containsKanji(signals.originalTitle));
