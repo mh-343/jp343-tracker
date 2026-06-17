@@ -16,6 +16,7 @@ export interface ServerStatsResponse {
   first_session_times?: Record<string, string>;
   has_unread_ticket?: boolean;
   has_ticket_replies?: boolean;
+  cachedAt?: number;
 }
 
 export interface ServerSession {

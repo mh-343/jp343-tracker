@@ -144,7 +144,7 @@ export async function doLogout(): Promise<void> {
     });
     await r.text();
   } catch { /* server unreachable is fine, clear local state anyway */ }
-  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.CACHED_SERVER_SESSIONS]);
+  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.CACHED_SERVER_SESSIONS, STORAGE_KEYS.CACHED_SERVER_STATS]);
   invalidateSessionCache();
   const msgBtn = document.getElementById('headerMessageBtn');
   if (msgBtn) msgBtn.style.display = 'none';
