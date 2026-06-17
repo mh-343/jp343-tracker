@@ -325,6 +325,34 @@ function initSpotifyFilterChips(): void {
   });
 }
 
+function initCollapsible(headerId: string, bodyId: string, arrowId: string, cardId: string): void {
+  const header = document.getElementById(headerId);
+  const body = document.getElementById(bodyId);
+  const arrow = document.getElementById(arrowId);
+  if (!header || !body || !arrow) return;
+  let collapsed = false;
+  browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
+    const ids: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
+    if (ids.includes(cardId)) {
+      collapsed = true;
+      body.style.display = 'none';
+      arrow.style.transform = 'rotate(-90deg)';
+    }
+  });
+  header.addEventListener('click', () => {
+    collapsed = !collapsed;
+    body.style.display = collapsed ? 'none' : '';
+    arrow.style.transform = collapsed ? 'rotate(-90deg)' : '';
+    browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
+      const current: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
+      const updated = collapsed
+        ? [...current.filter(id => id !== cardId), cardId]
+        : current.filter(id => id !== cardId);
+      browser.storage.local.set({ [STORAGE_KEYS.COLLAPSED_CARDS]: updated });
+    });
+  });
+}
+
 // --- MANUAL TRACKING ---
 
 let lastLoadedDomain = '';
@@ -1143,28 +1171,7 @@ async function fetchAndRenderStats(): Promise<void> {
 // Theme Toggle
 initThemeToggle('themeTogglePopup');
 
-// Sessions-Collapse: State aus Storage laden + Toggle
-let sessionsCollapsed = false;
-browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
-  const collapsed: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
-  if (collapsed.includes('popup-sessions')) {
-    sessionsCollapsed = true;
-    elements.pendingList.style.display = 'none';
-    elements.pendingCollapseArrow.style.transform = 'rotate(-90deg)';
-  }
-});
-elements.pendingHeader.addEventListener('click', () => {
-  sessionsCollapsed = !sessionsCollapsed;
-  elements.pendingList.style.display = sessionsCollapsed ? 'none' : '';
-  elements.pendingCollapseArrow.style.transform = sessionsCollapsed ? 'rotate(-90deg)' : '';
-  browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
-    const current: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
-    const updated = sessionsCollapsed
-      ? [...current.filter(id => id !== 'popup-sessions'), 'popup-sessions']
-      : current.filter(id => id !== 'popup-sessions');
-    browser.storage.local.set({ [STORAGE_KEYS.COLLAPSED_CARDS]: updated });
-  });
-});
+initCollapsible('pendingHeader', 'pendingList', 'pendingCollapseArrow', 'popup-sessions');
 
 const POPUP_MIN_HEIGHT = 450;
 const POPUP_MAX_HEIGHT = 600;
