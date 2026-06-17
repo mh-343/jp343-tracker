@@ -132,7 +132,8 @@ export default defineBackground(() => {
           'session_discarded': 'sessionDiscarded',
           'unflushed_collected': 'unflushedCollected',
           'unflushed_failed': 'unflushedFailed',
-          'pause_debounced': 'pauseDebounced'
+          'pause_debounced': 'pauseDebounced',
+          'session_id_retry': 'sessionIdRetry'
         };
         const milestone = milestoneMap[code];
         if (milestone) {

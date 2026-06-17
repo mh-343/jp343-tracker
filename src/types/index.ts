@@ -362,6 +362,7 @@ export interface PlatformHealth {
   unflushedCollected: number;
   unflushedFailed: number;
   pauseDebounced: number;
+  sessionIdRetry: number;
 }
 
 export interface SyncHealth {
@@ -414,5 +415,6 @@ export const DEFAULT_PLATFORM_HEALTH: PlatformHealth = {
   sessionDiscarded: 0,
   unflushedCollected: 0,
   unflushedFailed: 0,
-  pauseDebounced: 0
+  pauseDebounced: 0,
+  sessionIdRetry: 0
 };

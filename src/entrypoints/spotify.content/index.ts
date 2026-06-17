@@ -48,14 +48,31 @@ export default defineContentScript({
       sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
     }
 
+    function handleVideoPlayResponse(response: unknown): void {
+      if (response && typeof response === 'object') {
+        if ('sessionId' in response && typeof (response as { sessionId: unknown }).sessionId === 'string') {
+          currentSessionId = (response as { sessionId: string }).sessionId;
+          trackingSkipped = false;
+          videoPlayRetries = 0;
+          flushSpotifyDelta();
+          return;
+        }
+        if ('skipped' in response || 'blocked' in response) {
+          trackingSkipped = true;
+          currentSessionId = null;
+          spotifyAccumulatedMs = 0;
+          return;
+        }
+      }
+    }
+
     function sendVideoPlay(state: VideoState): void {
       flushSpotifyDelta();
       spotifyAccumulatedMs = 0;
-      sendMessage('VIDEO_PLAY', { state }).then(response => {
-        if (response && typeof response === 'object' && 'sessionId' in response) {
-          currentSessionId = (response as { sessionId: string }).sessionId;
-        }
-      });
+      currentSessionId = null;
+      trackingSkipped = false;
+      videoPlayRetries = 0;
+      sendMessage('VIDEO_PLAY', { state }).then(handleVideoPlayResponse);
       sendDiagnostic('video_play_sent');
       sendDiagnostic('metadata_found');
     }
@@ -70,13 +87,25 @@ export default defineContentScript({
     let lastTrackTitle = '';
     let lastTrackHref = '';
     let isCurrentlyInAd = false;
+    let adStartedAt = 0;
+    let adMarkerIgnored = false;
     let adEndResendsLeft = 0;
     let spotifyAccumulatedMs = 0;
-    let spotifyLastPlayTime = 0;
+    let lastTickMs = 0;
+    let lastPosSec = 0;
+    let lastPosChangeMs = 0;
     let currentSessionId: string | null = null;
+    let trackingSkipped = false;
+    let videoPlayRetries = 0;
     let metadataMissingReported = false;
     let metadataMissRetries = 0;
     const METADATA_MISS_THRESHOLD = 3;
+    const AD_STUCK_TIMEOUT_MS = 120_000;
+    const SESSION_ID_RETRY_THRESHOLD_MS = 8_000;
+    const MAX_VIDEO_PLAY_RETRIES = 3;
+    const SESSION_ID_BUFFER_CAP_MS = 30_000;
+    const POSITION_STALL_MS = 3_000;
+    const MAX_TICK_GAP_MS = 5_000;
 
     function isPlaying(): boolean {
       const btn = document.querySelector('[data-testid="control-button-playpause"]');
@@ -224,40 +253,81 @@ export default defineContentScript({
       }
     }
 
+    function resetTickBaseline(): void {
+      lastTickMs = 0;
+      lastPosSec = getPlaybackTimes().currentTime;
+      lastPosChangeMs = performance.now();
+    }
+
     function handlePlayStateChange(): void {
       const playing = isPlaying();
       const adPlaying = isAdPlaying();
 
-      if (adEndResendsLeft > 0 && !isCurrentlyInAd && !adPlaying) {
+      if (isCurrentlyInAd && adPlaying && adStartedAt > 0 && Date.now() - adStartedAt > AD_STUCK_TIMEOUT_MS) {
+        isCurrentlyInAd = false;
+        adStartedAt = 0;
+        adMarkerIgnored = true;
+        resetTickBaseline();
+        sendMessage('AD_END');
+        adEndResendsLeft = 2;
+        sendDiagnostic('ad_state_recovered');
+        log('[JP343] Spotify: Ad-stuck watchdog cleared persistent ad flag');
+      }
+      if (!adPlaying) adMarkerIgnored = false;
+      const adActive = adPlaying && !adMarkerIgnored;
+
+      if (adEndResendsLeft > 0 && !isCurrentlyInAd && !adActive) {
         adEndResendsLeft--;
         sendMessage('AD_END');
       }
 
-      if (wasPlaying && !isCurrentlyInAd) {
-        const now = Date.now();
-        if (spotifyLastPlayTime > 0) {
-          const delta = now - spotifyLastPlayTime;
-          if (delta > 0 && delta <= 5000) {
+      if (wasPlaying && !isCurrentlyInAd && !trackingSkipped) {
+        const posSec = getPlaybackTimes().currentTime;
+        const now = performance.now();
+        if (posSec !== lastPosSec) {
+          lastPosSec = posSec;
+          lastPosChangeMs = now;
+        }
+        const stalled = now - lastPosChangeMs > POSITION_STALL_MS;
+        if (lastTickMs > 0 && !stalled) {
+          const delta = now - lastTickMs;
+          if (delta > 0 && delta <= MAX_TICK_GAP_MS) {
             spotifyAccumulatedMs += delta;
             if (spotifyAccumulatedMs >= 10_000) {
               flushSpotifyDelta();
             }
           }
         }
-        spotifyLastPlayTime = now;
+        lastTickMs = now;
+
+        if (currentSessionId === null && spotifyAccumulatedMs >= SESSION_ID_RETRY_THRESHOLD_MS) {
+          if (videoPlayRetries < MAX_VIDEO_PLAY_RETRIES) {
+            const retryState = getCurrentState();
+            if (retryState) {
+              videoPlayRetries++;
+              sendDiagnostic('session_id_retry');
+              sendMessage('VIDEO_PLAY', { state: retryState }).then(handleVideoPlayResponse);
+            }
+          } else if (spotifyAccumulatedMs >= SESSION_ID_BUFFER_CAP_MS) {
+            trackingSkipped = true;
+            spotifyAccumulatedMs = 0;
+            sendDiagnostic('session_discarded');
+          }
+        }
       }
 
-      if (adPlaying && !isCurrentlyInAd) {
+      if (adActive && !isCurrentlyInAd) {
         flushSpotifyDelta();
-        spotifyLastPlayTime = 0;
         isCurrentlyInAd = true;
+        adStartedAt = Date.now();
         log('[JP343] Spotify: Ad started');
         sendMessage('AD_START');
         return;
       }
-      if (!adPlaying && isCurrentlyInAd) {
+      if (!adActive && isCurrentlyInAd) {
         isCurrentlyInAd = false;
-        spotifyLastPlayTime = 0;
+        adStartedAt = 0;
+        resetTickBaseline();
         log('[JP343] Spotify: Ad ended');
         sendMessage('AD_END');
         adEndResendsLeft = 2;
@@ -272,7 +342,6 @@ export default defineContentScript({
       if (playing && trackHref && trackHref !== lastTrackHref && lastTrackHref) {
         log('[JP343] Spotify: Track changed:', lastTrackTitle, '->', trackTitle);
         flushSpotifyDelta();
-        spotifyLastPlayTime = 0;
         sendMessage('VIDEO_ENDED');
         lastTrackHref = trackHref;
         lastTrackTitle = trackTitle;
@@ -280,7 +349,7 @@ export default defineContentScript({
         if (state) {
           sendVideoPlay(state);
           wasPlaying = true;
-          spotifyLastPlayTime = Date.now();
+          resetTickBaseline();
         } else {
           wasPlaying = false;
           metadataMissRetries = 0;
@@ -298,7 +367,7 @@ export default defineContentScript({
           debugLog('PLAY', 'Playback started', { title: state.title, contentType: state.contentType });
           sendVideoPlay(state);
           wasPlaying = true;
-          spotifyLastPlayTime = Date.now();
+          resetTickBaseline();
           metadataMissingReported = false;
           metadataMissRetries = 0;
         } else {
@@ -311,7 +380,6 @@ export default defineContentScript({
       } else if (!playing && wasPlaying) {
         log('[JP343] Spotify: Paused');
         flushSpotifyDelta();
-        spotifyLastPlayTime = 0;
         sendMessage('VIDEO_PAUSE');
         wasPlaying = false;
         metadataMissingReported = false;
