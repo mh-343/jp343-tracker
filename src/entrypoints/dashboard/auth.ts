@@ -137,6 +137,9 @@ export let isLoggingOut = false;
 export async function doLogout(): Promise<void> {
   isLoggingOut = true;
   try {
+    await browser.runtime.sendMessage({ type: 'ANKI_FLUSH_AND_RESET' });   // flush while token valid
+  } catch { /* ignore */ }
+  try {
     const r = await fetch(AJAX_URL, {
       method: 'POST',
       credentials: 'include',

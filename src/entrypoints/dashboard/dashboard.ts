@@ -10,6 +10,7 @@ import { showSessionsLoading, renderSessions, renderServerSessions, getCachedSer
 import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
+import { renderAnkiCard } from './anki-card';
 import { renderStretchGoals } from './stretch-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
@@ -81,6 +82,7 @@ async function refresh(): Promise<void> {
     renderTierBadge(data.userState);
     renderAuthUI(data.userState);
     renderFooter(data.userState);
+    void renderAnkiCard();
 
     if (isLoggedIn) {
       await applyCachedServerStats();
@@ -202,6 +204,7 @@ browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
 setupSettings();
 refresh();
 loadNews();
+browser.runtime.sendMessage({ type: 'ANKI_SYNC_NOW' }).catch(() => {});
 
 browser.storage.onChanged.addListener((changes, area) => {
   if (isLoggingOut) return;
@@ -214,6 +217,9 @@ browser.storage.onChanged.addListener((changes, area) => {
   )) {
     if (changes[STORAGE_KEYS.PENDING]) clearRawCache();
     refresh();
+  }
+  if (area === 'local' && changes[STORAGE_KEYS.ANKI]) {
+    void renderAnkiCard();
   }
   if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
     const oldSettings = changes[STORAGE_KEYS.SETTINGS].oldValue;
@@ -251,5 +257,8 @@ browser.storage.onChanged.addListener((changes, area) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') refresh();
+  if (document.visibilityState === 'visible') {
+    refresh();
+    browser.runtime.sendMessage({ type: 'ANKI_SYNC_NOW' }).catch(() => {});
+  }
 });

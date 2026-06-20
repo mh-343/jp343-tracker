@@ -240,7 +240,14 @@ export type ExtensionMessage =
   | { type: 'DIAGNOSTIC_EVENT'; code: string; platform?: Platform }
   | { type: 'GET_DIAGNOSTICS' }
   | { type: 'REFETCH_AVATAR' }
-  | { type: 'PULL_CHANNELS' };
+  | { type: 'PULL_CHANNELS' }
+  | { type: 'GET_ANKI_STATE' }
+  | { type: 'SET_ANKI_ENABLED'; enabled: boolean }
+  | { type: 'ANKI_SYNC_NOW' }
+  | { type: 'GET_ANKI_DECKS' }
+  | { type: 'SET_ANKI_DECKS'; decks: string[] }
+  | { type: 'ANKI_FLUSH_AND_RESET' }
+  | { type: 'ANKI_RESET' };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -290,6 +297,58 @@ export const DEFAULT_STATS: ExtensionStats = {
   hourlyMinutes: {}
 };
 
+export type AnkiStatus = 'idle' | 'connected' | 'unreachable' | 'permission_needed' | 'api_key_required' | 'error';
+
+export interface AnkiDay {
+  seconds: number;
+  reviews: number;
+  newCards: number;
+  reviewPass: number;
+  reviewTotal: number;
+  maturePass: number;
+  matureTotal: number;
+  learn: number;
+  review: number;
+  relearn: number;
+  cram: number;
+  colMature?: number;   // snapshot days only
+  colYoung?: number;
+  colNew?: number;
+}
+
+export interface AnkiCollectionState {
+  lastSyncId: number;
+  backfillDone: boolean;
+  days: Record<string, AnkiDay>;
+  seenCardIds: number[];
+  dirtyDays: string[];
+  lastPushedAt: number | null;
+  lastPushError?: string | null;
+}
+
+export interface AnkiState {
+  schemaVersion: number;
+  enabled: boolean;
+  selectedDecks: string[];
+  status: AnkiStatus;
+  lastSyncAt: number | null;
+  activeCollection: string | null;
+  collections: Record<string, AnkiCollectionState>;
+  pendingServerReset?: boolean;
+}
+
+export const ANKI_SCHEMA_VERSION = 2;
+
+export const DEFAULT_ANKI_STATE: AnkiState = {
+  schemaVersion: ANKI_SCHEMA_VERSION,
+  enabled: false,
+  selectedDecks: [],
+  status: 'idle',
+  lastSyncAt: null,
+  activeCollection: null,
+  collections: {}
+};
+
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
@@ -335,7 +394,8 @@ export const STORAGE_KEYS = {
   CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions',
   POPUP_HEIGHT: 'jp343_popup_height',
   RELOGIN_REQUIRED: 'jp343_relogin_required',
-  STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date'
+  STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
+  ANKI: 'jp343_extension_anki'
 } as const;
 
 export interface CachedServerSession {

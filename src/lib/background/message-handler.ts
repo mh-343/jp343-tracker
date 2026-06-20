@@ -6,6 +6,7 @@ import { handleSettingsMessage } from './settings-messages';
 import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
+import { handleAnkiMessage } from './anki-messages';
 
 function getMessageType(message: unknown): string {
   if (!message || typeof message !== 'object') return 'unknown';
@@ -73,6 +74,15 @@ export function createBackgroundMessageHandler(
         case 'DIAGNOSTIC_EVENT':
         case 'GET_DIAGNOSTICS':
           return handleDiagnosticsMessage(message, diagnosticsContext);
+
+        case 'GET_ANKI_STATE':
+        case 'SET_ANKI_ENABLED':
+        case 'ANKI_SYNC_NOW':
+        case 'GET_ANKI_DECKS':
+        case 'SET_ANKI_DECKS':
+        case 'ANKI_FLUSH_AND_RESET':
+        case 'ANKI_RESET':
+          return handleAnkiMessage(message);
 
         default:
           return { success: false, error: 'Unknown message type' };

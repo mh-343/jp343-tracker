@@ -19,6 +19,7 @@ import {
   updateBadge,
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
+import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
@@ -446,8 +447,11 @@ export default defineBackground(() => {
   browser.alarms.create('jp343-error-flush', { periodInMinutes: 1 });
   browser.alarms.create('jp343-streak-risk-check', { periodInMinutes: 60 });
 
+  void syncAnki();
+
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === 'jp343-auto-sync-retry') {
+      void syncAnki();
       await triggerSync();
       await pullAndMergeSettingsFromServer().catch(() => {});
       flushChannelOps().catch(() => {});

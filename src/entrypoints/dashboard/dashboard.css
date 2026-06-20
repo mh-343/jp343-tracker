@@ -471,6 +471,165 @@
       min-height: 14px;
     }
 
+    /* ── Anki Card ──────────────────────────────────── */
+    .anki-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 14px;
+    }
+    .anki-pill .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .anki-pill.connected .dot { background: #4caf50; }
+
+    .anki-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 520px) {
+      .anki-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .anki-spark {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 44px;
+      margin-top: 16px;
+    }
+    .anki-spark .bar {
+      flex: 1;
+      min-height: 2px;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+      opacity: 0.85;
+    }
+    .anki-spark .bar.empty { opacity: 0.18; }
+
+    .anki-empty-hint {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .anki-subline {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .anki-subline + .anki-subline { margin-top: 4px; }
+    .anki-reset-btn {
+      margin-top: 12px;
+      background: none;
+      border: 1px solid rgba(244, 67, 54, 0.4);
+      color: #ff6b6b;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .anki-reset-btn:hover { background: rgba(244, 67, 54, 0.08); }
+    .anki-reset-btn.armed { background: rgba(244, 67, 54, 0.15); border-color: #f44336; color: #ff8a80; }
+    .anki-reset-btn:disabled { opacity: 0.6; cursor: default; }
+
+    /* ── Anki Settings ──────────────────────────────── */
+    .anki-title-row { display: flex; align-items: center; gap: 8px; }
+    .anki-info-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+      line-height: 1;
+    }
+    .anki-info-btn:hover { color: var(--accent); }
+    .anki-help {
+      display: none;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-secondary);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .anki-help.open { display: block; }
+    .anki-deck-picker { margin-top: 12px; }
+    .anki-deck-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .anki-deck-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+    .anki-deck-row input { cursor: pointer; }
+
+    .anki-typesplit { margin-top: 14px; }
+    .anki-types {
+      display: flex;
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: var(--bg-card);
+    }
+    .anki-types span { display: block; height: 100%; }
+    .seg-learn { background: #4caf50; }
+    .seg-review { background: var(--accent); }
+    .seg-relearn { background: #ff9800; }
+    .seg-cram { background: #9c27b0; }
+
+    .anki-maturity { margin: 4px 0 16px; }
+    .anki-words { margin-bottom: 10px; }
+    .anki-words-num {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1.1;
+    }
+    .anki-words-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .mat-mature { background: #4caf50; }
+    .mat-young { background: #2196f3; }
+    .mat-new { background: var(--text-muted); }
+
+    .anki-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .anki-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    .anki-legend .swatch {
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
     /* ── Section Cards ──────────────────────────────── */
     .card {
       background: var(--bg-card);

@@ -6,7 +6,7 @@ export default defineConfig({
 
   manifest: {
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.8.8',
+    version: '2.9.0',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
@@ -51,6 +51,7 @@ export default defineConfig({
       '*://app.asbplayer.dev/*',
       '*://jp343.com/*',
       '*://*.jp343.com/*',
+      'http://127.0.0.1:8765/*',
       ...(process.env.NODE_ENV !== 'production' ? [
         '*://localhost/*',
         '*://127.0.0.1/*'
@@ -65,7 +66,7 @@ export default defineConfig({
     },
 
     content_security_policy: {
-      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com; object-src 'self'"
+      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765; object-src 'self'"
     },
 
     web_accessible_resources: [
