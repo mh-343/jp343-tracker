@@ -370,7 +370,7 @@ function scheduleFlush(): void {
     flushTimer = null;
     flushOpsToServer().catch(() => {});
   }, 2000);
-  // Alarm als Recovery falls SW stirbt bevor setTimeout feuert
+  // flush recovery if SW dies
   browser.alarms.create('jp343-channel-flush', { delayInMinutes: 0.5 });
 }
 
@@ -386,7 +386,7 @@ export async function handleChannelFlushAlarm(): Promise<void> {
   await flushOpsToServer();
 }
 
-// Migration: v2.7.x → v2.8.0 (erste Initialisierung)
+// first-run migration init
 export async function migrateToChannelSync(): Promise<void> {
   await withStorageLock(async () => {
     const state = await loadSyncState();
@@ -396,7 +396,6 @@ export async function migrateToChannelSync(): Promise<void> {
     const settings: ExtensionSettings | undefined = settingsResult[STORAGE_KEYS.SETTINGS];
     if (!settings) return;
 
-    // Pull vom Server holt den aktuellen Stand
     const userState = await getUserState();
     if (!userState) {
       state.initialized = true;

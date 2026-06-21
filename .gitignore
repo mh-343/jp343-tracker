@@ -41,7 +41,7 @@ web-ext-artifacts/
 *-sakura.html
 SESSION-HANDOFF-*.md
 
-# Claude Code
+# Local tooling
 .claude/
 
 dev/
