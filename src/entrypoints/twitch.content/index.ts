@@ -83,6 +83,7 @@ export default defineContentScript({
         }
       });
       sendDiagnostic('video_play_sent');
+      syncAdState();
     }
 
     function flushDelta(): void {
@@ -94,6 +95,15 @@ export default defineContentScript({
 
     function endAdIfActive(): void {
       if (adActive) { adActive = false; sendMessage('AD_END'); }
+    }
+
+    function syncAdState(): void {
+      const ad = isAdPlaying();
+      if (ad === adActive) return;
+      adActive = ad;
+      if (ad) flushDelta();
+      if (currentVideoElement) lastVideoTime = currentVideoElement.currentTime;
+      sendMessage(ad ? 'AD_START' : 'AD_END');
     }
 
     function findVideoElement(): HTMLVideoElement | null {
@@ -230,16 +240,11 @@ export default defineContentScript({
 
       video.addEventListener('timeupdate', () => {
         if (video.paused || video.ended || !tracking) return;
-        const ad = isAdPlaying();
-        if (ad !== adActive) {
-          adActive = ad;
-          if (ad) flushDelta();
-          sendMessage(ad ? 'AD_START' : 'AD_END');
-        }
+        syncAdState();
         const ct = video.currentTime;
         const d = ct - lastVideoTime;
         lastVideoTime = ct;
-        if (ad) return;
+        if (adActive) return;
         if (d > 0 && d <= 10) {
           const realDelta = d / (video.playbackRate || 1);
           accumulatedDeltaMs += realDelta * 1000;
@@ -300,6 +305,10 @@ export default defineContentScript({
         pickUpVideo();
       }
     }, 1000));
+
+    intervalIds.push(setInterval(() => {
+      if (tracking && currentVideoElement && !currentVideoElement.paused && !currentVideoElement.ended) syncAdState();
+    }, 2000));
 
     setTimeout(pickUpVideo, 3000);
 
