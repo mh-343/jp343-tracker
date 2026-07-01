@@ -7,6 +7,7 @@ import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleAnkiMessage } from './anki-messages';
+import { handleMokuroMessage } from './mokuro-messages';
 
 function getMessageType(message: unknown): string {
   if (!message || typeof message !== 'object') return 'unknown';
@@ -83,6 +84,11 @@ export function createBackgroundMessageHandler(
         case 'ANKI_FLUSH_AND_RESET':
         case 'ANKI_RESET':
           return handleAnkiMessage(message);
+
+        case 'GET_MOKURO_STATE':
+        case 'SET_MOKURO_ENABLED':
+        case 'MOKURO_SYNC':
+          return handleMokuroMessage(message, context);
 
         default:
           return { success: false, error: 'Unknown message type' };

@@ -538,6 +538,107 @@
     .anki-reset-btn.armed { background: rgba(244, 67, 54, 0.15); border-color: #f44336; color: #ff8a80; }
     .anki-reset-btn:disabled { opacity: 0.6; cursor: default; }
 
+    /* ── Reading Card ───────────────────────────────── */
+    .reading-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .reading-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 10px;
+    }
+    .reading-spark-wrap {
+      display: inline-block;
+      margin-top: 20px;
+    }
+    .reading-spark {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 48px;
+    }
+    .reading-spark .bar {
+      width: 20px;
+      min-height: 2px;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+      opacity: 0.85;
+    }
+    .reading-spark .bar.empty { opacity: 0.18; }
+    .reading-spark-cap {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      text-align: right;
+    }
+    .reading-series { margin-top: 22px; }
+    .reading-series-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .reading-series-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .reading-series-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 16px;
+      padding: 10px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .reading-series-name {
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .reading-series-meta {
+      display: flex;
+      gap: 14px;
+      flex-shrink: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .reading-series-min {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .reading-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .reading-myhub-link {
+      display: inline-block;
+      margin-top: 18px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .reading-myhub-link:hover { text-decoration: underline; }
+    @media (max-width: 520px) {
+      .reading-grid { grid-template-columns: repeat(2, 1fr); }
+      .reading-series-item {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+      }
+      .reading-series-meta { gap: 12px; }
+    }
+
     /* ── Anki Settings ──────────────────────────────── */
     .anki-title-row { display: flex; align-items: center; gap: 8px; }
     .anki-info-btn {

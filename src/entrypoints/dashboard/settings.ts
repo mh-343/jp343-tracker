@@ -1,4 +1,4 @@
-import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme, JP343UserState, AnkiState, AnkiCollectionState } from '../../types';
+import type { ExtensionSettings, BlockedChannel, Platform, SpotifyContentType, PendingEntry, ExtensionStats, ColorTheme, JP343UserState, AnkiState, AnkiCollectionState, MokuroState } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES, ANKI_SCHEMA_VERSION } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
@@ -29,6 +29,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   spotify: 'Spotify',
   twitch: 'Twitch',
   asbplayer: 'asbplayer',
+  mokuro: 'Mokuro',
   generic: 'Generic'
 };
 
@@ -878,6 +879,11 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     mergedHourly[hour] = Math.max(mergedHourly[hour] || 0, minutes);
   }
 
+  const mergedReadingDaily: Record<string, number> = { ...(local.readingDailyMinutes || {}) };
+  for (const [date, minutes] of Object.entries(imported.readingDailyMinutes || {})) {
+    mergedReadingDaily[date] = Math.max(mergedReadingDaily[date] || 0, minutes);
+  }
+
   const totalMinutes = Object.values(mergedDaily).reduce((sum, m) => sum + m, 0);
   const lastActiveDate = local.lastActiveDate > (imported.lastActiveDate || '')
     ? local.lastActiveDate
@@ -886,7 +892,7 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     ? local.currentStreak
     : (imported.currentStreak || local.currentStreak);
 
-  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly };
+  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly, readingDailyMinutes: mergedReadingDaily };
 }
 
 // ── Setup ────────────────────────────────────────────────
@@ -969,12 +975,36 @@ async function renderDeckPicker(container: HTMLElement): Promise<void> {
   container.appendChild(list);
 }
 
+const ANKI_ORIGIN = 'http://127.0.0.1:8765/*';
+
+// user-gesture only
+function requestAnkiPermission(): Promise<boolean> {
+  try {
+    return browser.permissions.request({ origins: [ANKI_ORIGIN] });
+  } catch {
+    return Promise.resolve(false);
+  }
+}
+
+async function hasAnkiPermission(): Promise<boolean> {
+  try {
+    return await browser.permissions.contains({ origins: [ANKI_ORIGIN] });
+  } catch {
+    return false;
+  }
+}
+
 async function refreshAnki(statusEl: HTMLElement, toggle: HTMLElement | null, deckContainer: HTMLElement): Promise<void> {
   const res = await browser.storage.local.get(STORAGE_KEYS.ANKI);
   const state = res[STORAGE_KEYS.ANKI] as AnkiState | undefined;
   if (toggle) toggle.classList.toggle('enabled', !!state?.enabled);
   if (!state || !state.enabled) {
     statusEl.textContent = 'Off. Enable to read your Anki review time and stats.';
+    deckContainer.textContent = '';
+    return;
+  }
+  if (!(await hasAnkiPermission())) {
+    statusEl.textContent = 'Allow access to your Anki app, then press Test connection.';
     deckContainer.textContent = '';
     return;
   }
@@ -1020,6 +1050,11 @@ function buildAnkiPanel(container: HTMLElement): void {
     'Count your Anki study time, reviews and retention.',
     false,
     async (val) => {
+      if (val && !(await requestAnkiPermission())) {
+        if (toggle) toggle.classList.remove('enabled');
+        status.textContent = 'Allow access to your Anki app to turn this on.';
+        return;
+      }
       status.textContent = val ? 'Connecting…' : 'Off.';
       await browser.runtime.sendMessage({ type: 'SET_ANKI_ENABLED', enabled: val });
       await refreshAnki(status, toggle, deckContainer);
@@ -1034,6 +1069,10 @@ function buildAnkiPanel(container: HTMLElement): void {
   testBtn.className = 'export-btn';
   testBtn.textContent = 'Test connection';
   testBtn.addEventListener('click', async () => {
+    if (!(await requestAnkiPermission())) {
+      status.textContent = 'Allow access to your Anki app to sync.';
+      return;
+    }
     testBtn.disabled = true;
     status.textContent = 'Connecting…';
     await browser.runtime.sendMessage({ type: 'ANKI_SYNC_NOW' });
@@ -1082,6 +1121,84 @@ function buildAnkiPanel(container: HTMLElement): void {
   void refreshAnki(status, toggle, deckContainer);
 }
 
+const MOKURO_ORIGIN = '*://reader.mokuro.app/*';
+
+// user-gesture only
+function requestMokuroPermission(): Promise<boolean> {
+  try {
+    return browser.permissions.request({ origins: [MOKURO_ORIGIN] });
+  } catch {
+    return Promise.resolve(false);
+  }
+}
+
+async function hasMokuroPermission(): Promise<boolean> {
+  try {
+    return await browser.permissions.contains({ origins: [MOKURO_ORIGIN] });
+  } catch {
+    return false;
+  }
+}
+
+async function refreshMokuro(statusEl: HTMLElement, toggle: HTMLElement | null): Promise<void> {
+  const res = await browser.runtime.sendMessage({ type: 'GET_MOKURO_STATE' }) as { data?: { mokuroState?: MokuroState } };
+  const state = res?.data?.mokuroState;
+  const enabled = !!state?.enabled;
+  if (toggle) toggle.classList.toggle('enabled', enabled);
+  if (!enabled) {
+    statusEl.textContent = 'Off. Enable to read your Mokuro reading time.';
+    return;
+  }
+  if (!(await hasMokuroPermission())) {
+    statusEl.textContent = 'Allow access to reader.mokuro.app, then reload your Mokuro tab.';
+    return;
+  }
+  const mins = Math.round(state?.totalMinutes ?? 0);
+  const when = state?.lastSyncAt ? new Date(state.lastSyncAt).toLocaleDateString() : 'never';
+  statusEl.textContent = `Tracking. ${mins} min read so far. Last update: ${when}.`;
+}
+
+function buildMokuroPanel(container: HTMLElement): void {
+  const section = document.createElement('div');
+  section.className = 'settings-section';
+
+  const title = document.createElement('div');
+  title.className = 'settings-section-title';
+  title.textContent = 'Mokuro (beta)';
+  section.appendChild(title);
+
+  const help = document.createElement('div');
+  help.className = 'settings-row-desc';
+  help.textContent = 'jp343 reads your manga reading time from reader.mokuro.app and counts it as reading immersion. Turn this on, allow access when asked, then reload your Mokuro tab. Your reading time stays on your device until it syncs to your account.';
+  section.appendChild(help);
+
+  const status = document.createElement('div');
+  status.className = 'settings-row-desc';
+  status.textContent = 'Checking…';
+
+  let toggle: HTMLElement | null = null;
+  const row = createToggleRow(
+    'Track Mokuro reading time',
+    'Count your reader.mokuro.app reading as immersion.',
+    false,
+    async (val) => {
+      if (val && !(await requestMokuroPermission())) {
+        if (toggle) toggle.classList.remove('enabled');
+        status.textContent = 'Allow access to reader.mokuro.app to turn this on.';
+        return;
+      }
+      await browser.runtime.sendMessage({ type: 'SET_MOKURO_ENABLED', enabled: val });
+      await refreshMokuro(status, toggle);
+    }
+  );
+  toggle = row.querySelector('.settings-toggle') as HTMLElement | null;
+  section.appendChild(row);
+  section.appendChild(status);
+  container.appendChild(section);
+
+  void refreshMokuro(status, toggle);
+}
+
 function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): void {
   panel.textContent = '';
   buildAppearancePanel(panel, settings);
@@ -1089,6 +1206,7 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): 
   buildTrackingPanel(panel, settings);
   buildPlatformsPanel(panel, settings);
   buildAnkiPanel(panel);
+  buildMokuroPanel(panel);
   buildDiagnosticsPanel(panel, settings);
   buildExportImportPanel(panel);
 }

@@ -41,6 +41,7 @@ import {
   handleChannelFlushAlarm,
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
+import { syncMokuroRegistration } from '../lib/background/mokuro-sync';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -385,11 +386,15 @@ export default defineBackground(() => {
           const entryDay = getLocalDateString(new Date(entry.date), dsh);
           const mergeTarget = pending.find(e =>
             e.project_id === entry.project_id &&
-            e.project === entry.project &&
+            (entry.platform === 'mokuro' || e.project === entry.project) &&
             getLocalDateString(new Date(e.date), dsh) === entryDay
           );
           if (mergeTarget) {
+            if (entry.platform === 'mokuro' && entry.project && !/^Mokuro [0-9a-f]{8}$/i.test(entry.project)) {
+              mergeTarget.project = entry.project;
+            }
             mergeTarget.duration_min += entry.duration_min;
+            if (entry.chars) mergeTarget.chars = (mergeTarget.chars ?? 0) + entry.chars;
             if (!mergeTarget.thumbnail && entry.thumbnail) {
               mergeTarget.thumbnail = entry.thumbnail;
             }
@@ -507,6 +512,7 @@ export default defineBackground(() => {
     return {
       project_id: entry.project_id,
       duration_seconds: String(Math.round(entry.duration_min * 60)),
+      chars: String(Math.round(entry.chars ?? 0)),
       source: 'extension',
       session_id: entry.id,
       type: entry.activityType ?? 'watching',
@@ -994,6 +1000,9 @@ export default defineBackground(() => {
 
   // Channel sync: migration + init on SW start
   migrateToChannelSync().catch(() => {});
+
+  // Mokuro: reconcile runtime registration
+  syncMokuroRegistration().catch(() => {});
 
   (async function migrateLocalHubBgFlag(): Promise<void> {
     const flagRes = await browser.storage.local.get(STORAGE_KEYS.MIGRATED_HUB_BG);

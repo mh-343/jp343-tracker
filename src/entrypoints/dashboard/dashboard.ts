@@ -11,6 +11,7 @@ import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
 import { renderAnkiCard } from './anki-card';
+import { renderReadingCard } from './reading-card';
 import { renderStretchGoals } from './stretch-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
@@ -83,6 +84,7 @@ async function refresh(): Promise<void> {
     renderAuthUI(data.userState);
     renderFooter(data.userState);
     void renderAnkiCard();
+    void renderReadingCard();
 
     if (isLoggedIn) {
       await applyCachedServerStats();
@@ -220,6 +222,9 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
   if (area === 'local' && changes[STORAGE_KEYS.ANKI]) {
     void renderAnkiCard();
+  }
+  if (area === 'local' && changes[STORAGE_KEYS.MOKURO]) {
+    void renderReadingCard();
   }
   if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
     const oldSettings = changes[STORAGE_KEYS.SETTINGS].oldValue;

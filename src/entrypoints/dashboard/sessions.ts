@@ -24,6 +24,7 @@ const platformIcons: Record<string, string> = {
   spotify: '♪',
   twitch: 'T',
   asbplayer: 'A',
+  mokuro: '本',
   generic: '⏵'
 };
 

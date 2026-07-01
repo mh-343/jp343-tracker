@@ -21,6 +21,10 @@ export function generateProjectId(platform: Platform, title: string, videoId: st
   return `ext_${platform}_${normalized}`;
 }
 
+export function isReading(entry: { activityType?: ActivityType; platform: Platform }): boolean {
+  return entry.activityType === 'reading' || PLATFORM_ACTIVITY_TYPE[entry.platform] === 'reading';
+}
+
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;

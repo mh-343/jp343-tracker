@@ -2,6 +2,7 @@ import type { ExtensionStats, ExtensionSettings, PendingEntry } from '../../type
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
+import { isReading } from '../time-tracker';
 import { addHourlyMinutes, subtractHourlyMinutes } from './hourly-stats';
 
 interface StatsManagerDeps {
@@ -39,12 +40,24 @@ export async function updateStats(entry: PendingEntry): Promise<void> {
       stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
       addHourlyMinutes(stats, entry);
 
+      if (isReading(entry)) {
+        stats.readingDailyMinutes ??= {};
+        stats.readingDailyMinutes[entryDate] = (stats.readingDailyMinutes[entryDate] || 0) + entry.duration_min;
+      }
+
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = getLocalDateString(cutoff);
       for (const dateKey of Object.keys(stats.dailyMinutes)) {
         if (dateKey < cutoffStr) {
           delete stats.dailyMinutes[dateKey];
+        }
+      }
+      if (stats.readingDailyMinutes) {
+        for (const dateKey of Object.keys(stats.readingDailyMinutes)) {
+          if (dateKey < cutoffStr) {
+            delete stats.readingDailyMinutes[dateKey];
+          }
         }
       }
 
@@ -99,6 +112,12 @@ export async function subtractFromStats(entry: PendingEntry): Promise<void> {
         stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
         if (stats.dailyMinutes[entryDate] <= 0) {
           delete stats.dailyMinutes[entryDate];
+        }
+      }
+      if (isReading(entry) && stats.readingDailyMinutes?.[entryDate]) {
+        stats.readingDailyMinutes[entryDate] = Math.max(0, stats.readingDailyMinutes[entryDate] - entry.duration_min);
+        if (stats.readingDailyMinutes[entryDate] <= 0) {
+          delete stats.readingDailyMinutes[entryDate];
         }
       }
       subtractHourlyMinutes(stats, entry);

@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mokuro' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -23,6 +23,7 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   spotify: 'listening',
   twitch: 'watching',
   asbplayer: 'watching',
+  mokuro: 'reading',
   generic: 'watching',
 };
 
@@ -86,6 +87,7 @@ export interface PendingEntry {
   channelUrl: string | null;
   activityType?: ActivityType;
   mergeResync?: boolean;
+  chars?: number;
 }
 
 export interface JP343UserState {
@@ -247,7 +249,10 @@ export type ExtensionMessage =
   | { type: 'GET_ANKI_DECKS' }
   | { type: 'SET_ANKI_DECKS'; decks: string[] }
   | { type: 'ANKI_FLUSH_AND_RESET' }
-  | { type: 'ANKI_RESET' };
+  | { type: 'ANKI_RESET' }
+  | { type: 'MOKURO_SYNC'; volumes: Record<string, MokuroVolumeSnapshot> }
+  | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
+  | { type: 'GET_MOKURO_STATE' };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -287,6 +292,7 @@ export interface ExtensionStats {
   lastActiveDate: string;
   currentStreak: number;
   hourlyMinutes?: Record<string, number>;
+  readingDailyMinutes?: Record<string, number>;
 }
 
 export const DEFAULT_STATS: ExtensionStats = {
@@ -294,7 +300,8 @@ export const DEFAULT_STATS: ExtensionStats = {
   dailyMinutes: {},
   lastActiveDate: '',
   currentStreak: 0,
-  hourlyMinutes: {}
+  hourlyMinutes: {},
+  readingDailyMinutes: {}
 };
 
 export type AnkiStatus = 'idle' | 'connected' | 'unreachable' | 'permission_needed' | 'api_key_required' | 'error';
@@ -349,6 +356,40 @@ export const DEFAULT_ANKI_STATE: AnkiState = {
   collections: {}
 };
 
+export interface MokuroVolumeSnapshot {
+  effectiveMin: number;
+  chars: number;
+  seriesTitle: string | null;
+  volumeTitle: string | null;
+  seriesUuid: string | null;
+  completed: boolean;
+  deleted: boolean;
+}
+
+export interface MokuroBaseline {
+  lastEffectiveMin: number;
+  lastChars: number;
+  lastObservedAt: number;
+}
+
+export interface MokuroState {
+  enabled: boolean;
+  baselines: Record<string, MokuroBaseline>;
+  creditedByDay: Record<string, number>;
+  lastSyncAt: number | null;
+  totalMinutes: number;
+  totalChars: number;
+}
+
+export const DEFAULT_MOKURO_STATE: MokuroState = {
+  enabled: false,
+  baselines: {},
+  creditedByDay: {},
+  lastSyncAt: null,
+  totalMinutes: 0,
+  totalChars: 0
+};
+
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,
@@ -395,7 +436,8 @@ export const STORAGE_KEYS = {
   POPUP_HEIGHT: 'jp343_popup_height',
   RELOGIN_REQUIRED: 'jp343_relogin_required',
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
-  ANKI: 'jp343_extension_anki'
+  ANKI: 'jp343_extension_anki',
+  MOKURO: 'jp343_extension_mokuro'
 } as const;
 
 export interface CachedServerSession {
