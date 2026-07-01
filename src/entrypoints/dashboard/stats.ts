@@ -420,7 +420,7 @@ export function renderWeekBars(dailyMinutes: Record<string, number>): void {
   }
 }
 
-export function renderMonthBars(dailyMinutes: Record<string, number>): void {
+export function renderMonthBars(dailyMinutes: Record<string, number>, currentMonthMinutes?: number): void {
   const container = document.getElementById('monthBars');
   if (!container) return;
   container.textContent = '';
@@ -440,7 +440,9 @@ export function renderMonthBars(dailyMinutes: Record<string, number>): void {
       if (date.startsWith(prefix)) total += min;
     }
 
-    months.push({ key: prefix, label: monthLabels[month], minutes: total, isCurrent: i === 0 });
+    const isCurrent = i === 0;
+    if (isCurrent && currentMonthMinutes !== undefined) total = currentMonthMinutes;
+    months.push({ key: prefix, label: monthLabels[month], minutes: total, isCurrent });
   }
 
   const maxMin = Math.max(1, ...months.map(m => m.minutes));
@@ -580,8 +582,11 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     const merged = mergeDailyMinutes(_localDailyMinutes, serverData.daily_minutes);
     renderHeatmap(merged);
     renderWeekBars(merged);
-    renderMonthBars(merged);
+    renderMonthBars(merged, serverData.calendar_month_seconds !== undefined ? serverData.calendar_month_seconds / 60 : undefined);
     applyDerivedStats(merged);
+  }
+  if (serverData.calendar_month_seconds !== undefined) {
+    setText('statMonth', formatStatDuration(serverData.calendar_month_seconds / 60));
   }
   if (serverData.hourly_minutes) {
     const mergedHourly: Record<string, number> = { ..._localHourlyMinutes };
