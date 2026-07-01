@@ -3,6 +3,7 @@
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 
 interface CrunchyrollMetadata {
   title: string;
@@ -19,6 +20,7 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('crunchyroll')) return;
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     let stateUpdateIntervalId: ReturnType<typeof setInterval> | null = null;

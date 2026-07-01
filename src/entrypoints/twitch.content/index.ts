@@ -1,6 +1,7 @@
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 import { parseChannelLogin, parseTwitchMetaEvent, type TwitchMetaEvent } from './twitch-parsers';
 
 export default defineContentScript({
@@ -8,6 +9,7 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('twitch')) return;
     let currentVideoElement: HTMLVideoElement | null = null;
     let currentLogin: string | null = null;
     let twitchMeta: TwitchMetaEvent | null = null;

@@ -1,12 +1,14 @@
 import type { VideoState, SpotifyContentType } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 
 export default defineContentScript({
   matches: ['*://open.spotify.com/*'],
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('spotify')) return;
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {

@@ -1,10 +1,12 @@
 import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 
 export default defineContentScript({
   matches: ['*://app.asbplayer.dev/*'],
   runAt: 'document_idle',
   main() {
+    if (!claimContentScript('asbplayer')) return;
     const PLATFORM: Platform = 'asbplayer';
     const FALLBACK_TITLE = 'Local video file';
     const VIDEO_EXTENSION = /\.(mp4|mkv|webm|avi|mov|m4v|ogv|ts)$/i;

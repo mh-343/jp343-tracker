@@ -1,6 +1,7 @@
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 
 // nihongo-jikan.com embeds each lesson via a www.youtube.com/embed iframe.
 // This tracker runs inside that iframe (allFrames) and only acts when the
@@ -43,6 +44,7 @@ export default defineContentScript({
     if (window.top === window.self) return;
     const parentPageUrl = resolveParentPageUrl();
     if (!parentPageUrl) return;
+    if (!claimContentScript('nihongojikan')) return;
 
     const youtubeId = (location.pathname.match(/\/embed\/([^/?#]+)/) || [])[1] || null;
     const numericId = (parentPageUrl.match(/\/videos?\/(\d+)/) || [])[1] || null;

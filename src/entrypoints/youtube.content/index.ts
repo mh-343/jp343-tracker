@@ -7,12 +7,14 @@ import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-
 import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('youtube')) return;
     let currentVideoElement: HTMLVideoElement | null = null;
     let lastVideoUrl: string | null = null;
     let isCurrentlyAd = false;

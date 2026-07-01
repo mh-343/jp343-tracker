@@ -42,6 +42,7 @@ import {
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
 import { syncMokuroRegistration } from '../lib/background/mokuro-sync';
+import { reinjectTrackedTabs } from '../lib/background/reinject';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -815,6 +816,12 @@ export default defineBackground(() => {
 
   let resolveRecovery: () => void;
   const recoveryReady = new Promise<void>(r => { resolveRecovery = r; });
+
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason !== 'update') return;
+    // Resume tracking in open tabs.
+    return recoveryReady.then(() => reinjectTrackedTabs(log));
+  });
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 

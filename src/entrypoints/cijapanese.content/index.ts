@@ -1,10 +1,12 @@
 import { createCijTracker } from '../../lib/cij-tracker';
+import { claimContentScript } from '../../lib/content-guard';
 
 export default defineContentScript({
   matches: ['*://*.cijapanese.com/*', '*://*.nijapanese.com/*'],
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('cijapanese')) return;
     createCijTracker({
       platform: 'cijapanese',
       channelId: 'cijapanese',

@@ -3,6 +3,7 @@
 import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
+import { claimContentScript } from '../../lib/content-guard';
 import { NetflixMetadata, isGenericPageTitle, parseNetflixTitle, parseEpisodeInfo, getVideoId } from './netflix-parsers';
 
 export default defineContentScript({
@@ -10,6 +11,7 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('netflix')) return;
     let currentVideoElement: HTMLVideoElement | null = null;
     let lastTitle: string = '';
     let lastVideoId: string | null = null;

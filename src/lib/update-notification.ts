@@ -2,6 +2,8 @@ const NOTIFICATION_ID = 'jp343-update-notification';
 const STYLE_ID = 'jp343-update-notification-styles';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ACCENT = '#ffb020';
+const ALIVE_KEY = '__jp343Alive';
+const ALIVE_STALE_MS = 6000;
 
 let listenerAttached = false;
 
@@ -176,8 +178,24 @@ function handleFullscreenChange(): void {
   getNotificationParent().appendChild(el);
 }
 
+export function markContentScriptAlive(): void {
+  (window as unknown as Record<string, number>)[ALIVE_KEY] = Date.now();
+}
+
+function liveInstancePresent(): boolean {
+  const t = (window as unknown as Record<string, number>)[ALIVE_KEY];
+  return typeof t === 'number' && Date.now() - t < ALIVE_STALE_MS;
+}
+
+// Hide (keep node so re-show no-ops).
+export function removeUpdateNotification(): void {
+  const el = document.getElementById(NOTIFICATION_ID);
+  if (el) (el as HTMLElement).style.display = 'none';
+}
+
 export function showUpdateNotification(): void {
   try { if (window !== window.top) return; } catch { return; }
+  if (liveInstancePresent()) return;
   if (document.getElementById(NOTIFICATION_ID)) return;
 
   injectStyles(document);
