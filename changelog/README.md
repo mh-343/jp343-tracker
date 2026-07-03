@@ -19,7 +19,7 @@ Frontmatter fields (all required unless marked optional):
 | `date` | string | ISO date `YYYY-MM-DD` |
 | `title` | string | 2-5 words, substantival, release identity |
 | `summary` | string | one sentence, max 25 words, two main points |
-| `platforms` | list | any of: `youtube`, `netflix`, `crunchyroll`, `primevideo`, `disneyplus`, `ci-japanese`, `spotify`. Empty `[]` if change is platform-agnostic |
+| `platforms` | list | any of: `youtube`, `netflix`, `crunchyroll`, `primevideo`, `disneyplus`, `ci-japanese`, `spotify`, `twitch`, `nihongojikan`, `asbplayer`, `mokuro`. Empty `[]` if change is platform-agnostic |
 | `hero` | string (optional) | path to hero image, only for `major` releases |
 
 ## Body Sections
