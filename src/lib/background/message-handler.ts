@@ -8,6 +8,7 @@ import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleAnkiMessage } from './anki-messages';
 import { handleMokuroMessage } from './mokuro-messages';
+import { handleDifficultyMessage } from './difficulty-messages';
 
 function getMessageType(message: unknown): string {
   if (!message || typeof message !== 'object') return 'unknown';
@@ -89,6 +90,9 @@ export function createBackgroundMessageHandler(
         case 'SET_MOKURO_ENABLED':
         case 'MOKURO_SYNC':
           return handleMokuroMessage(message, context);
+
+        case 'GET_DIFFICULTY':
+          return handleDifficultyMessage(message, context);
 
         default:
           return { success: false, error: 'Unknown message type' };

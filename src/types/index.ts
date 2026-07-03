@@ -129,6 +129,7 @@ export interface ExtensionSettings {
   targetStartTimes: (string | null)[];
   stretchGoalsEnabled: boolean;
   streakRiskNotification: boolean;
+  showDifficultyLevels?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -252,7 +253,8 @@ export type ExtensionMessage =
   | { type: 'ANKI_RESET' }
   | { type: 'MOKURO_SYNC'; volumes: Record<string, MokuroVolumeSnapshot> }
   | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
-  | { type: 'GET_MOKURO_STATE' };
+  | { type: 'GET_MOKURO_STATE' }
+  | { type: 'GET_DIFFICULTY'; channelId?: string | null; channelName?: string | null };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -410,7 +412,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   colorTheme: 'magenta' as ColorTheme,
   targetStartTimes: [null, null, null, null, null, null, null],
   stretchGoalsEnabled: true,
-  streakRiskNotification: false
+  streakRiskNotification: false,
+  showDifficultyLevels: true
 };
 
 export const STORAGE_KEYS = {
@@ -437,7 +440,8 @@ export const STORAGE_KEYS = {
   RELOGIN_REQUIRED: 'jp343_relogin_required',
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
   ANKI: 'jp343_extension_anki',
-  MOKURO: 'jp343_extension_mokuro'
+  MOKURO: 'jp343_extension_mokuro',
+  DIFFICULTY_HOTSET: 'jp343_difficulty_hotset'
 } as const;
 
 export interface CachedServerSession {

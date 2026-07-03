@@ -6,6 +6,9 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
 import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
+import { showDifficultyChip, hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
+import { lookupDifficultySeed, parseTitleLevel } from '../../lib/difficulty-seeds';
+import type { DifficultySeed } from '../../lib/difficulty-seeds';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 
@@ -48,6 +51,7 @@ export default defineContentScript({
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
+      hideDifficultyChip();
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
       observers.length = 0;
@@ -551,6 +555,19 @@ export default defineContentScript({
       }
     }
 
+    function updateDifficultyChip(): void {
+      if (!window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
+      const fromTitle = parseTitleLevel(getVideoTitle());
+      if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
+      const channelInfo = getChannelInfo();
+      sendMessage('GET_DIFFICULTY', { channelId: channelInfo.id, channelName: channelInfo.name }).then(response => {
+        const serverSeed = (response as { seed?: DifficultySeed | null } | undefined)?.seed ?? null;
+        const seedInfo = serverSeed || lookupDifficultySeed(channelInfo.id, channelInfo.name);
+        if (!seedInfo) { hideDifficultyChip(); return; }
+        showDifficultyChip(seedInfo, serverSeed ? 'server' : 'seed');
+      });
+    }
+
     function checkTrackingToast(): void {
       if (!hideNonJapanese || !trackJapaneseOnly) { hideTrackingToast(); return; }
       if (originalTitleResponsePending && originalTitleVideoId === getVideoId()) return;
@@ -687,6 +704,7 @@ export default defineContentScript({
           }, 1500));
 
           pendingRetryTimeouts.push(setTimeout(checkTrackingToast, 2500));
+          pendingRetryTimeouts.push(setTimeout(updateDifficultyChip, 2500));
 
           if (!state.channelId) {
             const retryDelays = [2000, 4000, 8000];
@@ -880,6 +898,7 @@ export default defineContentScript({
         }
 
         hideTrackingToast();
+        hideDifficultyChip();
         lastVideoUrl = currentUrl;
 
         cachedPlayer = null;
@@ -915,6 +934,7 @@ export default defineContentScript({
             attachVideoEvents(video);
             startAdMonitoring();
           }
+          pendingRetryTimeouts.push(setTimeout(updateDifficultyChip, 1500));
         }, 1000);
       }
     }
@@ -1009,6 +1029,12 @@ export default defineContentScript({
       }
     }, 2000);
     intervalIds.push(videoPollingId);
+
+    const chipKeepAliveId = setInterval(() => {
+      if (!window.location.pathname.includes('/watch')) return;
+      if (!isDifficultyChipMounted()) updateDifficultyChip();
+    }, 4000);
+    intervalIds.push(chipKeepAliveId);
 
     window.addEventListener('popstate', () => {
       setTimeout(handleUrlChange, 100);
