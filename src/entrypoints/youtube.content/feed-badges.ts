@@ -87,10 +87,17 @@ function buildBadge(seed: DifficultySeed): HTMLSpanElement {
   return badge;
 }
 
+function isVisible(el: Element): boolean {
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 function findAnchor(card: Element): Element | null {
   for (const selector of ANCHOR_SELECTORS) {
-    const el = card.querySelector(selector);
-    if (el) return el;
+    const candidates = card.querySelectorAll(selector);
+    for (const el of Array.from(candidates)) {
+      if (isVisible(el)) return el;
+    }
   }
   return null;
 }
@@ -127,7 +134,8 @@ function sweepCard(card: Element, lookup: ChannelSeedLookup): void {
 
   const desiredText = formatBadgeText(seed);
   const existing = card.querySelector('.' + BADGE_CLASS);
-  if (existing && card.getAttribute(BADGE_ATTR) === videoId && existing.textContent === desiredText) {
+  if (existing && card.getAttribute(BADGE_ATTR) === videoId
+    && existing.textContent === desiredText && isVisible(existing)) {
     return;
   }
 
