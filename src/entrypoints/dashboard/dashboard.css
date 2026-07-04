@@ -1810,34 +1810,38 @@
       margin-top: 2px;
     }
     .settings-toggle {
-      width: 40px;
-      height: 22px;
-      border-radius: 11px;
-      background: rgba(255, 255, 255, 0.1);
-      border: none;
+      width: 46px;
+      height: 26px;
+      border-radius: 13px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.22);
       cursor: pointer;
       position: relative;
-      transition: background 0.2s;
+      transition: background 0.18s ease-out, border-color 0.18s ease-out, box-shadow 0.18s ease-out;
       flex-shrink: 0;
       margin-left: 12px;
     }
     .settings-toggle::after {
       content: '';
       position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: var(--text-muted);
-      transition: all 0.2s;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 10px;
+      background: #c8c8d0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+      transition: left 0.18s cubic-bezier(0.34, 1.3, 0.64, 1), width 0.12s ease-out, background 0.18s ease-out;
     }
-    .settings-toggle.enabled { background: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.3); }
+    .settings-toggle:active::after { width: 24px; }
+    .settings-toggle.enabled { background: var(--accent); border-color: transparent; box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.35); }
     .settings-toggle.enabled::after {
-      left: 21px;
+      left: 22px;
       background: #fff;
     }
-    [data-theme="light"] .settings-toggle { background: rgba(0, 0, 0, 0.1); }
+    .settings-toggle.enabled:active::after { left: 18px; }
+    [data-theme="light"] .settings-toggle { background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.18); }
+    [data-theme="light"] .settings-toggle::after { background: #8a8a94; }
     [data-theme="light"] .settings-toggle.enabled {
       background: var(--accent);
       box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.25);

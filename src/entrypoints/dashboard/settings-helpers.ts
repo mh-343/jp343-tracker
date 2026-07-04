@@ -45,9 +45,13 @@ export function createToggleRow(
   const toggle = document.createElement('button');
   toggle.className = 'settings-toggle' + (enabled ? ' enabled' : '');
   toggle.type = 'button';
+  toggle.setAttribute('role', 'switch');
+  toggle.setAttribute('aria-checked', String(enabled));
+  toggle.setAttribute('aria-label', label);
   toggle.addEventListener('click', async () => {
     const newVal = !toggle.classList.contains('enabled');
     toggle.classList.toggle('enabled', newVal);
+    toggle.setAttribute('aria-checked', String(newVal));
     await onChange(newVal);
   });
 
