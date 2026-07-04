@@ -86,7 +86,8 @@ export function showDifficultyChip(seed: DifficultySeed, source: string): void {
   }
 
   chip.appendChild(span(doc, 'jp343-dc-sep', '|'));
-  chip.appendChild(span(doc, 'jp343-dc-tag', `jp343 beta - ${source}`));
+  chip.title = `jp343 difficulty (beta), source: ${source}`;
+  chip.appendChild(span(doc, 'jp343-dc-tag', 'jp343 beta'));
 
   if (mount.tagName.toLowerCase() === 'ytd-watch-metadata') {
     mount.prepend(chip);
