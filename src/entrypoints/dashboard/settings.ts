@@ -249,6 +249,13 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
     async (val) => { await updateSettings({ streakRiskNotification: val }); }
   ));
 
+  section.appendChild(createToggleRow(
+    'Show difficulty levels',
+    'Level badge on YouTube videos, fetches a small anonymous data file from jp343.com daily',
+    settings.showDifficultyLevels ?? true,
+    async (val) => { await updateSettings({ showDifficultyLevels: val }); }
+  ));
+
   container.appendChild(section);
 }
 
