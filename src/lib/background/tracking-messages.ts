@@ -8,7 +8,7 @@ import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
 
-function isJapaneseGatedPlatform(platform: Platform): boolean {
+export function isJapaneseGatedPlatform(platform: Platform): boolean {
   return platform === 'youtube' || platform === 'twitch';
 }
 

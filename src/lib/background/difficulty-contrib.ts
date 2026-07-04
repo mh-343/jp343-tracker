@@ -1,5 +1,7 @@
 import { STORAGE_KEYS } from '../../types';
 import type { PendingEntry, ExtensionStats, JP343UserState } from '../../types';
+import { containsKanji, isJapaneseContent } from '../language-detection';
+import { isJapaneseGatedPlatform } from './tracking-messages';
 import type { BackgroundMessageContext } from './message-context';
 
 const CONTRIB_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/contribute';
@@ -32,21 +34,31 @@ function channelMinutesBucket(minutes: number): string {
   return '600+';
 }
 
+function hasJapaneseSignal(entry: PendingEntry): boolean {
+  if (!isJapaneseGatedPlatform(entry.platform)) return true;
+  const name = entry.channelName ?? '';
+  const project = entry.project ?? '';
+  return isJapaneseContent(name) || containsKanji(name)
+    || isJapaneseContent(project) || containsKanji(project);
+}
+
 function collectChannels(entries: PendingEntry[]): ContribChannel[] {
-  const totals = new Map<string, { platform: string; minutes: number }>();
+  const totals = new Map<string, { platform: string; minutes: number; japanese: boolean }>();
   for (const entry of entries) {
     const key = (entry.channelId || entry.channelName || '').trim().toLowerCase();
     if (!key) continue;
     const existing = totals.get(key);
     if (existing) {
       existing.minutes += entry.duration_min;
+      existing.japanese = existing.japanese || hasJapaneseSignal(entry);
     } else {
-      totals.set(key, { platform: entry.platform, minutes: entry.duration_min });
+      totals.set(key, { platform: entry.platform, minutes: entry.duration_min, japanese: hasJapaneseSignal(entry) });
     }
   }
   const channels: ContribChannel[] = [];
   for (const [key, info] of totals) {
     if (info.minutes < MIN_CHANNEL_MINUTES) continue;
+    if (!info.japanese) continue;
     channels.push({ key, platform: info.platform, minutesBucket: channelMinutesBucket(info.minutes) });
   }
   return channels.slice(0, MAX_CHANNELS);
