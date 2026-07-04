@@ -79,12 +79,10 @@ export function showDifficultyChip(seed: DifficultySeed, source: string): void {
   chip.id = CHIP_ID;
 
   if (seed.mixed) {
-    const label = seed.jlptHint ? `Mixed | ${seed.jlptHint}` : `Mixed difficulty (around level ${seed.level})`;
+    const label = seed.jlptHint ? `Mixed ${seed.jlptHint}` : `Mixed difficulty (around level ${seed.level})`;
     chip.appendChild(span(doc, 'jp343-dc-mixed', label));
   } else {
-    chip.appendChild(span(doc, 'jp343-dc-level', `Level ${seed.level} of 5`));
-    chip.appendChild(span(doc, 'jp343-dc-sep', '|'));
-    chip.appendChild(span(doc, 'jp343-dc-hint', seed.jlptHint));
+    chip.appendChild(span(doc, 'jp343-dc-level', seed.jlptHint || `Level ${seed.level} of 5`));
   }
 
   chip.appendChild(span(doc, 'jp343-dc-sep', '|'));

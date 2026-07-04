@@ -70,10 +70,8 @@ function injectStyles(doc: Document): void {
 }
 
 function formatBadgeText(seed: DifficultySeed): string {
-  if (seed.mixed) {
-    return seed.jlptHint ? `Mixed ${seed.jlptHint}` : `Mixed ~L${seed.level}`;
-  }
-  return seed.jlptHint ? `L${seed.level} ${seed.jlptHint}` : `L${seed.level}`;
+  const hint = seed.jlptHint || `Level ${seed.level} of 5`;
+  return seed.mixed ? `Mixed ${hint}` : hint;
 }
 
 function buildBadge(seed: DifficultySeed): HTMLSpanElement {
