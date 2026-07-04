@@ -115,6 +115,7 @@ export function lookupSeedInMap(
 }
 
 function sweepCard(card: Element, lookup: ChannelSeedLookup): void {
+  if (card.querySelector(BADGE_CARD_SELECTORS)) return;
   if (!card.querySelector('a[href*="/watch?v="]')) { removeBadge(card); return; }
   const videoId = extractVideoIdFromElement(card);
   if (!videoId) { removeBadge(card); return; }
