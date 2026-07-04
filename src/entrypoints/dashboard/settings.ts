@@ -256,6 +256,13 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
     async (val) => { await updateSettings({ showDifficultyLevels: val }); }
   ));
 
+  section.appendChild(createToggleRow(
+    'Contribute anonymous stats',
+    'Improve level accuracy: weekly anonymous channel watch stats (channel + rough hours), no titles or timestamps. Not needed with an account',
+    settings.contributeAnonymousStats ?? false,
+    async (val) => { await updateSettings({ contributeAnonymousStats: val }); }
+  ));
+
   container.appendChild(section);
 }
 

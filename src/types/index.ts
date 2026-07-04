@@ -130,6 +130,7 @@ export interface ExtensionSettings {
   stretchGoalsEnabled: boolean;
   streakRiskNotification: boolean;
   showDifficultyLevels?: boolean;
+  contributeAnonymousStats?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -413,7 +414,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   targetStartTimes: [null, null, null, null, null, null, null],
   stretchGoalsEnabled: true,
   streakRiskNotification: false,
-  showDifficultyLevels: true
+  showDifficultyLevels: true,
+  contributeAnonymousStats: false
 };
 
 export const STORAGE_KEYS = {
@@ -441,7 +443,8 @@ export const STORAGE_KEYS = {
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
   ANKI: 'jp343_extension_anki',
   MOKURO: 'jp343_extension_mokuro',
-  DIFFICULTY_HOTSET: 'jp343_difficulty_hotset'
+  DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
+  DIFFICULTY_CONTRIB: 'jp343_difficulty_contrib'
 } as const;
 
 export interface CachedServerSession {

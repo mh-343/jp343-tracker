@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
+import { maybeContribute } from './difficulty-contrib';
 import type { DifficultySeed } from '../difficulty-seeds';
 
 const HOTSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/hotset';
@@ -79,6 +80,7 @@ function toSeed(entry: HotsetEntry): DifficultySeed {
 export async function handleDifficultyMapMessage(
   context: BackgroundMessageContext
 ): Promise<{ channels: Record<string, DifficultySeed> | null }> {
+  void maybeContribute(context);
   const settings = await context.loadSettings();
   if (settings.showDifficultyLevels === false) return { channels: null };
 
