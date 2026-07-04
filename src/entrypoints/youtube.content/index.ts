@@ -1,6 +1,6 @@
 // JP343 Extension - YouTube Content Script
 
-import type { VideoState, WhitelistedChannel, BlockedChannel } from '../../types';
+import type { VideoState, WhitelistedChannel, BlockedChannel, ExtensionSettings } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
@@ -9,6 +9,7 @@ import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/t
 import { showDifficultyChip, hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
 import { lookupDifficultySeed, parseTitleLevel } from '../../lib/difficulty-seeds';
 import type { DifficultySeed } from '../../lib/difficulty-seeds';
+import { startFeedBadges, stopFeedBadges, scheduleFeedBadgeSweep, lookupSeedInMap } from './feed-badges';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 
@@ -38,6 +39,8 @@ export default defineContentScript({
     let hideNonJapanese = false;
     let whitelistedChannels: WhitelistedChannel[] = [];
     let blockedChannels: BlockedChannel[] = [];
+    let difficultyEnabled = true;
+    let difficultyMap: Record<string, DifficultySeed> | null = null;
     const DEDUP_WINDOW_MS = 200;
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
@@ -52,6 +55,7 @@ export default defineContentScript({
     const intervalIds: ReturnType<typeof setInterval>[] = [];
     function cleanup(): void {
       hideDifficultyChip();
+      stopFeedBadges();
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
       observers.length = 0;
@@ -154,7 +158,12 @@ export default defineContentScript({
         hideNonJapanese = response.data.settings.hideNonJapanese ?? false;
         whitelistedChannels = response.data.settings.whitelistedChannels ?? [];
         blockedChannels = response.data.settings.blockedChannels ?? [];
+        difficultyEnabled = response.data.settings.showDifficultyLevels ?? true;
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
+        if (difficultyEnabled) {
+          startFeedBadges(resolveCardSeed);
+          void loadDifficultyMap();
+        }
       }
     }).catch(() => {});
 
@@ -167,8 +176,22 @@ export default defineContentScript({
         hideNonJapanese = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
         whitelistedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
         blockedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.blockedChannels ?? [];
+        const prevDifficulty = difficultyEnabled;
+        difficultyEnabled = (changes[STORAGE_KEYS.SETTINGS].newValue as ExtensionSettings).showDifficultyLevels ?? true;
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
+        if (difficultyEnabled !== prevDifficulty) {
+          if (difficultyEnabled) {
+            startFeedBadges(resolveCardSeed);
+            void loadDifficultyMap();
+          } else {
+            stopFeedBadges();
+            hideDifficultyChip();
+          }
+        }
         checkTrackingToast();
+      }
+      if (changes[STORAGE_KEYS.DIFFICULTY_HOTSET] && difficultyEnabled) {
+        void loadDifficultyMap();
       }
     });
 
@@ -555,17 +578,28 @@ export default defineContentScript({
       }
     }
 
+    function resolveCardSeed(channelId: string | null, channelName: string | null): DifficultySeed | null {
+      if (!difficultyEnabled) return null;
+      return lookupSeedInMap(difficultyMap, channelId, channelName)
+        || lookupDifficultySeed(channelId, channelName);
+    }
+
+    async function loadDifficultyMap(): Promise<void> {
+      const response = await sendMessage('GET_DIFFICULTY_MAP');
+      difficultyMap = (response as { channels?: Record<string, DifficultySeed> | null } | undefined)?.channels ?? null;
+      updateDifficultyChip();
+      scheduleFeedBadgeSweep();
+    }
+
     function updateDifficultyChip(): void {
-      if (!window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
+      if (!difficultyEnabled || !window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
       const fromTitle = parseTitleLevel(getVideoTitle());
       if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
       const channelInfo = getChannelInfo();
-      sendMessage('GET_DIFFICULTY', { channelId: channelInfo.id, channelName: channelInfo.name }).then(response => {
-        const serverSeed = (response as { seed?: DifficultySeed | null } | undefined)?.seed ?? null;
-        const seedInfo = serverSeed || lookupDifficultySeed(channelInfo.id, channelInfo.name);
-        if (!seedInfo) { hideDifficultyChip(); return; }
-        showDifficultyChip(seedInfo, serverSeed ? 'server' : 'seed');
-      });
+      const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
+      const seedInfo = serverSeed || lookupDifficultySeed(channelInfo.id, channelInfo.name);
+      if (!seedInfo) { hideDifficultyChip(); return; }
+      showDifficultyChip(seedInfo, serverSeed ? 'server' : 'seed');
     }
 
     function checkTrackingToast(): void {
@@ -1042,6 +1076,7 @@ export default defineContentScript({
 
     document.addEventListener('yt-navigate-finish', () => {
       setTimeout(handleUrlChange, 100);
+      scheduleFeedBadgeSweep();
     });
 
     lastVideoUrl = window.location.href;

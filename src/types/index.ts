@@ -254,7 +254,7 @@ export type ExtensionMessage =
   | { type: 'MOKURO_SYNC'; volumes: Record<string, MokuroVolumeSnapshot> }
   | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
   | { type: 'GET_MOKURO_STATE' }
-  | { type: 'GET_DIFFICULTY'; channelId?: string | null; channelName?: string | null };
+  | { type: 'GET_DIFFICULTY_MAP' };
 
 export interface DirectSyncResult {
   attempted: number;

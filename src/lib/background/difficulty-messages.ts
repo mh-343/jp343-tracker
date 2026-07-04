@@ -1,4 +1,3 @@
-import type { ExtensionMessage } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { DifficultySeed } from '../difficulty-seeds';
@@ -21,8 +20,6 @@ interface HotsetCache {
   lastAttempt: number;
   channels: Record<string, HotsetEntry>;
 }
-
-type DifficultyMessage = Extract<ExtensionMessage, { type: 'GET_DIFFICULTY' }>;
 
 let refreshInFlight = false;
 
@@ -79,24 +76,20 @@ function toSeed(entry: HotsetEntry): DifficultySeed {
   return { level, jlptHint: entry.hint || '', mixed };
 }
 
-export async function handleDifficultyMessage(
-  message: DifficultyMessage,
+export async function handleDifficultyMapMessage(
   context: BackgroundMessageContext
-): Promise<{ seed: DifficultySeed | null }> {
+): Promise<{ channels: Record<string, DifficultySeed> | null }> {
   const settings = await context.loadSettings();
-  if (settings.showDifficultyLevels === false) return { seed: null };
+  if (settings.showDifficultyLevels === false) return { channels: null };
 
   const cache = await loadCache();
   maybeRefresh(cache, context.log);
-  if (!cache) return { seed: null };
+  if (!cache) return { channels: null };
 
-  const keys = [message.channelId, message.channelName]
-    .filter((k): k is string => typeof k === 'string' && k.length > 0)
-    .map(k => k.trim().toLowerCase());
-
-  for (const key of keys) {
-    const entry = cache.channels[key];
-    if (entry) return { seed: toSeed(entry) };
+  const channels: Record<string, DifficultySeed> = {};
+  for (const [key, entry] of Object.entries(cache.channels)) {
+    channels[key] = toSeed(entry);
   }
-  return { seed: null };
+  return { channels };
 }
+
