@@ -7,7 +7,7 @@ import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-
 import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { showDifficultyChip, hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
-import { lookupDifficultySeed, parseTitleLevel } from '../../lib/difficulty-seeds';
+import { parseTitleLevel } from '../../lib/difficulty-seeds';
 import type { DifficultySeed } from '../../lib/difficulty-seeds';
 import { startFeedBadges, stopFeedBadges, scheduleFeedBadgeSweep, lookupSeedInMap } from './feed-badges';
 import { showUpdateNotification } from '../../lib/update-notification';
@@ -580,8 +580,7 @@ export default defineContentScript({
 
     function resolveCardSeed(channelId: string | null, channelName: string | null): DifficultySeed | null {
       if (!difficultyEnabled) return null;
-      return lookupSeedInMap(difficultyMap, channelId, channelName)
-        || lookupDifficultySeed(channelId, channelName);
+      return lookupSeedInMap(difficultyMap, channelId, channelName);
     }
 
     async function loadDifficultyMap(): Promise<void> {
@@ -597,9 +596,8 @@ export default defineContentScript({
       if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
       const channelInfo = getChannelInfo();
       const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
-      const seedInfo = serverSeed || lookupDifficultySeed(channelInfo.id, channelInfo.name);
-      if (!seedInfo) { hideDifficultyChip(); return; }
-      showDifficultyChip(seedInfo, serverSeed ? 'server' : 'seed');
+      if (!serverSeed) { hideDifficultyChip(); return; }
+      showDifficultyChip(serverSeed, 'server');
     }
 
     function checkTrackingToast(): void {
