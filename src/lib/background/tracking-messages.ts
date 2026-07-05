@@ -4,12 +4,21 @@ import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { isJapaneseContent, isLikelyJapaneseVideo } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
+import { getMokuroState } from './mokuro-sync';
 import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
 
 function isJapaneseGatedPlatform(platform: Platform): boolean {
   return platform === 'youtube' || platform === 'twitch';
+}
+
+function isMokuroHost(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'reader.mokuro.app';
+  } catch {
+    return false;
+  }
 }
 
 async function checkJapaneseVideo(state: VideoState): Promise<boolean> {
@@ -506,6 +515,11 @@ export async function handleTrackingMessage(
 
       if (!('title' in message) || !('url' in message) || !('tabId' in message)) {
         return { success: false, error: 'Missing required fields' };
+      }
+
+      const mokuro = await getMokuroState();
+      if (mokuro.enabled && isMokuroHost(message.url as string)) {
+        return { success: false, error: 'reader.mokuro.app is tracked automatically by Mokuro import.' };
       }
 
       const currentSession = tracker.getCurrentSession();

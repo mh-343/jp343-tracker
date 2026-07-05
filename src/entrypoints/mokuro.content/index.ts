@@ -44,6 +44,11 @@ export default defineContentScript({
       }
     }
 
+    browser.runtime.onMessage.addListener((message) => {
+      if (message?.type === 'GET_CONTENT_TIME') return Promise.resolve({ alive: true });
+      return undefined;
+    });
+
     pushSnapshot();
     intervalIds.push(setInterval(pushSnapshot, 60000));
 

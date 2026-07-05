@@ -629,6 +629,35 @@
       text-decoration: none;
     }
     .reading-myhub-link:hover { text-decoration: underline; }
+    .reading-warning {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: rgba(230, 138, 20, 0.10);
+      border: 1px solid rgba(230, 138, 20, 0.38);
+    }
+    .reading-warning-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .mokuro-regrant-btn {
+      flex-shrink: 0;
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .mokuro-regrant-btn:hover { opacity: 0.9; }
     @media (max-width: 520px) {
       .reading-grid { grid-template-columns: repeat(2, 1fr); }
       .reading-series-item {
