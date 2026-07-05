@@ -25,7 +25,6 @@ const BADGE_CARD_SELECTORS = [
   'ytd-movie-renderer'
 ].join(',');
 
-// pending user console verification
 const ANCHOR_SELECTORS = [
   'ytd-channel-name',
   '#metadata-line',
