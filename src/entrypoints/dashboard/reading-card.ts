@@ -2,6 +2,7 @@ import type { MokuroState, PendingEntry, ExtensionStats } from '../../types';
 import { STORAGE_KEYS, DEFAULT_MOKURO_STATE, DEFAULT_SETTINGS, DEFAULT_STATS } from '../../types';
 import { getLocalDateString, formatStatDuration } from '../../lib/format-utils';
 import { isReading } from '../../lib/time-tracker';
+import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
 
 const MYHUB_URL = 'https://jp343.com/my-hub/?src=ext_reading';
 
@@ -28,7 +29,7 @@ async function loadView(): Promise<ReadingView | null> {
   const readingDaily = stats.readingDailyMinutes ?? {};
 
   const durableReadingMin = Object.values(readingDaily).reduce((sum, m) => sum + m, 0);
-  if (durableReadingMin <= 0 && state.totalMinutes <= 0 && entries.length === 0) return null;
+  if (durableReadingMin <= 0 && state.totalMinutes <= 0 && entries.length === 0 && !state.enabled) return null;
 
   const settings = { ...DEFAULT_SETTINGS, ...(res[STORAGE_KEYS.SETTINGS] || {}) };
   return { state, entries, readingDaily, dayStartHour: settings.dayStartHour || 0 };
@@ -120,6 +121,20 @@ function buildSeriesList(entries: PendingEntry[]): HTMLElement {
   return box;
 }
 
+function buildPermissionWarning(): HTMLElement {
+  const box = el('div', 'reading-warning');
+  box.appendChild(el('span', 'reading-warning-text', 'Mokuro tracking is paused. Access to reader.mokuro.app was turned off.'));
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'mokuro-regrant-btn';
+  btn.textContent = 'Re-allow access';
+  btn.addEventListener('click', async () => {
+    if (await requestMokuroPermission()) await renderReadingCard();
+  });
+  box.appendChild(btn);
+  return box;
+}
+
 export async function renderReadingCard(): Promise<void> {
   const card = document.getElementById('readingCard');
   const body = document.getElementById('readingCardBody');
@@ -134,6 +149,10 @@ export async function renderReadingCard(): Promise<void> {
   body.textContent = '';
 
   const { state, entries, readingDaily, dayStartHour } = view;
+
+  if (state.enabled && !(await hasMokuroPermission())) {
+    body.appendChild(buildPermissionWarning());
+  }
   const today = getLocalDateString(new Date(), dayStartHour);
   const todayMin = readingDaily[today] ?? 0;
   const weekMin = lastDays(readingDaily, today, 7).reduce((sum, m) => sum + m, 0);

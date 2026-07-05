@@ -9,9 +9,9 @@ const WALLCLOCK_SLACK_MIN = 1;
 const DAILY_CAP_MIN = 720;
 const DAY_RETENTION = 8;
 const MOKURO_URL = 'https://reader.mokuro.app/';
-const MOKURO_ORIGIN = '*://reader.mokuro.app/*';
+export const MOKURO_ORIGIN = '*://reader.mokuro.app/*';
 const MOKURO_SCRIPT_ID = 'mokuro-reader';
-const MOKURO_SCRIPT_JS = 'content-scripts/mokuro.js';
+export const MOKURO_SCRIPT_JS = 'content-scripts/mokuro.js';
 
 const DEBUG = import.meta.env.DEV;
 const log = DEBUG ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -77,6 +77,18 @@ export async function syncMokuroRegistration(): Promise<void> {
   const state = await loadMokuroState();
   if (state.enabled) await registerMokuroScript();
   else await unregisterMokuroScript();
+}
+
+// Reinject target if enabled + permitted
+export async function getMokuroReinjectTarget(): Promise<{ matches: string[]; file: string } | null> {
+  const state = await loadMokuroState();
+  if (!state.enabled) return null;
+  try {
+    if (!(await browser.permissions.contains({ origins: [MOKURO_ORIGIN] }))) return null;
+  } catch {
+    return null;
+  }
+  return { matches: [MOKURO_ORIGIN], file: MOKURO_SCRIPT_JS };
 }
 
 export async function setMokuroEnabled(enabled: boolean): Promise<MokuroState> {

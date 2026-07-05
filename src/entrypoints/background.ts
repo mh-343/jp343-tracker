@@ -42,7 +42,7 @@ import {
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
 import { syncMokuroRegistration } from '../lib/background/mokuro-sync';
-import { reinjectTrackedTabs } from '../lib/background/reinject';
+import { reinjectTrackedTabs, reinjectMokuroTabs } from '../lib/background/reinject';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -821,6 +821,12 @@ export default defineBackground(() => {
     if (details.reason !== 'update') return;
     // Resume tracking in open tabs.
     return recoveryReady.then(() => reinjectTrackedTabs(log));
+  });
+
+  // Re-grant of Mokuro host access
+  browser.permissions.onAdded.addListener((perms) => {
+    if (!perms.origins?.some(o => o.includes('reader.mokuro.app'))) return;
+    void syncMokuroRegistration().then(() => reinjectMokuroTabs(log));
   });
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;

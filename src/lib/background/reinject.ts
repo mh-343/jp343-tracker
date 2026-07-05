@@ -1,3 +1,5 @@
+import { getMokuroReinjectTarget } from './mokuro-sync';
+
 type Logger = (...args: unknown[]) => void;
 
 interface ReinjectTarget {
@@ -105,25 +107,40 @@ async function reinjectTab(tabId: number, target: ReinjectTarget): Promise<void>
 // After an update, re-inject trackers
 // into open tabs so tracking resumes
 // without a manual reload.
+async function reinjectTarget(target: ReinjectTarget, log: Logger): Promise<void> {
+  try {
+    const tabs = await browser.tabs.query({ url: target.matches });
+    await Promise.all(tabs.map(async (tab) => {
+      const tabId = tab.id;
+      if (typeof tabId !== 'number') return;
+      try {
+        if (await tabHasLiveInstance(tabId)) return;
+        await reinjectTab(tabId, target);
+        log('[JP343] reinject: resumed', target.file, tabId);
+      } catch (err) {
+        log('[JP343] reinject: tab failed', target.file, tabId, err);
+      }
+    }));
+  } catch (err) {
+    log('[JP343] reinject: target failed', target.file, err);
+  }
+}
+
 export async function reinjectTrackedTabs(log: Logger): Promise<void> {
   if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
 
-  for (const target of TARGETS) {
-    try {
-      const tabs = await browser.tabs.query({ url: target.matches });
-      await Promise.all(tabs.map(async (tab) => {
-        const tabId = tab.id;
-        if (typeof tabId !== 'number') return;
-        try {
-          if (await tabHasLiveInstance(tabId)) return;
-          await reinjectTab(tabId, target);
-          log('[JP343] reinject: resumed', target.file, tabId);
-        } catch (err) {
-          log('[JP343] reinject: tab failed', target.file, tabId, err);
-        }
-      }));
-    } catch (err) {
-      log('[JP343] reinject: target failed', target.file, err);
-    }
+  const targets = [...TARGETS];
+  const mokuro = await getMokuroReinjectTarget();
+  if (mokuro) targets.push(mokuro);
+
+  for (const target of targets) {
+    await reinjectTarget(target, log);
   }
+}
+
+// Re-inject only the Mokuro tabs
+export async function reinjectMokuroTabs(log: Logger): Promise<void> {
+  if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
+  const mokuro = await getMokuroReinjectTarget();
+  if (mokuro) await reinjectTarget(mokuro, log);
 }

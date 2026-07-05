@@ -7,6 +7,7 @@ import { getSettings, getFreshSettings, updateSettings, createToggleRow, showSta
 import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
 import { rebuildChannelsPanel } from './settings-channels';
+import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   youtube: 'YouTube',
@@ -449,36 +450,19 @@ function buildDiagnosticsPanel(container: HTMLElement, settings: ExtensionSettin
 }
 
 
-const MOKURO_ORIGIN = '*://reader.mokuro.app/*';
-
-// user-gesture only
-function requestMokuroPermission(): Promise<boolean> {
-  try {
-    return browser.permissions.request({ origins: [MOKURO_ORIGIN] });
-  } catch {
-    return Promise.resolve(false);
-  }
-}
-
-async function hasMokuroPermission(): Promise<boolean> {
-  try {
-    return await browser.permissions.contains({ origins: [MOKURO_ORIGIN] });
-  } catch {
-    return false;
-  }
-}
-
-async function refreshMokuro(statusEl: HTMLElement, toggle: HTMLElement | null): Promise<void> {
+async function refreshMokuro(statusEl: HTMLElement, toggle: HTMLElement | null, regrantBtn: HTMLElement | null): Promise<void> {
   const res = await browser.runtime.sendMessage({ type: 'GET_MOKURO_STATE' }) as { data?: { mokuroState?: MokuroState } };
   const state = res?.data?.mokuroState;
   const enabled = !!state?.enabled;
   if (toggle) toggle.classList.toggle('enabled', enabled);
+  if (regrantBtn) regrantBtn.style.display = 'none';
   if (!enabled) {
     statusEl.textContent = 'Off. Enable to read your Mokuro reading time.';
     return;
   }
   if (!(await hasMokuroPermission())) {
-    statusEl.textContent = 'Allow access to reader.mokuro.app, then reload your Mokuro tab.';
+    statusEl.textContent = 'Access to reader.mokuro.app was turned off. Re-allow it to keep tracking.';
+    if (regrantBtn) regrantBtn.style.display = '';
     return;
   }
   const mins = Math.round(state?.totalMinutes ?? 0);
@@ -505,6 +489,16 @@ function buildMokuroPanel(container: HTMLElement): void {
   status.textContent = 'Checking…';
 
   let toggle: HTMLElement | null = null;
+
+  const regrantBtn = document.createElement('button');
+  regrantBtn.type = 'button';
+  regrantBtn.className = 'mokuro-regrant-btn';
+  regrantBtn.textContent = 'Re-allow access';
+  regrantBtn.style.display = 'none';
+  regrantBtn.addEventListener('click', async () => {
+    if (await requestMokuroPermission()) await refreshMokuro(status, toggle, regrantBtn);
+  });
+
   const row = createToggleRow(
     'Track Mokuro reading time',
     'Count your reader.mokuro.app reading as immersion.',
@@ -516,15 +510,16 @@ function buildMokuroPanel(container: HTMLElement): void {
         return;
       }
       await browser.runtime.sendMessage({ type: 'SET_MOKURO_ENABLED', enabled: val });
-      await refreshMokuro(status, toggle);
+      await refreshMokuro(status, toggle, regrantBtn);
     }
   );
   toggle = row.querySelector('.settings-toggle') as HTMLElement | null;
   section.appendChild(row);
   section.appendChild(status);
+  section.appendChild(regrantBtn);
   container.appendChild(section);
 
-  void refreshMokuro(status, toggle);
+  void refreshMokuro(status, toggle, regrantBtn);
 }
 
 function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): void {
