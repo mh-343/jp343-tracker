@@ -261,6 +261,13 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
 });
 
+const onMokuroPermissionChange = (perms: { origins?: string[] }): void => {
+  if (!perms.origins?.some(o => o.includes('reader.mokuro.app'))) return;
+  void renderReadingCard();
+};
+browser.permissions.onAdded.addListener(onMokuroPermissionChange);
+browser.permissions.onRemoved.addListener(onMokuroPermissionChange);
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     refresh();
