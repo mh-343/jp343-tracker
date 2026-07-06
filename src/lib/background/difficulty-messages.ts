@@ -1,8 +1,11 @@
 import { STORAGE_KEYS } from '../../types';
+import type { JP343UserState, CachedServerSession } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import { clampLevel } from '../difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../difficulty-seeds';
 import { withStorageLock } from '../storage-lock';
+import { loadPendingEntries } from '../pending-entries';
+import { tracker } from '../time-tracker';
 
 const HOTSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/hotset';
 const VIDEOSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/videoset';
@@ -175,4 +178,136 @@ export async function handleSaveLocalDifficultyBand(message: {
     await browser.storage.local.set({ [STORAGE_KEYS.DIFFICULTY_LOCAL]: cache });
   });
   return { success: true };
+}
+
+const VOTE_MIN_MINUTES = 30;
+const VOTE_FETCH_TIMEOUT_MS = 10000;
+
+interface MyVote {
+  level: number | null;
+  mixed: boolean;
+  at: number;
+}
+
+export interface VoteStateResponse {
+  eligible: boolean;
+  vote: { level: number | null; mixed: boolean } | null;
+}
+
+export interface VoteSubmitResponse {
+  success: boolean;
+  code?: string;
+  message?: string;
+  votesForChannel?: number;
+}
+
+function channelVoteKey(channelId: string | null, channelName: string | null): string | null {
+  const raw = channelId || channelName;
+  return raw ? raw.trim().toLowerCase() : null;
+}
+
+async function loadUserState(): Promise<JP343UserState | null> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.USER);
+  return (result[STORAGE_KEYS.USER] as JP343UserState | undefined) ?? null;
+}
+
+async function loadMyVotes(): Promise<Record<string, MyVote>> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.DIFFICULTY_MY_VOTES);
+  return (result[STORAGE_KEYS.DIFFICULTY_MY_VOTES] as Record<string, MyVote> | undefined) ?? {};
+}
+
+// Rough gate, server enforces the real one
+async function trackedMinutesForChannel(channelId: string | null, channelName: string | null): Promise<number> {
+  const nameKey = channelName?.trim().toLowerCase() || null;
+  let minutes = 0;
+  const pending = await loadPendingEntries();
+  for (const entry of pending) {
+    const idMatch = !!channelId && entry.channelId === channelId;
+    const nameMatch = !!nameKey && (
+      entry.channelName?.trim().toLowerCase() === nameKey
+      || entry.project?.trim().toLowerCase() === nameKey
+    );
+    if (idMatch || nameMatch) minutes += entry.duration_min;
+  }
+  if (nameKey) {
+    const cached = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
+    const sessions = (cached[STORAGE_KEYS.CACHED_SERVER_SESSIONS] as CachedServerSession[] | undefined) ?? [];
+    for (const s of sessions) {
+      if (s.title?.trim().toLowerCase() === nameKey) minutes += s.duration_min;
+    }
+  }
+  const live = tracker.getCurrentSession();
+  if (live && !!channelId && live.channelId === channelId) {
+    minutes += live.accumulatedMs / 60000;
+  }
+  return minutes;
+}
+
+export async function handleGetVoteState(
+  message: { channelId: string | null; channelName: string | null },
+  context: BackgroundMessageContext
+): Promise<VoteStateResponse> {
+  const none: VoteStateResponse = { eligible: false, vote: null };
+  const settings = await context.loadSettings();
+  if (settings.showDifficultyLevels === false || settings.difficultyLocalOnly) return none;
+  const user = await loadUserState();
+  if (!user?.extApiToken) return none;
+  const key = channelVoteKey(message.channelId, message.channelName);
+  if (!key) return none;
+  const votes = await loadMyVotes();
+  const own = votes[key];
+  if (own) return { eligible: true, vote: { level: own.level, mixed: own.mixed } };
+  const minutes = await trackedMinutesForChannel(message.channelId, message.channelName);
+  return { eligible: minutes >= VOTE_MIN_MINUTES, vote: null };
+}
+
+export async function handleSubmitDifficultyVote(message: {
+  channelId: string | null;
+  channelName: string | null;
+  channelUrl: string | null;
+  videoId: string | null;
+  level: number | null;
+  mixed: boolean;
+}): Promise<VoteSubmitResponse> {
+  const user = await loadUserState();
+  if (!user?.extApiToken) return { success: false, code: 'auth_required' };
+  if (!message.mixed && (!message.level || message.level < 1 || message.level > 5)) {
+    return { success: false, code: 'invalid_input' };
+  }
+  const ajaxUrl = user.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+  const params = new URLSearchParams();
+  params.set('action', 'jp343_extension_vote_difficulty');
+  params.set('ext_api_token', user.extApiToken);
+  params.set('platform', 'youtube');
+  if (message.channelId) params.set('channel_id', message.channelId);
+  if (message.channelName) params.set('channel_name', message.channelName);
+  if (message.channelUrl) params.set('channel_url', message.channelUrl);
+  if (message.videoId) params.set('video_id', message.videoId);
+  if (message.mixed) params.set('mixed', '1');
+  else params.set('level', String(message.level));
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), VOTE_FETCH_TIMEOUT_MS);
+  let result: { success?: boolean; data?: { code?: string; message?: string; votesForChannel?: number } };
+  try {
+    const response = await fetch(ajaxUrl, { method: 'POST', signal: controller.signal, body: params });
+    if (!response.ok) return { success: false, code: 'server_error' };
+    result = await response.json() as typeof result;
+  } catch {
+    return { success: false, code: 'network' };
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!result.success) {
+    return { success: false, code: result.data?.code || 'server_error', message: result.data?.message };
+  }
+  const key = channelVoteKey(message.channelId, message.channelName);
+  if (key) {
+    await withStorageLock(async () => {
+      const votes = await loadMyVotes();
+      votes[key] = { level: message.mixed ? null : message.level, mixed: message.mixed, at: Date.now() };
+      await browser.storage.local.set({ [STORAGE_KEYS.DIFFICULTY_MY_VOTES]: votes });
+    });
+  }
+  return { success: true, votesForChannel: result.data?.votesForChannel };
 }

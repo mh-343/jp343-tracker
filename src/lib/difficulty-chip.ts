@@ -48,6 +48,47 @@ function injectStyles(doc: Document): void {
       letter-spacing: 0.4px;
       text-transform: uppercase;
     }
+    #${CHIP_ID} .jp343-dc-vote {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    #${CHIP_ID} .jp343-dc-rate {
+      color: #888;
+      cursor: pointer;
+      text-decoration: underline dotted;
+    }
+    #${CHIP_ID} .jp343-dc-rate:hover {
+      color: #ff4fa3;
+    }
+    #${CHIP_ID} .jp343-dc-vote-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 5px;
+      color: #ddd;
+      font-family: inherit;
+      font-size: 11px;
+      line-height: 1.2;
+      padding: 1px 6px;
+      cursor: pointer;
+    }
+    #${CHIP_ID} .jp343-dc-vote-btn:hover:not(:disabled) {
+      border-color: #ff4fa3;
+      color: #ff4fa3;
+    }
+    #${CHIP_ID} .jp343-dc-vote-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    #${CHIP_ID} .jp343-dc-vote-btn.jp343-dc-selected {
+      border-color: #ff4fa3;
+      color: #ff4fa3;
+    }
+    #${CHIP_ID} .jp343-dc-vote-msg {
+      color: #f0b429;
+      font-size: 11px;
+    }
   `;
   doc.head.appendChild(style);
 }
@@ -67,7 +108,78 @@ function span(doc: Document, className: string, text: string): HTMLSpanElement {
   return el;
 }
 
-export function showDifficultyChip(seed: DifficultySeed, source: string): void {
+export interface ChipVoteContext {
+  ownVote: { level: number | null; mixed: boolean } | null;
+  onVote: (level: number | null, mixed: boolean) => Promise<{ ok: boolean; message?: string }>;
+}
+
+const VOTE_LEVELS: Array<{ level: number; label: string }> = [
+  { level: 1, label: 'N5' },
+  { level: 2, label: 'N4' },
+  { level: 3, label: 'N3' },
+  { level: 4, label: 'N2' },
+  { level: 5, label: 'N1' }
+];
+
+function voteLabel(vote: { level: number | null; mixed: boolean }): string {
+  if (vote.mixed) return 'Mixed';
+  const entry = VOTE_LEVELS.find(v => v.level === vote.level);
+  return entry ? entry.label : `Level ${vote.level}`;
+}
+
+function voteButton(doc: Document, label: string, selected: boolean, onClick: () => void): HTMLButtonElement {
+  const btn = doc.createElement('button');
+  btn.type = 'button';
+  btn.className = selected ? 'jp343-dc-vote-btn jp343-dc-selected' : 'jp343-dc-vote-btn';
+  btn.textContent = label;
+  btn.addEventListener('click', onClick);
+  return btn;
+}
+
+function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
+  const area = doc.createElement('span');
+  area.className = 'jp343-dc-vote';
+  let currentVote = ctx.ownVote;
+
+  function renderCollapsed(): void {
+    area.textContent = '';
+    const trigger = span(doc, 'jp343-dc-rate', currentVote ? `your vote: ${voteLabel(currentVote)}` : 'rate');
+    trigger.title = 'Rate how hard this channel feels to you';
+    trigger.addEventListener('click', renderExpanded);
+    area.appendChild(trigger);
+  }
+
+  function renderExpanded(): void {
+    area.textContent = '';
+    const buttons: HTMLButtonElement[] = [];
+    const msg = span(doc, 'jp343-dc-vote-msg', '');
+    const cast = (level: number | null, mixed: boolean): void => {
+      buttons.forEach(b => { b.disabled = true; });
+      msg.textContent = '';
+      void ctx.onVote(level, mixed).then(result => {
+        if (result.ok) {
+          currentVote = { level, mixed };
+          renderCollapsed();
+        } else {
+          buttons.forEach(b => { b.disabled = false; });
+          msg.textContent = result.message || 'Vote failed, try again later';
+        }
+      });
+    };
+    for (const v of VOTE_LEVELS) {
+      const selected = !!currentVote && !currentVote.mixed && currentVote.level === v.level;
+      buttons.push(voteButton(doc, v.label, selected, () => cast(v.level, false)));
+    }
+    buttons.push(voteButton(doc, 'Mixed', currentVote?.mixed ?? false, () => cast(null, true)));
+    buttons.forEach(b => area.appendChild(b));
+    area.appendChild(msg);
+  }
+
+  renderCollapsed();
+  return area;
+}
+
+export function showDifficultyChip(seed: DifficultySeed, source: string, voteCtx?: ChipVoteContext): void {
   const doc = document;
   const mount = findMountPoint(doc);
   if (!mount) return;
@@ -88,6 +200,11 @@ export function showDifficultyChip(seed: DifficultySeed, source: string): void {
   chip.appendChild(span(doc, 'jp343-dc-sep', '|'));
   chip.title = `jp343 difficulty (beta), source: ${source}`;
   chip.appendChild(span(doc, 'jp343-dc-tag', 'jp343 beta'));
+
+  if (voteCtx) {
+    chip.appendChild(span(doc, 'jp343-dc-sep', '|'));
+    chip.appendChild(buildVoteArea(doc, voteCtx));
+  }
 
   if (mount.tagName.toLowerCase() === 'ytd-watch-metadata') {
     mount.prepend(chip);

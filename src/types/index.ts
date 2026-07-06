@@ -258,7 +258,9 @@ export type ExtensionMessage =
   | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
   | { type: 'GET_MOKURO_STATE' }
   | { type: 'GET_DIFFICULTY_MAP' }
-  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string };
+  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string }
+  | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null }
+  | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; level: number | null; mixed: boolean };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -448,7 +450,8 @@ export const STORAGE_KEYS = {
   MOKURO: 'jp343_extension_mokuro',
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
   DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
-  DIFFICULTY_LOCAL: 'jp343_difficulty_local'
+  DIFFICULTY_LOCAL: 'jp343_difficulty_local',
+  DIFFICULTY_MY_VOTES: 'jp343_difficulty_my_votes'
 } as const;
 
 export interface CachedServerSession {

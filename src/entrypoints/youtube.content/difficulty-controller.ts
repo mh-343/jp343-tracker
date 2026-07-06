@@ -2,6 +2,7 @@
 
 import { STORAGE_KEYS } from '../../types';
 import { showDifficultyChip, hideDifficultyChip } from '../../lib/difficulty-chip';
+import type { ChipVoteContext } from '../../lib/difficulty-chip';
 import { parseTitleLevel } from '../../lib/difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../../lib/difficulty-seeds';
 import { estimateLocalBand, LOCAL_METHOD_VERSION } from '../../lib/difficulty-local/estimator';
@@ -32,6 +33,9 @@ let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
 let difficultyChannelBounds: Record<string, ChannelBounds> | null = null;
 const localBandCache = new Map<string, { seed: DifficultySeed; source: string } | null>();
 const localComputing = new Set<string>();
+let voteState: { eligible: boolean; vote: { level: number | null; mixed: boolean } | null } | null = null;
+let voteStateKey: string | null = null;
+let voteStateRequested: string | null = null;
 
 export function initDifficulty(d: DifficultyDeps): void {
   deps = d;
@@ -105,20 +109,80 @@ async function computeAndApplyLocalEstimate(videoId: string, channelId: string |
   }
 }
 
+function channelKeyOf(channelInfo: { id: string | null; name: string | null }): string | null {
+  const raw = channelInfo.id || channelInfo.name;
+  return raw ? raw.trim().toLowerCase() : null;
+}
+
+function resetVoteState(): void {
+  voteState = null;
+  voteStateKey = null;
+  voteStateRequested = null;
+}
+
+function ensureVoteState(channelInfo: { id: string | null; name: string | null }): void {
+  if (!deps) return;
+  const key = channelKeyOf(channelInfo);
+  if (!key || key === voteStateKey || key === voteStateRequested) return;
+  voteStateRequested = key;
+  void deps.sendMessage('GET_VOTE_STATE', { channelId: channelInfo.id, channelName: channelInfo.name })
+    .then(response => {
+      if (voteStateRequested !== key) return;
+      voteStateRequested = null;
+      voteStateKey = key;
+      const data = response as { eligible?: boolean; vote?: { level: number | null; mixed: boolean } | null } | undefined;
+      voteState = data ? { eligible: data.eligible ?? false, vote: data.vote ?? null } : null;
+      if (voteState?.eligible) updateDifficultyChip();
+    });
+}
+
+function voteContextFor(
+  videoId: string | null,
+  channelInfo: { id: string | null; name: string | null; url: string | null }
+): ChipVoteContext | undefined {
+  ensureVoteState(channelInfo);
+  const key = channelKeyOf(channelInfo);
+  if (!key || key !== voteStateKey || !voteState?.eligible) return undefined;
+  const vote = voteState.vote;
+  return {
+    ownVote: vote,
+    onVote: async (level, mixed) => {
+      if (!deps) return { ok: false };
+      const response = await deps.sendMessage('SUBMIT_DIFFICULTY_VOTE', {
+        channelId: channelInfo.id,
+        channelName: channelInfo.name,
+        channelUrl: channelInfo.url,
+        videoId,
+        level,
+        mixed
+      });
+      const result = response as { success?: boolean; message?: string } | undefined;
+      if (result?.success) {
+        voteState = { eligible: true, vote: { level, mixed } };
+        return { ok: true };
+      }
+      return { ok: false, message: result?.message };
+    }
+  };
+}
+
 export function updateDifficultyChip(): void {
   if (!deps) return;
   if (!difficultyEnabled || !window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
-  const fromTitle = parseTitleLevel(deps.getVideoTitle());
-  if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
   const videoId = deps.getVideoId();
-  const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
-  if (videoSeed) { showDifficultyChip(videoSeed, 'video estimate'); return; }
-  if (!difficultyMapLoaded && !difficultyLocalOnly) return;
   const channelInfo = deps.getChannelInfo();
+  const show = (seed: DifficultySeed, source: string): void => {
+    showDifficultyChip(seed, source, voteContextFor(videoId, channelInfo));
+  };
+  const fromTitle = parseTitleLevel(deps.getVideoTitle());
+  if (fromTitle) { show(fromTitle, 'title tag'); return; }
+  const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
+  if (videoSeed) { show(videoSeed, 'video estimate'); return; }
+  if (!difficultyMapLoaded && !difficultyLocalOnly) return;
   const cachedLocal = videoId ? localBandCache.get(videoId) : undefined;
-  if (cachedLocal) { showDifficultyChip(cachedLocal.seed, cachedLocal.source); return; }
+  if (cachedLocal) { show(cachedLocal.seed, cachedLocal.source); return; }
   const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
-  if (serverSeed) showDifficultyChip(serverSeed, 'channel estimate');
+  if (serverSeed) show(serverSeed, 'channel estimate');
   else hideDifficultyChip();
   if (videoId && cachedLocal === undefined) {
     void computeAndApplyLocalEstimate(videoId, channelInfo.id, channelInfo.name);
@@ -141,10 +205,12 @@ export function applyDifficultySettings(enabled: boolean, localOnly: boolean): v
   if (!enabled && prevEnabled) {
     stopFeedBadges();
     hideDifficultyChip();
+    resetVoteState();
     return;
   }
   if (enabled && localOnly !== prevLocalOnly) {
     localBandCache.clear();
+    resetVoteState();
     void loadDifficultyMap();
   }
 }
