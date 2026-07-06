@@ -54,19 +54,18 @@ function injectStyles(doc: Document): void {
       gap: 4px;
       flex-wrap: wrap;
     }
-    #${CHIP_ID} .jp343-dc-rate {
-      color: #888;
-      cursor: pointer;
-      text-decoration: underline dotted;
-    }
-    #${CHIP_ID} .jp343-dc-rate:hover {
-      color: #ff4fa3;
+    #${CHIP_ID} .jp343-dc-vote-label {
+      color: #555;
+      font-size: 10px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
     }
     #${CHIP_ID} .jp343-dc-vote-btn {
+      --vc: #bbb;
       background: transparent;
-      border: 1px solid rgba(255, 255, 255, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 5px;
-      color: #ddd;
+      color: var(--vc);
       font-family: inherit;
       font-size: 11px;
       line-height: 1.2;
@@ -74,17 +73,24 @@ function injectStyles(doc: Document): void {
       cursor: pointer;
     }
     #${CHIP_ID} .jp343-dc-vote-btn:hover:not(:disabled) {
-      border-color: #ff4fa3;
-      color: #ff4fa3;
+      border-color: var(--vc);
     }
     #${CHIP_ID} .jp343-dc-vote-btn:disabled {
       opacity: 0.5;
       cursor: default;
     }
     #${CHIP_ID} .jp343-dc-vote-btn.jp343-dc-selected {
-      border-color: #ff4fa3;
-      color: #ff4fa3;
+      background: var(--vc);
+      border-color: var(--vc);
+      color: #111;
+      font-weight: 600;
     }
+    #${CHIP_ID} .jp343-dc-v1 { --vc: #4ade80; }
+    #${CHIP_ID} .jp343-dc-v2 { --vc: #a3e635; }
+    #${CHIP_ID} .jp343-dc-v3 { --vc: #facc15; }
+    #${CHIP_ID} .jp343-dc-v4 { --vc: #fb923c; }
+    #${CHIP_ID} .jp343-dc-v5 { --vc: #f87171; }
+    #${CHIP_ID} .jp343-dc-vmix { --vc: #f0b429; }
     #${CHIP_ID} .jp343-dc-vote-msg {
       color: #f0b429;
       font-size: 11px;
@@ -121,17 +127,14 @@ const VOTE_LEVELS: Array<{ level: number; label: string }> = [
   { level: 5, label: 'N1' }
 ];
 
-function voteLabel(vote: { level: number | null; mixed: boolean }): string {
-  if (vote.mixed) return 'Mixed';
-  const entry = VOTE_LEVELS.find(v => v.level === vote.level);
-  return entry ? entry.label : `Level ${vote.level}`;
-}
-
-function voteButton(doc: Document, label: string, selected: boolean, onClick: () => void): HTMLButtonElement {
+function voteButton(doc: Document, label: string, colorClass: string, selected: boolean, onClick: () => void): HTMLButtonElement {
   const btn = doc.createElement('button');
   btn.type = 'button';
-  btn.className = selected ? 'jp343-dc-vote-btn jp343-dc-selected' : 'jp343-dc-vote-btn';
+  btn.className = selected
+    ? `jp343-dc-vote-btn ${colorClass} jp343-dc-selected`
+    : `jp343-dc-vote-btn ${colorClass}`;
   btn.textContent = label;
+  btn.title = `Rate this channel as ${label}`;
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -140,26 +143,23 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
   const area = doc.createElement('span');
   area.className = 'jp343-dc-vote';
   let currentVote = ctx.ownVote;
+  let sending = false;
 
-  function renderCollapsed(): void {
+  function render(): void {
     area.textContent = '';
-    const trigger = span(doc, 'jp343-dc-rate', currentVote ? `your vote: ${voteLabel(currentVote)}` : 'rate');
-    trigger.title = 'Rate how hard this channel feels to you';
-    trigger.addEventListener('click', renderExpanded);
-    area.appendChild(trigger);
-  }
-
-  function renderExpanded(): void {
-    area.textContent = '';
+    area.appendChild(span(doc, 'jp343-dc-vote-label', 'rate'));
     const buttons: HTMLButtonElement[] = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
     const cast = (level: number | null, mixed: boolean): void => {
+      if (sending) return;
+      sending = true;
       buttons.forEach(b => { b.disabled = true; });
       msg.textContent = '';
       void ctx.onVote(level, mixed).then(result => {
+        sending = false;
         if (result.ok) {
           currentVote = { level, mixed };
-          renderCollapsed();
+          render();
         } else {
           buttons.forEach(b => { b.disabled = false; });
           msg.textContent = result.message || 'Vote failed, try again later';
@@ -168,14 +168,14 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
     };
     for (const v of VOTE_LEVELS) {
       const selected = !!currentVote && !currentVote.mixed && currentVote.level === v.level;
-      buttons.push(voteButton(doc, v.label, selected, () => cast(v.level, false)));
+      buttons.push(voteButton(doc, v.label, `jp343-dc-v${v.level}`, selected, () => cast(v.level, false)));
     }
-    buttons.push(voteButton(doc, 'Mixed', currentVote?.mixed ?? false, () => cast(null, true)));
+    buttons.push(voteButton(doc, 'Mixed', 'jp343-dc-vmix', currentVote?.mixed ?? false, () => cast(null, true)));
     buttons.forEach(b => area.appendChild(b));
     area.appendChild(msg);
   }
 
-  renderCollapsed();
+  render();
   return area;
 }
 
