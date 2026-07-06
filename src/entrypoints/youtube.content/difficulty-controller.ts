@@ -120,12 +120,12 @@ function resetVoteState(): void {
   voteStateRequested = null;
 }
 
-function ensureVoteState(channelInfo: { id: string | null; name: string | null }): void {
+function ensureVoteState(channelInfo: { id: string | null; name: string | null; url: string | null }): void {
   if (!deps) return;
   const key = channelKeyOf(channelInfo);
   if (!key || key === voteStateKey || key === voteStateRequested) return;
   voteStateRequested = key;
-  void deps.sendMessage('GET_VOTE_STATE', { channelId: channelInfo.id, channelName: channelInfo.name })
+  void deps.sendMessage('GET_VOTE_STATE', { channelId: channelInfo.id, channelName: channelInfo.name, channelUrl: channelInfo.url })
     .then(response => {
       if (voteStateRequested !== key) return;
       voteStateRequested = null;

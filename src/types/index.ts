@@ -259,7 +259,7 @@ export type ExtensionMessage =
   | { type: 'GET_MOKURO_STATE' }
   | { type: 'GET_DIFFICULTY_MAP' }
   | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string }
-  | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null }
+  | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null }
   | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; level: number | null; mixed: boolean };
 
 export interface DirectSyncResult {
@@ -451,7 +451,7 @@ export const STORAGE_KEYS = {
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
   DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
   DIFFICULTY_LOCAL: 'jp343_difficulty_local',
-  DIFFICULTY_MY_VOTES: 'jp343_difficulty_my_votes'
+  DIFFICULTY_VOTE_STATE: 'jp343_difficulty_vote_state'
 } as const;
 
 export interface CachedServerSession {

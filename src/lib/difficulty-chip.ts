@@ -54,12 +54,6 @@ function injectStyles(doc: Document): void {
       gap: 4px;
       flex-wrap: wrap;
     }
-    #${CHIP_ID} .jp343-dc-vote-label {
-      color: #555;
-      font-size: 10px;
-      letter-spacing: 0.4px;
-      text-transform: uppercase;
-    }
     #${CHIP_ID} .jp343-dc-vote-btn {
       --vc: #bbb;
       background: transparent;
@@ -147,7 +141,6 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
 
   function render(): void {
     area.textContent = '';
-    area.appendChild(span(doc, 'jp343-dc-vote-label', 'rate'));
     const buttons: HTMLButtonElement[] = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
     const cast = (level: number | null, mixed: boolean): void => {
