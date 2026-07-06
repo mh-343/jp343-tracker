@@ -4,6 +4,16 @@ export interface DifficultySeed {
   mixed?: boolean;
 }
 
+export interface ChannelBounds {
+  min: number;
+  max: number;
+  native: boolean;
+}
+
+export function clampLevel(value: number): 1 | 2 | 3 | 4 | 5 {
+  return Math.min(5, Math.max(1, Math.round(value))) as 1 | 2 | 3 | 4 | 5;
+}
+
 export function parseTitleLevel(title: string): DifficultySeed | null {
   const blocks = title.match(/【[^】]*】/g);
   if (!blocks) return null;

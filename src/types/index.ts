@@ -1,3 +1,5 @@
+import type { DifficultySeed } from '../lib/difficulty-seeds';
+
 export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mokuro' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
@@ -130,7 +132,7 @@ export interface ExtensionSettings {
   stretchGoalsEnabled: boolean;
   streakRiskNotification: boolean;
   showDifficultyLevels?: boolean;
-  contributeAnonymousStats?: boolean;
+  difficultyLocalOnly?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -255,7 +257,8 @@ export type ExtensionMessage =
   | { type: 'MOKURO_SYNC'; volumes: Record<string, MokuroVolumeSnapshot> }
   | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
   | { type: 'GET_MOKURO_STATE' }
-  | { type: 'GET_DIFFICULTY_MAP' };
+  | { type: 'GET_DIFFICULTY_MAP' }
+  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -415,7 +418,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   stretchGoalsEnabled: true,
   streakRiskNotification: false,
   showDifficultyLevels: true,
-  contributeAnonymousStats: false
+  difficultyLocalOnly: false
 };
 
 export const STORAGE_KEYS = {
@@ -445,7 +448,7 @@ export const STORAGE_KEYS = {
   MOKURO: 'jp343_extension_mokuro',
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
   DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
-  DIFFICULTY_CONTRIB: 'jp343_difficulty_contrib'
+  DIFFICULTY_LOCAL: 'jp343_difficulty_local'
 } as const;
 
 export interface CachedServerSession {

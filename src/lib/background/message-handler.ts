@@ -8,7 +8,7 @@ import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleAnkiMessage } from './anki-messages';
 import { handleMokuroMessage } from './mokuro-messages';
-import { handleDifficultyMapMessage } from './difficulty-messages';
+import { handleDifficultyMapMessage, handleSaveLocalDifficultyBand } from './difficulty-messages';
 
 function getMessageType(message: unknown): string {
   if (!message || typeof message !== 'object') return 'unknown';
@@ -93,6 +93,9 @@ export function createBackgroundMessageHandler(
 
         case 'GET_DIFFICULTY_MAP':
           return handleDifficultyMapMessage(context);
+
+        case 'SAVE_LOCAL_DIFFICULTY_BAND':
+          return handleSaveLocalDifficultyBand(message);
 
         default:
           return { success: false, error: 'Unknown message type' };

@@ -116,6 +116,10 @@ export default defineConfig({
         matches: ['*://*.youtube.com/*']
       },
       {
+        resources: ['inject-yt-captions.js'],
+        matches: ['*://*.youtube.com/*']
+      },
+      {
         resources: ['inject-twitch-meta.js'],
         matches: ['*://*.twitch.tv/*']
       }

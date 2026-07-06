@@ -107,11 +107,11 @@ function removeBadge(card: Element): void {
   card.removeAttribute(BADGE_ATTR);
 }
 
-export function lookupSeedInMap(
-  map: Record<string, DifficultySeed> | null,
+export function lookupByChannel<T>(
+  map: Record<string, T> | null,
   channelId: string | null,
   channelName: string | null
-): DifficultySeed | null {
+): T | null {
   if (!map) return null;
   for (const key of [channelId, channelName]) {
     if (!key) continue;
@@ -119,6 +119,14 @@ export function lookupSeedInMap(
     if (entry) return entry;
   }
   return null;
+}
+
+export function lookupSeedInMap(
+  map: Record<string, DifficultySeed> | null,
+  channelId: string | null,
+  channelName: string | null
+): DifficultySeed | null {
+  return lookupByChannel(map, channelId, channelName);
 }
 
 function sweepCard(card: Element, lookup: SeedLookup): void {
