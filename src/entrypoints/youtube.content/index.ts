@@ -44,6 +44,7 @@ export default defineContentScript({
     let blockedChannels: BlockedChannel[] = [];
     let difficultyEnabled = true;
     let difficultyLocalOnly = false;
+    let difficultyMapLoaded = false;
     let difficultyMap: Record<string, DifficultySeed> | null = null;
     let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
     let difficultyChannelBounds: Record<string, ChannelBounds> | null = null;
@@ -605,6 +606,7 @@ export default defineContentScript({
         difficultyMap = null;
         difficultyVideoMap = null;
         difficultyChannelBounds = null;
+        difficultyMapLoaded = true;
         updateDifficultyChip();
         scheduleFeedBadgeSweep();
         return;
@@ -618,6 +620,7 @@ export default defineContentScript({
       difficultyMap = data?.channels ?? null;
       difficultyVideoMap = data?.videos ?? null;
       difficultyChannelBounds = data?.channelBounds ?? null;
+      difficultyMapLoaded = true;
       updateDifficultyChip();
       scheduleFeedBadgeSweep();
     }
@@ -665,6 +668,7 @@ export default defineContentScript({
       const videoId = getVideoId();
       const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
       if (videoSeed) { showDifficultyChip(videoSeed, 'video estimate'); return; }
+      if (!difficultyMapLoaded && !difficultyLocalOnly) return;
       const channelInfo = getChannelInfo();
       const cachedLocal = videoId ? localBandCache.get(videoId) : undefined;
       if (cachedLocal) { showDifficultyChip(cachedLocal.seed, cachedLocal.source); return; }
@@ -1144,9 +1148,9 @@ export default defineContentScript({
     }, 4000);
     intervalIds.push(chipKeepAliveId);
 
-    window.addEventListener('popstate', () => {
-      setTimeout(handleUrlChange, 100);
-    });
+    window.addEventListener('popstate', () => setTimeout(handleUrlChange, 100));
+
+    document.addEventListener('yt-navigate-start', () => hideDifficultyChip());
 
     document.addEventListener('yt-navigate-finish', () => {
       setTimeout(handleUrlChange, 100);
