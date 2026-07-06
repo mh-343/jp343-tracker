@@ -505,6 +505,14 @@ function buildMokuroPanel(container: HTMLElement): void {
   section.appendChild(regrantBtn);
   container.appendChild(section);
 
+  // Sync status on external grant/revoke
+  const onPermissionChange = (perms: { origins?: string[] }): void => {
+    if (!perms.origins?.some(o => o.includes('reader.mokuro.app'))) return;
+    void refreshMokuro(status, toggle, regrantBtn);
+  };
+  browser.permissions.onAdded.addListener(onPermissionChange);
+  browser.permissions.onRemoved.addListener(onPermissionChange);
+
   void refreshMokuro(status, toggle, regrantBtn);
 }
 
