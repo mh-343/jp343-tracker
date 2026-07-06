@@ -453,9 +453,11 @@ elements.btnStartManual.addEventListener('click', async () => {
       await fetchCurrentState();
     } else {
       log('[JP343 Popup] Failed to start:', response.error);
+      showToast(response.error || 'Could not start tracking', 'warning');
     }
   } catch (error) {
     log('[JP343 Popup] Error:', error);
+    showToast('Could not start tracking', 'warning');
   }
 });
 
