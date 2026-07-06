@@ -1,11 +1,9 @@
 import { STORAGE_KEYS } from '../../types';
-import type { JP343UserState, CachedServerSession } from '../../types';
+import type { JP343UserState } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import { clampLevel } from '../difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../difficulty-seeds';
 import { withStorageLock } from '../storage-lock';
-import { loadPendingEntries } from '../pending-entries';
-import { tracker } from '../time-tracker';
 
 const HOTSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/hotset';
 const VIDEOSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/videoset';
@@ -180,7 +178,6 @@ export async function handleSaveLocalDifficultyBand(message: {
   return { success: true };
 }
 
-const VOTE_MIN_MINUTES = 30;
 const VOTE_FETCH_TIMEOUT_MS = 10000;
 
 interface MyVote {
@@ -216,33 +213,7 @@ async function loadMyVotes(): Promise<Record<string, MyVote>> {
   return (result[STORAGE_KEYS.DIFFICULTY_MY_VOTES] as Record<string, MyVote> | undefined) ?? {};
 }
 
-// Rough gate, server enforces the real one
-async function trackedMinutesForChannel(channelId: string | null, channelName: string | null): Promise<number> {
-  const nameKey = channelName?.trim().toLowerCase() || null;
-  let minutes = 0;
-  const pending = await loadPendingEntries();
-  for (const entry of pending) {
-    const idMatch = !!channelId && entry.channelId === channelId;
-    const nameMatch = !!nameKey && (
-      entry.channelName?.trim().toLowerCase() === nameKey
-      || entry.project?.trim().toLowerCase() === nameKey
-    );
-    if (idMatch || nameMatch) minutes += entry.duration_min;
-  }
-  if (nameKey) {
-    const cached = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
-    const sessions = (cached[STORAGE_KEYS.CACHED_SERVER_SESSIONS] as CachedServerSession[] | undefined) ?? [];
-    for (const s of sessions) {
-      if (s.title?.trim().toLowerCase() === nameKey) minutes += s.duration_min;
-    }
-  }
-  const live = tracker.getCurrentSession();
-  if (live && !!channelId && live.channelId === channelId) {
-    minutes += live.accumulatedMs / 60000;
-  }
-  return minutes;
-}
-
+// Server enforces the 30 min gate
 export async function handleGetVoteState(
   message: { channelId: string | null; channelName: string | null },
   context: BackgroundMessageContext
@@ -256,9 +227,7 @@ export async function handleGetVoteState(
   if (!key) return none;
   const votes = await loadMyVotes();
   const own = votes[key];
-  if (own) return { eligible: true, vote: { level: own.level, mixed: own.mixed } };
-  const minutes = await trackedMinutesForChannel(message.channelId, message.channelName);
-  return { eligible: minutes >= VOTE_MIN_MINUTES, vote: null };
+  return { eligible: true, vote: own ? { level: own.level, mixed: own.mixed } : null };
 }
 
 export async function handleSubmitDifficultyVote(message: {
