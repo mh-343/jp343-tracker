@@ -444,6 +444,7 @@ export const STORAGE_KEYS = {
   ANKI: 'jp343_extension_anki',
   MOKURO: 'jp343_extension_mokuro',
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
+  DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
   DIFFICULTY_CONTRIB: 'jp343_difficulty_contrib'
 } as const;
 

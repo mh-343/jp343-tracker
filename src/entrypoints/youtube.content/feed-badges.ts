@@ -7,8 +7,11 @@ import {
   extractVideoIdFromElement
 } from '../../lib/youtube-utils';
 
-export type ChannelSeedLookup =
-  (channelId: string | null, channelName: string | null) => DifficultySeed | null;
+export type SeedLookup = (
+  videoId: string | null,
+  channelId: string | null,
+  channelName: string | null
+) => DifficultySeed | null;
 
 const BADGE_CLASS = 'jp343-fb-badge';
 const BADGE_ATTR = 'data-jp343-fb';
@@ -32,7 +35,7 @@ const ANCHOR_SELECTORS = [
   'yt-content-metadata-view-model'
 ];
 
-let activeLookup: ChannelSeedLookup | null = null;
+let activeLookup: SeedLookup | null = null;
 let feedObserver: MutationObserver | null = null;
 let sweepTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -118,7 +121,7 @@ export function lookupSeedInMap(
   return null;
 }
 
-function sweepCard(card: Element, lookup: ChannelSeedLookup): void {
+function sweepCard(card: Element, lookup: SeedLookup): void {
   if (card.querySelector(BADGE_CARD_SELECTORS)) return;
   if (!card.querySelector('a[href*="/watch?v="]')) { removeBadge(card); return; }
   const videoId = extractVideoIdFromElement(card);
@@ -126,7 +129,7 @@ function sweepCard(card: Element, lookup: ChannelSeedLookup): void {
 
   const title = getCardTitleText(card);
   const fromTitle = title ? parseTitleLevel(title) : null;
-  const seed = fromTitle || lookup(getChannelIdFromElement(card), getChannelNameFromElement(card));
+  const seed = fromTitle || lookup(videoId, getChannelIdFromElement(card), getChannelNameFromElement(card));
   if (!seed) { removeBadge(card); return; }
 
   const desiredText = formatBadgeText(seed);
@@ -155,7 +158,7 @@ export function scheduleFeedBadgeSweep(): void {
   sweepTimer = setTimeout(() => { sweepTimer = null; sweep(); }, SWEEP_DEBOUNCE_MS);
 }
 
-export function startFeedBadges(lookup: ChannelSeedLookup): void {
+export function startFeedBadges(lookup: SeedLookup): void {
   activeLookup = lookup;
   injectStyles(document);
   if (!feedObserver) {

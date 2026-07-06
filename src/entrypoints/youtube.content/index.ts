@@ -41,6 +41,7 @@ export default defineContentScript({
     let blockedChannels: BlockedChannel[] = [];
     let difficultyEnabled = true;
     let difficultyMap: Record<string, DifficultySeed> | null = null;
+    let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
     const DEDUP_WINDOW_MS = 200;
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
@@ -190,7 +191,7 @@ export default defineContentScript({
         }
         checkTrackingToast();
       }
-      if (changes[STORAGE_KEYS.DIFFICULTY_HOTSET] && difficultyEnabled) {
+      if ((changes[STORAGE_KEYS.DIFFICULTY_HOTSET] || changes[STORAGE_KEYS.DIFFICULTY_VIDEOSET]) && difficultyEnabled) {
         void loadDifficultyMap();
       }
     });
@@ -578,14 +579,20 @@ export default defineContentScript({
       }
     }
 
-    function resolveCardSeed(channelId: string | null, channelName: string | null): DifficultySeed | null {
+    function resolveCardSeed(videoId: string | null, channelId: string | null, channelName: string | null): DifficultySeed | null {
       if (!difficultyEnabled) return null;
+      if (videoId && difficultyVideoMap?.[videoId]) return difficultyVideoMap[videoId];
       return lookupSeedInMap(difficultyMap, channelId, channelName);
     }
 
     async function loadDifficultyMap(): Promise<void> {
       const response = await sendMessage('GET_DIFFICULTY_MAP');
-      difficultyMap = (response as { channels?: Record<string, DifficultySeed> | null } | undefined)?.channels ?? null;
+      const data = response as {
+        channels?: Record<string, DifficultySeed> | null;
+        videos?: Record<string, DifficultySeed> | null;
+      } | undefined;
+      difficultyMap = data?.channels ?? null;
+      difficultyVideoMap = data?.videos ?? null;
       updateDifficultyChip();
       scheduleFeedBadgeSweep();
     }
@@ -594,10 +601,13 @@ export default defineContentScript({
       if (!difficultyEnabled || !window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
       const fromTitle = parseTitleLevel(getVideoTitle());
       if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
+      const videoId = getVideoId();
+      const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
+      if (videoSeed) { showDifficultyChip(videoSeed, 'video estimate'); return; }
       const channelInfo = getChannelInfo();
       const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
       if (!serverSeed) { hideDifficultyChip(); return; }
-      showDifficultyChip(serverSeed, 'server');
+      showDifficultyChip(serverSeed, 'channel estimate');
     }
 
     function checkTrackingToast(): void {
