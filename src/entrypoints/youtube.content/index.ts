@@ -6,13 +6,9 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
 import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
-import { showDifficultyChip, hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
-import { parseTitleLevel } from '../../lib/difficulty-seeds';
-import type { DifficultySeed, ChannelBounds } from '../../lib/difficulty-seeds';
-import { estimateLocalBand, LOCAL_METHOD_VERSION } from '../../lib/difficulty-local/estimator';
-import { acquireYoutubeTranscript } from './transcript';
-import { readLocalBandCache } from './difficulty-cache';
-import { startFeedBadges, stopFeedBadges, scheduleFeedBadgeSweep, lookupSeedInMap, lookupByChannel } from './feed-badges';
+import { hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
+import { stopFeedBadges, scheduleFeedBadgeSweep } from './feed-badges';
+import { initDifficulty, applyDifficultySettings, handleDifficultyStorageChange, updateDifficultyChip } from './difficulty-controller';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 
@@ -42,14 +38,6 @@ export default defineContentScript({
     let hideNonJapanese = false;
     let whitelistedChannels: WhitelistedChannel[] = [];
     let blockedChannels: BlockedChannel[] = [];
-    let difficultyEnabled = true;
-    let difficultyLocalOnly = false;
-    let difficultyMapLoaded = false;
-    let difficultyMap: Record<string, DifficultySeed> | null = null;
-    let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
-    let difficultyChannelBounds: Record<string, ChannelBounds> | null = null;
-    const localBandCache = new Map<string, { seed: DifficultySeed; source: string } | null>();
-    const localComputing = new Set<string>();
     const DEDUP_WINDOW_MS = 200;
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
@@ -159,6 +147,8 @@ export default defineContentScript({
       }
     }
 
+    initDifficulty({ getVideoId, getVideoTitle, getChannelInfo, sendMessage });
+
     browser.runtime.sendMessage({ type: 'GET_SETTINGS' }).then((response) => {
       if (response?.success && response.data?.settings) {
         const prev = useOriginalTitles;
@@ -167,14 +157,11 @@ export default defineContentScript({
         hideNonJapanese = response.data.settings.hideNonJapanese ?? false;
         whitelistedChannels = response.data.settings.whitelistedChannels ?? [];
         blockedChannels = response.data.settings.blockedChannels ?? [];
-        difficultyEnabled = response.data.settings.showDifficultyLevels ?? true;
-        difficultyLocalOnly = response.data.settings.difficultyLocalOnly ?? false;
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
-        if (difficultyEnabled) {
-          startFeedBadges(resolveCardSeed);
-          void loadLocalBandCache();
-          void loadDifficultyMap();
-        }
+        applyDifficultySettings(
+          response.data.settings.showDifficultyLevels ?? true,
+          response.data.settings.difficultyLocalOnly ?? false
+        );
       }
     }).catch(() => {});
 
@@ -187,29 +174,15 @@ export default defineContentScript({
         hideNonJapanese = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
         whitelistedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
         blockedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.blockedChannels ?? [];
-        const prevDifficulty = difficultyEnabled;
-        const prevLocalOnly = difficultyLocalOnly;
-        difficultyEnabled = (changes[STORAGE_KEYS.SETTINGS].newValue as ExtensionSettings).showDifficultyLevels ?? true;
-        difficultyLocalOnly = (changes[STORAGE_KEYS.SETTINGS].newValue as ExtensionSettings).difficultyLocalOnly ?? false;
+        const settingsValue = changes[STORAGE_KEYS.SETTINGS].newValue as ExtensionSettings;
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
-        if (difficultyEnabled !== prevDifficulty) {
-          if (difficultyEnabled) {
-            startFeedBadges(resolveCardSeed);
-            void loadLocalBandCache();
-            void loadDifficultyMap();
-          } else {
-            stopFeedBadges();
-            hideDifficultyChip();
-          }
-        } else if (difficultyEnabled && difficultyLocalOnly !== prevLocalOnly) {
-          localBandCache.clear();
-          void loadDifficultyMap();
-        }
+        applyDifficultySettings(
+          settingsValue.showDifficultyLevels ?? true,
+          settingsValue.difficultyLocalOnly ?? false
+        );
         checkTrackingToast();
       }
-      if ((changes[STORAGE_KEYS.DIFFICULTY_HOTSET] || changes[STORAGE_KEYS.DIFFICULTY_VIDEOSET]) && difficultyEnabled) {
-        void loadDifficultyMap();
-      }
+      handleDifficultyStorageChange(changes);
     });
 
     if (DEBUG_MODE) { setupDebugCommands(logger, 'youtube'); }
@@ -592,91 +565,6 @@ export default defineContentScript({
       }
       if (!originalTitle || !videoAudioLanguage) {
         originalTitleRetryTimer = setTimeout(() => attemptOriginalTitle(videoId, attempt + 1), 1000);
-      }
-    }
-
-    function resolveCardSeed(videoId: string | null, channelId: string | null, channelName: string | null): DifficultySeed | null {
-      if (!difficultyEnabled) return null;
-      if (videoId && difficultyVideoMap?.[videoId]) return difficultyVideoMap[videoId];
-      return lookupSeedInMap(difficultyMap, channelId, channelName);
-    }
-
-    async function loadDifficultyMap(): Promise<void> {
-      if (difficultyLocalOnly) {
-        difficultyMap = null;
-        difficultyVideoMap = null;
-        difficultyChannelBounds = null;
-        difficultyMapLoaded = true;
-        updateDifficultyChip();
-        scheduleFeedBadgeSweep();
-        return;
-      }
-      const response = await sendMessage('GET_DIFFICULTY_MAP');
-      const data = response as {
-        channels?: Record<string, DifficultySeed> | null;
-        videos?: Record<string, DifficultySeed> | null;
-        channelBounds?: Record<string, ChannelBounds> | null;
-      } | undefined;
-      difficultyMap = data?.channels ?? null;
-      difficultyVideoMap = data?.videos ?? null;
-      difficultyChannelBounds = data?.channelBounds ?? null;
-      difficultyMapLoaded = true;
-      updateDifficultyChip();
-      scheduleFeedBadgeSweep();
-    }
-
-    async function loadLocalBandCache(): Promise<void> {
-      const cached = await readLocalBandCache(LOCAL_METHOD_VERSION);
-      if (!cached) return;
-      for (const [id, band] of Object.entries(cached)) {
-        if (!localBandCache.has(id)) localBandCache.set(id, band);
-      }
-      updateDifficultyChip();
-    }
-
-    async function computeAndApplyLocalEstimate(videoId: string, channelId: string | null, channelName: string | null): Promise<void> {
-      if (localBandCache.has(videoId) || localComputing.has(videoId)) return;
-      localComputing.add(videoId);
-      try {
-        const transcript = await acquireYoutubeTranscript(videoId);
-        if (getVideoId() !== videoId) return;
-        let result: { seed: DifficultySeed; source: string } | null = null;
-        if (transcript) {
-          const bounds = lookupByChannel(difficultyChannelBounds, channelId, channelName);
-          const estimate = estimateLocalBand({
-            json3: transcript.json3,
-            title: getVideoTitle(),
-            durationSec: transcript.lengthSeconds,
-            channelBounds: bounds
-          });
-          if (estimate) {
-            result = { seed: estimate.seed, source: estimate.clamped ? 'local estimate (in band)' : 'local estimate' };
-          }
-        }
-        localBandCache.set(videoId, result);
-        void sendMessage('SAVE_LOCAL_DIFFICULTY_BAND', { videoId, seed: result?.seed ?? null, source: result?.source ?? null, methodVersion: LOCAL_METHOD_VERSION });
-        if (getVideoId() === videoId) updateDifficultyChip();
-      } finally {
-        localComputing.delete(videoId);
-      }
-    }
-
-    function updateDifficultyChip(): void {
-      if (!difficultyEnabled || !window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
-      const fromTitle = parseTitleLevel(getVideoTitle());
-      if (fromTitle) { showDifficultyChip(fromTitle, 'title tag'); return; }
-      const videoId = getVideoId();
-      const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
-      if (videoSeed) { showDifficultyChip(videoSeed, 'video estimate'); return; }
-      if (!difficultyMapLoaded && !difficultyLocalOnly) return;
-      const channelInfo = getChannelInfo();
-      const cachedLocal = videoId ? localBandCache.get(videoId) : undefined;
-      if (cachedLocal) { showDifficultyChip(cachedLocal.seed, cachedLocal.source); return; }
-      const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
-      if (serverSeed) showDifficultyChip(serverSeed, 'channel estimate');
-      else hideDifficultyChip();
-      if (videoId && cachedLocal === undefined) {
-        void computeAndApplyLocalEstimate(videoId, channelInfo.id, channelInfo.name);
       }
     }
 
