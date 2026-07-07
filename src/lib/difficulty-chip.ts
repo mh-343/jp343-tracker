@@ -79,12 +79,15 @@ function injectStyles(doc: Document): void {
       color: #111;
       font-weight: 600;
     }
-    #${CHIP_ID} .jp343-dc-v1 { --vc: #4ade80; }
-    #${CHIP_ID} .jp343-dc-v2 { --vc: #a3e635; }
-    #${CHIP_ID} .jp343-dc-v3 { --vc: #facc15; }
-    #${CHIP_ID} .jp343-dc-v4 { --vc: #fb923c; }
-    #${CHIP_ID} .jp343-dc-v5 { --vc: #f87171; }
+    #${CHIP_ID} .jp343-dc-easier { --vc: #4ade80; }
+    #${CHIP_ID} .jp343-dc-spot { --vc: #60a5fa; }
+    #${CHIP_ID} .jp343-dc-harder { --vc: #fb923c; }
     #${CHIP_ID} .jp343-dc-vmix { --vc: #f0b429; }
+    #${CHIP_ID} .jp343-dc-vote-prompt {
+      color: #999;
+      font-size: 11px;
+      margin-right: 2px;
+    }
     #${CHIP_ID} .jp343-dc-vote-msg {
       color: #f0b429;
       font-size: 11px;
@@ -113,40 +116,63 @@ export interface ChipVoteContext {
   onVote: (level: number | null, mixed: boolean) => Promise<{ ok: boolean; message?: string }>;
 }
 
-const VOTE_LEVELS: Array<{ level: number; label: string }> = [
-  { level: 1, label: 'N5' },
-  { level: 2, label: 'N4' },
-  { level: 3, label: 'N3' },
-  { level: 4, label: 'N2' },
-  { level: 5, label: 'N1' }
+interface VoteOption {
+  key: string;
+  label: string;
+  colorClass: string;
+  title: string;
+  mixed: boolean;
+  delta: number;
+}
+
+const VOTE_OPTIONS: VoteOption[] = [
+  { key: 'easier', label: 'Easier', colorClass: 'jp343-dc-easier', title: 'Easier than our estimate', mixed: false, delta: -1 },
+  { key: 'spot', label: 'Spot on', colorClass: 'jp343-dc-spot', title: 'Our estimate is about right', mixed: false, delta: 0 },
+  { key: 'harder', label: 'Harder', colorClass: 'jp343-dc-harder', title: 'Harder than our estimate', mixed: false, delta: 1 },
+  { key: 'mixed', label: 'Mixed', colorClass: 'jp343-dc-vmix', title: 'Mixed difficulty', mixed: true, delta: 0 }
 ];
 
-function voteButton(doc: Document, label: string, colorClass: string, selected: boolean, onClick: () => void): HTMLButtonElement {
+function clampLevel(value: number): number {
+  return Math.max(1, Math.min(5, value));
+}
+
+function voteButton(doc: Document, label: string, colorClass: string, selected: boolean, title: string, onClick: () => void): HTMLButtonElement {
   const btn = doc.createElement('button');
   btn.type = 'button';
   btn.className = selected
     ? `jp343-dc-vote-btn ${colorClass} jp343-dc-selected`
     : `jp343-dc-vote-btn ${colorClass}`;
   btn.textContent = label;
-  btn.title = `Rate this channel as ${label}`;
+  btn.title = title;
   btn.addEventListener('click', onClick);
   return btn;
 }
 
-function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
+function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number): HTMLSpanElement {
   const area = doc.createElement('span');
   area.className = 'jp343-dc-vote';
   let currentVote = ctx.ownVote;
   let sending = false;
 
+  function selectionKey(): string | null {
+    if (!currentVote) return null;
+    if (currentVote.mixed) return 'mixed';
+    if (currentVote.level == null) return null;
+    if (currentVote.level < anchorLevel) return 'easier';
+    if (currentVote.level > anchorLevel) return 'harder';
+    return 'spot';
+  }
+
   function render(): void {
     area.textContent = '';
-    const buttons: HTMLButtonElement[] = [];
+    area.appendChild(span(doc, 'jp343-dc-vote-prompt', 'Was it:'));
+    const selected = selectionKey();
+    const buttons: Array<{ el: HTMLButtonElement; locked: boolean }> = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
     const cast = (level: number | null, mixed: boolean): void => {
       if (sending) return;
       sending = true;
-      buttons.forEach(b => { b.disabled = true; });
+      buttons.forEach(b => { b.el.disabled = true; });
       msg.textContent = '';
       void ctx.onVote(level, mixed).then(result => {
         sending = false;
@@ -154,17 +180,21 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext): HTMLSpanElement {
           currentVote = { level, mixed };
           render();
         } else {
-          buttons.forEach(b => { b.disabled = false; });
+          buttons.forEach(b => { if (!b.locked) b.el.disabled = false; });
           msg.textContent = result.message || 'Vote failed, try again later';
         }
       });
     };
-    for (const v of VOTE_LEVELS) {
-      const selected = !!currentVote && !currentVote.mixed && currentVote.level === v.level;
-      buttons.push(voteButton(doc, v.label, `jp343-dc-v${v.level}`, selected, () => cast(v.level, false)));
+    for (const opt of VOTE_OPTIONS) {
+      const locked = (opt.key === 'easier' && anchorLevel <= 1) || (opt.key === 'harder' && anchorLevel >= 5);
+      const btn = voteButton(doc, opt.label, opt.colorClass, selected === opt.key, opt.title, () => {
+        if (opt.mixed) cast(null, true);
+        else cast(clampLevel(anchorLevel + opt.delta), false);
+      });
+      if (locked) btn.disabled = true;
+      buttons.push({ el: btn, locked });
     }
-    buttons.push(voteButton(doc, 'Mixed', 'jp343-dc-vmix', currentVote?.mixed ?? false, () => cast(null, true)));
-    buttons.forEach(b => area.appendChild(b));
+    buttons.forEach(b => area.appendChild(b.el));
     area.appendChild(msg);
   }
 
@@ -196,7 +226,7 @@ export function showDifficultyChip(seed: DifficultySeed, source: string, voteCtx
 
   if (voteCtx) {
     chip.appendChild(span(doc, 'jp343-dc-sep', '|'));
-    chip.appendChild(buildVoteArea(doc, voteCtx));
+    chip.appendChild(buildVoteArea(doc, voteCtx, clampLevel(seed.level)));
   }
 
   if (mount.tagName.toLowerCase() === 'ytd-watch-metadata') {
