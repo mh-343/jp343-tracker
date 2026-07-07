@@ -529,7 +529,9 @@ export default defineBackground(() => {
       thumbnail: entry.thumbnail || '',
       platform: entry.platform,
       date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
-      ...(entry.mergeResync ? { merge_resync: '1' } : {})
+      ...(entry.mergeResync ? { merge_resync: '1' } : {}),
+      ...(entry.readingCurrentPage != null ? { reading_current_page: String(entry.readingCurrentPage) } : {}),
+      ...(entry.readingCompleted != null ? { reading_completed: entry.readingCompleted ? '1' : '0' } : {})
     };
   }
 

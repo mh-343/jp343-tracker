@@ -4,6 +4,7 @@ interface RawVolume {
   timeReadInMinutes?: number;
   recentPageTurns?: [number, number, number][];
   chars?: number;
+  progress?: number;
   series_title?: string;
   volume_title?: string;
   series_uuid?: string;
@@ -68,6 +69,7 @@ export function buildSnapshot(
     out[id] = {
       effectiveMin: effectiveMinutes(v, userIdleMin),
       chars: Number(v.chars) || 0,
+      currentPage: Number(v.progress) || 0,
       seriesTitle: v.series_title ?? null,
       volumeTitle: v.volume_title ?? null,
       seriesUuid: v.series_uuid ?? null,

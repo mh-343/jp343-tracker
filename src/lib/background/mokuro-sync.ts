@@ -179,7 +179,9 @@ export async function ingestMokuroSnapshot(
           channelName: null,
           channelUrl: null,
           activityType: 'reading',
-          chars: charsDelta
+          chars: charsDelta,
+          readingCurrentPage: vol.currentPage,
+          readingCompleted: vol.completed
         });
       }
 

@@ -90,6 +90,8 @@ export interface PendingEntry {
   activityType?: ActivityType;
   mergeResync?: boolean;
   chars?: number;
+  readingCurrentPage?: number;
+  readingCompleted?: boolean;
 }
 
 export interface JP343UserState {
@@ -367,6 +369,7 @@ export const DEFAULT_ANKI_STATE: AnkiState = {
 export interface MokuroVolumeSnapshot {
   effectiveMin: number;
   chars: number;
+  currentPage: number;
   seriesTitle: string | null;
   volumeTitle: string | null;
   seriesUuid: string | null;
