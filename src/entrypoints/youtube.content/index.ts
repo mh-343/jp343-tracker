@@ -457,17 +457,20 @@ export default defineContentScript({
         }
       }
 
-      // UC-ID from meta tag is most reliable
+      // meta can lag the owner-link; trust the URL UC-id on mismatch
       const metaChannel = document.querySelector('meta[itemprop="channelId"]') as HTMLMetaElement | null;
-      if (metaChannel?.content?.startsWith('UC')) {
-        channelId = metaChannel.content;
+      const metaChannelId = metaChannel?.content?.startsWith('UC') ? metaChannel.content : null;
+
+      let urlChannelId: string | null = null;
+      if (channelUrl) {
+        const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
+        if (channelMatch) urlChannelId = channelMatch[1];
       }
 
-      if (!channelId && channelUrl) {
-        const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
-        if (channelMatch) {
-          channelId = channelMatch[1];
-        }
+      if (urlChannelId && metaChannelId && urlChannelId !== metaChannelId) {
+        channelId = urlChannelId;
+      } else {
+        channelId = metaChannelId || urlChannelId;
       }
 
       if (!channelId && channelUrl) {
@@ -706,23 +709,22 @@ export default defineContentScript({
           pendingRetryTimeouts.push(setTimeout(checkTrackingToast, 2500));
           pendingRetryTimeouts.push(setTimeout(updateDifficultyChip, 2500));
 
-          if (!state.channelId) {
-            const retryDelays = [2000, 4000, 8000];
-            let retryIndex = 0;
-            const recheckChannel = (): void => {
-              if (retryIndex >= retryDelays.length || !isExtensionContextValid()) return;
-              pendingRetryTimeouts.push(setTimeout(() => {
-                const freshState = getCurrentVideoState();
-                if (freshState?.channelId) {
-                  sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
-                } else {
-                  retryIndex++;
-                  recheckChannel();
-                }
-              }, retryDelays[retryIndex]));
-            };
-            recheckChannel();
-          }
+          const initialChannelId = state.channelId;
+          const retryDelays = [2000, 4000, 8000];
+          let retryIndex = 0;
+          const recheckChannel = (): void => {
+            if (retryIndex >= retryDelays.length || !isExtensionContextValid()) return;
+            pendingRetryTimeouts.push(setTimeout(() => {
+              const freshState = getCurrentVideoState();
+              if (freshState?.channelId && freshState.channelId !== initialChannelId) {
+                sendMessage('VIDEO_STATE_UPDATE', { state: freshState });
+                return;
+              }
+              retryIndex++;
+              recheckChannel();
+            }, retryDelays[retryIndex]));
+          };
+          recheckChannel();
         }
       });
 

@@ -232,7 +232,7 @@ export default defineContentScript({
         thumbnailUrl: getCoverArt(),
         videoId: idMatch ? idMatch[2] : null,
         channelId: getChannelId(contentType),
-        channelName: artistName || null,
+        channelName: getArtistLink()?.textContent?.trim() || artistName || null,
         channelUrl: getChannelUrl(),
         contentType
       };
