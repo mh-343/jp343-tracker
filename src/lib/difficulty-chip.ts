@@ -82,7 +82,11 @@ function injectStyles(doc: Document): void {
     #${CHIP_ID} .jp343-dc-easier { --vc: #4ade80; }
     #${CHIP_ID} .jp343-dc-spot { --vc: #60a5fa; }
     #${CHIP_ID} .jp343-dc-harder { --vc: #fb923c; }
-    #${CHIP_ID} .jp343-dc-vmix { --vc: #f0b429; }
+    #${CHIP_ID} .jp343-dc-vmix { --vc: #9ca3af; }
+    #${CHIP_ID} .jp343-dc-vmix.jp343-dc-selected {
+      background: #f0b429;
+      border-color: #f0b429;
+    }
     #${CHIP_ID} .jp343-dc-vote-prompt {
       color: #999;
       font-size: 11px;
@@ -165,7 +169,7 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
 
   function render(): void {
     area.textContent = '';
-    area.appendChild(span(doc, 'jp343-dc-vote-prompt', 'Was it:'));
+    area.appendChild(span(doc, 'jp343-dc-vote-prompt', 'This felt:'));
     const selected = selectionKey();
     const buttons: Array<{ el: HTMLButtonElement; locked: boolean }> = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
