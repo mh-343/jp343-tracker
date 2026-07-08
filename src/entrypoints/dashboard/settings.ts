@@ -470,8 +470,8 @@ function buildDiagnosticsPanel(container: HTMLElement, settings: ExtensionSettin
   section.appendChild(title);
 
   section.appendChild(createToggleRow(
-    'Anonymous statistics',
-    'Share anonymous statistics and error reports to help detect platform issues early. No watch history, titles, or personal data is sent.',
+    'Anonymous diagnostics',
+    'Share anonymous diagnostic data and error reports to help detect platform issues early. No watch history, titles, or personal data is sent.',
     settings.diagnosticsEnabled,
     async (val) => { await updateSettings({ diagnosticsEnabled: val }); }
   ));
