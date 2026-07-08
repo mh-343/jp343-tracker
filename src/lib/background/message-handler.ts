@@ -95,7 +95,7 @@ export function createBackgroundMessageHandler(
           return handleDifficultyMapMessage(context);
 
         case 'SAVE_LOCAL_DIFFICULTY_BAND':
-          return handleSaveLocalDifficultyBand(message);
+          return handleSaveLocalDifficultyBand(message, context);
 
         case 'GET_VOTE_STATE':
           return handleGetVoteState(message, context);

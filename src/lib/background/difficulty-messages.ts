@@ -4,6 +4,7 @@ import type { BackgroundMessageContext } from './message-context';
 import { clampLevel } from '../difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../difficulty-seeds';
 import { withStorageLock } from '../storage-lock';
+import { queueDifficultyContrib } from './difficulty-contrib';
 
 const HOTSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/hotset';
 const VIDEOSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/videoset';
@@ -160,7 +161,8 @@ export async function handleSaveLocalDifficultyBand(message: {
   seed: DifficultySeed | null;
   source: string | null;
   methodVersion: string;
-}): Promise<{ success: boolean }> {
+  channelKey: string | null;
+}, context: BackgroundMessageContext): Promise<{ success: boolean }> {
   await withStorageLock(async () => {
     const result = await browser.storage.local.get(STORAGE_KEYS.DIFFICULTY_LOCAL);
     const stored = result[STORAGE_KEYS.DIFFICULTY_LOCAL] as LocalBandCache | undefined;
@@ -175,6 +177,17 @@ export async function handleSaveLocalDifficultyBand(message: {
     }
     await browser.storage.local.set({ [STORAGE_KEYS.DIFFICULTY_LOCAL]: cache });
   });
+  const settings = await context.loadSettings();
+  const user = await loadUserState();
+  if (settings.difficultyContribEnabled && !user?.isLoggedIn && message.seed) {
+    await queueDifficultyContrib({
+      videoId: message.videoId,
+      level: message.seed.level,
+      mixed: message.seed.mixed ?? false,
+      methodVersion: message.methodVersion,
+      channelKey: message.channelKey
+    });
+  }
   return { success: true };
 }
 

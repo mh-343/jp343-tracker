@@ -281,6 +281,15 @@ function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSetting
     !showLevels
   ) : null;
 
+  // contribute is account-less
+  const contribRow = !hasAccount ? createToggleRow(
+    'Contribute difficulty estimates',
+    'Anonymously share the on-device estimate for videos you open, to improve coverage for everyone.',
+    settings.difficultyContribEnabled ?? false,
+    async (val) => { await updateSettings({ difficultyContribEnabled: val }); },
+    !showLevels
+  ) : null;
+
   section.appendChild(createToggleRow(
     'Show difficulty levels',
     'Level badge on YouTube videos, fetches a small anonymous data file from jp343.com daily',
@@ -289,10 +298,12 @@ function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSetting
       await updateSettings({ showDifficultyLevels: val });
       setToggleRowDisabled(localRow, !val);
       if (voteRow) setToggleRowDisabled(voteRow, !val);
+      if (contribRow) setToggleRowDisabled(contribRow, !val);
     }
   ));
   section.appendChild(localRow);
   if (voteRow) section.appendChild(voteRow);
+  if (contribRow) section.appendChild(contribRow);
 
   container.appendChild(section);
 }

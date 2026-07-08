@@ -103,7 +103,8 @@ async function computeAndApplyLocalEstimate(videoId: string, channelId: string |
       }
     }
     localBandCache.set(videoId, result);
-    void deps.sendMessage('SAVE_LOCAL_DIFFICULTY_BAND', { videoId, seed: result?.seed ?? null, source: result?.source ?? null, methodVersion: LOCAL_METHOD_VERSION });
+    const channelKey = (channelId || channelName)?.trim().toLowerCase() || null;
+    void deps.sendMessage('SAVE_LOCAL_DIFFICULTY_BAND', { videoId, seed: result?.seed ?? null, source: result?.source ?? null, methodVersion: LOCAL_METHOD_VERSION, channelKey });
     if (deps.getVideoId() === videoId) updateDifficultyChip();
   } finally {
     localComputing.delete(videoId);

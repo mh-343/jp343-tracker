@@ -58,6 +58,7 @@ import type {
 } from '../types';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
 import { initErrorReporter, reportError, flushErrors } from '../lib/error-reporter';
+import { flushDifficultyContrib } from '../lib/background/difficulty-contrib';
 
 export default defineBackground(() => {
   const DEBUG_MODE = import.meta.env.DEV;
@@ -452,6 +453,7 @@ export default defineBackground(() => {
   browser.alarms.create('jp343-diagnostics-send', { periodInMinutes: 360 });
   browser.alarms.create('jp343-error-flush', { periodInMinutes: 1 });
   browser.alarms.create('jp343-streak-risk-check', { periodInMinutes: 60 });
+  browser.alarms.create('jp343-difficulty-contrib-flush', { periodInMinutes: 720 });
 
   void syncAnki();
 
@@ -473,6 +475,9 @@ export default defineBackground(() => {
     }
     if (alarm.name === 'jp343-streak-risk-check') {
       maybeFireStreakRiskNotification(loadSettings, loadStats).catch(() => {});
+    }
+    if (alarm.name === 'jp343-difficulty-contrib-flush') {
+      flushDifficultyContrib().catch(() => {});
     }
     if (alarm.name === 'jp343-cleanup-synced') {
       await withStorageLock(async () => {

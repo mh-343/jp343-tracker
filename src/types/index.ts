@@ -136,6 +136,7 @@ export interface ExtensionSettings {
   showDifficultyLevels?: boolean;
   difficultyLocalOnly?: boolean;
   difficultyVotingEnabled?: boolean;
+  difficultyContribEnabled?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -261,7 +262,7 @@ export type ExtensionMessage =
   | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
   | { type: 'GET_MOKURO_STATE' }
   | { type: 'GET_DIFFICULTY_MAP' }
-  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string }
+  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null }
   | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null }
   | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; level: number | null; mixed: boolean; choice: string; shownLevel: number };
 
@@ -425,7 +426,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   streakRiskNotification: false,
   showDifficultyLevels: true,
   difficultyLocalOnly: false,
-  difficultyVotingEnabled: true
+  difficultyVotingEnabled: true,
+  difficultyContribEnabled: false
 };
 
 export const STORAGE_KEYS = {
@@ -456,7 +458,9 @@ export const STORAGE_KEYS = {
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
   DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
   DIFFICULTY_LOCAL: 'jp343_difficulty_local',
-  DIFFICULTY_VOTE_STATE: 'jp343_difficulty_vote_state'
+  DIFFICULTY_VOTE_STATE: 'jp343_difficulty_vote_state',
+  INSTALL_ID: 'jp343_install_id',
+  DIFFICULTY_CONTRIB_QUEUE: 'jp343_difficulty_contrib_queue'
 } as const;
 
 export interface CachedServerSession {
