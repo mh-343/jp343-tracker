@@ -146,7 +146,7 @@ function voteContextFor(
   const vote = voteState.vote;
   return {
     ownVote: vote,
-    onVote: async (level, mixed) => {
+    onVote: async (level, mixed, choice, shownLevel) => {
       if (!deps) return { ok: false };
       const response = await deps.sendMessage('SUBMIT_DIFFICULTY_VOTE', {
         channelId: channelInfo.id,
@@ -154,7 +154,9 @@ function voteContextFor(
         channelUrl: channelInfo.url,
         videoId,
         level,
-        mixed
+        mixed,
+        choice,
+        shownLevel
       });
       const result = response as { success?: boolean; message?: string } | undefined;
       if (result?.success) {

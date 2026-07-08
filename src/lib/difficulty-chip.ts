@@ -117,7 +117,7 @@ function span(doc: Document, className: string, text: string): HTMLSpanElement {
 
 export interface ChipVoteContext {
   ownVote: { level: number | null; mixed: boolean } | null;
-  onVote: (level: number | null, mixed: boolean) => Promise<{ ok: boolean; message?: string }>;
+  onVote: (level: number | null, mixed: boolean, choice: string, shownLevel: number) => Promise<{ ok: boolean; message?: string }>;
 }
 
 interface VoteOption {
@@ -173,12 +173,12 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
     const selected = selectionKey();
     const buttons: Array<{ el: HTMLButtonElement; locked: boolean }> = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
-    const cast = (level: number | null, mixed: boolean): void => {
+    const cast = (level: number | null, mixed: boolean, choice: string): void => {
       if (sending) return;
       sending = true;
       buttons.forEach(b => { b.el.disabled = true; });
       msg.textContent = '';
-      void ctx.onVote(level, mixed).then(result => {
+      void ctx.onVote(level, mixed, choice, anchorLevel).then(result => {
         sending = false;
         if (result.ok) {
           currentVote = { level, mixed };
@@ -192,8 +192,8 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
     for (const opt of VOTE_OPTIONS) {
       const locked = (opt.key === 'easier' && anchorLevel <= 1) || (opt.key === 'harder' && anchorLevel >= 5);
       const btn = voteButton(doc, opt.label, opt.colorClass, selected === opt.key, opt.title, () => {
-        if (opt.mixed) cast(null, true);
-        else cast(clampLevel(anchorLevel + opt.delta), false);
+        if (opt.mixed) cast(null, true, opt.key);
+        else cast(clampLevel(anchorLevel + opt.delta), false, opt.key);
       });
       if (locked) btn.disabled = true;
       buttons.push({ el: btn, locked });

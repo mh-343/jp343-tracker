@@ -297,6 +297,8 @@ export async function handleSubmitDifficultyVote(message: {
   videoId: string | null;
   level: number | null;
   mixed: boolean;
+  choice: string;
+  shownLevel: number;
 }): Promise<VoteSubmitResponse> {
   const user = await loadUserState();
   if (!user?.extApiToken) return { success: false, code: 'auth_required' };
@@ -312,6 +314,8 @@ export async function handleSubmitDifficultyVote(message: {
   if (message.channelName) params.set('channel_name', message.channelName);
   if (message.channelUrl) params.set('channel_url', message.channelUrl);
   if (message.videoId) params.set('video_id', message.videoId);
+  if (message.choice) params.set('choice', message.choice);
+  params.set('shown_level', String(message.shownLevel));
   if (message.mixed) params.set('mixed', '1');
   else params.set('level', String(message.level));
 
