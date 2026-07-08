@@ -207,6 +207,10 @@ body {
   border-color: rgba(232,67,147,0.25);
 }
 
+.card-difficulty {
+  border-color: rgba(232,67,147,0.25);
+}
+
 .account-actions {
   display: flex;
   gap: 12px;
