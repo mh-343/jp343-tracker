@@ -26,6 +26,7 @@ export interface DifficultyDeps {
 let deps: DifficultyDeps | null = null;
 let difficultyEnabled = true;
 let difficultyLocalOnly = false;
+let difficultyVotingEnabled = true;
 let difficultyMapLoaded = false;
 let settingsApplied = false;
 let difficultyMap: Record<string, DifficultySeed> | null = null;
@@ -140,6 +141,8 @@ function voteContextFor(
   videoId: string | null,
   channelInfo: { id: string | null; name: string | null; url: string | null }
 ): ChipVoteContext | undefined {
+  // local-only never hits the server
+  if (!difficultyVotingEnabled || difficultyLocalOnly) return undefined;
   ensureVoteState(channelInfo);
   const key = channelKeyOf(channelInfo);
   if (!key || key !== voteStateKey || !voteState?.eligible) return undefined;
@@ -191,13 +194,15 @@ export function updateDifficultyChip(): void {
   }
 }
 
-export function applyDifficultySettings(enabled: boolean, localOnly: boolean): void {
+export function applyDifficultySettings(enabled: boolean, localOnly: boolean, votingEnabled: boolean): void {
   const prevEnabled = difficultyEnabled;
   const prevLocalOnly = difficultyLocalOnly;
+  const prevVoting = difficultyVotingEnabled;
   const first = !settingsApplied;
   settingsApplied = true;
   difficultyEnabled = enabled;
   difficultyLocalOnly = localOnly;
+  difficultyVotingEnabled = votingEnabled;
   if (enabled && (first || !prevEnabled)) {
     startFeedBadges(resolveCardSeed);
     void loadLocalBandCache();
@@ -214,6 +219,8 @@ export function applyDifficultySettings(enabled: boolean, localOnly: boolean): v
     localBandCache.clear();
     resetVoteState();
     void loadDifficultyMap();
+  } else if (enabled && votingEnabled !== prevVoting) {
+    updateDifficultyChip();
   }
 }
 

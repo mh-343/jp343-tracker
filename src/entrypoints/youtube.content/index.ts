@@ -160,7 +160,8 @@ export default defineContentScript({
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
         applyDifficultySettings(
           response.data.settings.showDifficultyLevels ?? true,
-          response.data.settings.difficultyLocalOnly ?? false
+          response.data.settings.difficultyLocalOnly ?? false,
+          response.data.settings.difficultyVotingEnabled ?? true
         );
       }
     }).catch(() => {});
@@ -178,7 +179,8 @@ export default defineContentScript({
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
         applyDifficultySettings(
           settingsValue.showDifficultyLevels ?? true,
-          settingsValue.difficultyLocalOnly ?? false
+          settingsValue.difficultyLocalOnly ?? false,
+          settingsValue.difficultyVotingEnabled ?? true
         );
         checkTrackingToast();
       }

@@ -1869,6 +1869,8 @@
       background: #fff;
     }
     .settings-toggle.enabled:active::after { left: 18px; }
+    .settings-row-disabled { opacity: 0.4; }
+    .settings-row-disabled .settings-toggle { cursor: default; box-shadow: none; }
     [data-theme="light"] .settings-toggle { background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.18); }
     [data-theme="light"] .settings-toggle::after { background: #8a8a94; }
     [data-theme="light"] .settings-toggle.enabled {

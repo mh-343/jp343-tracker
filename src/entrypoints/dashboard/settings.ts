@@ -1,9 +1,9 @@
-import type { ExtensionSettings, Platform, SpotifyContentType, ColorTheme, MokuroState } from '../../types';
+import type { ExtensionSettings, Platform, SpotifyContentType, ColorTheme, MokuroState, JP343UserState } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { buildTargetStartSection } from './target-start-settings';
-import { getSettings, getFreshSettings, updateSettings, createToggleRow, showStatus } from './settings-helpers';
+import { getSettings, getFreshSettings, updateSettings, createToggleRow, setToggleRowDisabled, showStatus } from './settings-helpers';
 import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
 import { rebuildChannelsPanel } from './settings-channels';
@@ -253,7 +253,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
   container.appendChild(section);
 }
 
-function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSettings): void {
+function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSettings, hasAccount: boolean): void {
   const section = document.createElement('div');
   section.className = 'settings-section';
 
@@ -262,19 +262,37 @@ function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSetting
   title.textContent = 'Difficulty levels';
   section.appendChild(title);
 
-  section.appendChild(createToggleRow(
-    'Show difficulty levels',
-    'Level badge on YouTube videos, fetches a small anonymous data file from jp343.com daily',
-    settings.showDifficultyLevels ?? true,
-    async (val) => { await updateSettings({ showDifficultyLevels: val }); }
-  ));
+  const showLevels = settings.showDifficultyLevels ?? true;
 
-  section.appendChild(createToggleRow(
+  const localRow = createToggleRow(
     'Local estimate only',
     'Estimate difficulty on-device from the subtitles, never fetch the jp343.com data file',
     settings.difficultyLocalOnly ?? false,
-    async (val) => { await updateSettings({ difficultyLocalOnly: val }); }
+    async (val) => { await updateSettings({ difficultyLocalOnly: val }); },
+    !showLevels
+  );
+
+  // voting is account-only
+  const voteRow = hasAccount ? createToggleRow(
+    'Rate difficulty',
+    'Show the easier / spot-on / harder buttons on the badge so you can rate videos. Turn off to just see the level.',
+    settings.difficultyVotingEnabled ?? true,
+    async (val) => { await updateSettings({ difficultyVotingEnabled: val }); },
+    !showLevels
+  ) : null;
+
+  section.appendChild(createToggleRow(
+    'Show difficulty levels',
+    'Level badge on YouTube videos, fetches a small anonymous data file from jp343.com daily',
+    showLevels,
+    async (val) => {
+      await updateSettings({ showDifficultyLevels: val });
+      setToggleRowDisabled(localRow, !val);
+      if (voteRow) setToggleRowDisabled(voteRow, !val);
+    }
   ));
+  section.appendChild(localRow);
+  if (voteRow) section.appendChild(voteRow);
 
   container.appendChild(section);
 }
@@ -542,12 +560,12 @@ function buildMokuroPanel(container: HTMLElement): void {
   void refreshMokuro(status, toggle, regrantBtn);
 }
 
-function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings): void {
+function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, hasAccount: boolean): void {
   panel.textContent = '';
   buildAppearancePanel(panel, settings);
   buildTargetStartSection(panel, settings);
   buildTrackingPanel(panel, settings);
-  buildDifficultyPanel(panel, settings);
+  buildDifficultyPanel(panel, settings, hasAccount);
   buildPlatformsPanel(panel, settings);
   buildAnkiPanel(panel);
   buildMokuroPanel(panel);
@@ -560,8 +578,10 @@ export async function setupSettings(): Promise<void> {
   const channelsGrid = document.getElementById('channelsGrid');
   if (!settingsPanel || !channelsGrid) return;
 
-  const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+  const result = await browser.storage.local.get([STORAGE_KEYS.SETTINGS, STORAGE_KEYS.USER]);
   const settings: ExtensionSettings = { ...DEFAULT_SETTINGS, ...(result[STORAGE_KEYS.SETTINGS] || {}) };
-  rebuildSettingsPanel(settingsPanel, settings);
+  const userState = result[STORAGE_KEYS.USER] as JP343UserState | undefined;
+  const hasAccount = !!userState?.isLoggedIn && (!!userState?.extApiToken || !!userState?.nonce);
+  rebuildSettingsPanel(settingsPanel, settings, hasAccount);
   rebuildChannelsPanel(channelsGrid, settings);
 }

@@ -24,7 +24,8 @@ export function createToggleRow(
   label: string,
   description: string,
   enabled: boolean,
-  onChange: (val: boolean) => Promise<void>
+  onChange: (val: boolean) => Promise<void>,
+  disabled = false
 ): HTMLElement {
   const row = document.createElement('div');
   row.className = 'settings-row';
@@ -45,6 +46,7 @@ export function createToggleRow(
   const toggle = document.createElement('button');
   toggle.className = 'settings-toggle' + (enabled ? ' enabled' : '');
   toggle.type = 'button';
+  toggle.disabled = disabled;
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-checked', String(enabled));
   toggle.setAttribute('aria-label', label);
@@ -57,7 +59,14 @@ export function createToggleRow(
 
   row.appendChild(info);
   row.appendChild(toggle);
+  if (disabled) row.classList.add('settings-row-disabled');
   return row;
+}
+
+export function setToggleRowDisabled(row: HTMLElement, disabled: boolean): void {
+  row.classList.toggle('settings-row-disabled', disabled);
+  const toggle = row.querySelector('.settings-toggle') as HTMLButtonElement | null;
+  if (toggle) toggle.disabled = disabled;
 }
 
 export function showStatus(container: HTMLElement, message: string, type: 'success' | 'error'): void {

@@ -135,6 +135,7 @@ export interface ExtensionSettings {
   streakRiskNotification: boolean;
   showDifficultyLevels?: boolean;
   difficultyLocalOnly?: boolean;
+  difficultyVotingEnabled?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -423,7 +424,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   stretchGoalsEnabled: true,
   streakRiskNotification: false,
   showDifficultyLevels: true,
-  difficultyLocalOnly: false
+  difficultyLocalOnly: false,
+  difficultyVotingEnabled: true
 };
 
 export const STORAGE_KEYS = {
