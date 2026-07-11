@@ -274,7 +274,7 @@ async function loadAndApplySettings(): Promise<void> {
       _popupStretchEnabled = settings.stretchGoalsEnabled ?? true;
       whitelistedChannels = settings.whitelistedChannels || [];
       hideNonJapanese = settings.hideNonJapanese ?? false;
-      trackJapaneseOnly = settings.trackJapaneseOnly ?? false;
+      trackJapaneseOnly = settings.trackJapaneseOnly ?? true;
       updateJpFilterDisplay(hideNonJapanese);
       applyColorTheme(settings.colorTheme ?? 'magenta');
     }

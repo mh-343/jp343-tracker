@@ -9,7 +9,7 @@ async function init(): Promise<void> {
     const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
     if (response.success && response.data?.settings) {
       const settings = response.data.settings as ExtensionSettings;
-      trackJpCheckbox.checked = settings.trackJapaneseOnly ?? false;
+      trackJpCheckbox.checked = settings.trackJapaneseOnly ?? true;
     }
   } catch { /* first load, defaults are fine */ }
 

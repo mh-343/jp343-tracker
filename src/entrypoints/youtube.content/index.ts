@@ -154,7 +154,7 @@ export default defineContentScript({
       if (response?.success && response.data?.settings) {
         const prev = useOriginalTitles;
         useOriginalTitles = response.data.settings.useOriginalTitles ?? false;
-        trackJapaneseOnly = response.data.settings.trackJapaneseOnly ?? false;
+        trackJapaneseOnly = response.data.settings.trackJapaneseOnly ?? true;
         hideNonJapanese = response.data.settings.hideNonJapanese ?? false;
         whitelistedChannels = response.data.settings.whitelistedChannels ?? [];
         blockedChannels = response.data.settings.blockedChannels ?? [];
@@ -172,7 +172,7 @@ export default defineContentScript({
       if (changes[STORAGE_KEYS.SETTINGS]?.newValue) {
         const prev = useOriginalTitles;
         useOriginalTitles = changes[STORAGE_KEYS.SETTINGS].newValue.useOriginalTitles ?? false;
-        trackJapaneseOnly = changes[STORAGE_KEYS.SETTINGS].newValue.trackJapaneseOnly ?? false;
+        trackJapaneseOnly = changes[STORAGE_KEYS.SETTINGS].newValue.trackJapaneseOnly ?? true;
         hideNonJapanese = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
         whitelistedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
         blockedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.blockedChannels ?? [];

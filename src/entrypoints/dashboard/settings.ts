@@ -232,7 +232,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
   section.appendChild(createToggleRow(
     'Track Japanese only',
     'Only track YouTube videos and Twitch streams identified as Japanese',
-    settings.trackJapaneseOnly ?? false,
+    settings.trackJapaneseOnly ?? true,
     async (val) => { await updateSettings({ trackJapaneseOnly: val }); }
   ));
 

@@ -414,7 +414,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   dailyGoalMinutes: 60,
   dayStartHour: 0,
   hideNonJapanese: false,
-  trackJapaneseOnly: false,
+  trackJapaneseOnly: true,
   whitelistedChannels: [],
   useOriginalTitles: false,
   diagnosticsEnabled: true,

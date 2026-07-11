@@ -66,7 +66,7 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
       day_boundary_hour: String(settings.dayStartHour || 0),
       color_theme: settings.colorTheme ?? 'magenta',
       hide_non_japanese: String(settings.hideNonJapanese ?? false),
-      track_japanese_only: String(settings.trackJapaneseOnly ?? false),
+      track_japanese_only: String(settings.trackJapaneseOnly ?? true),
       daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
       target_start_times: JSON.stringify(settings.targetStartTimes ?? [null, null, null, null, null, null, null]),
     };
