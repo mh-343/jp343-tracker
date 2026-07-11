@@ -143,15 +143,12 @@ function ensureVoteState(videoId: string | null, channelInfo: { id: string | nul
     });
 }
 
-// vote UI is desktop-only
-const votingSupported = !window.location.hostname.startsWith('m.');
-
 function voteContextFor(
   videoId: string | null,
   channelInfo: { id: string | null; name: string | null; url: string | null }
 ): ChipVoteContext | undefined {
   // local-only never hits the server
-  if (!votingSupported || !difficultyVotingEnabled || difficultyLocalOnly) return undefined;
+  if (!difficultyVotingEnabled || difficultyLocalOnly) return undefined;
   ensureVoteState(videoId, channelInfo);
   const key = voteKeyOf(videoId, channelInfo);
   if (!key || key !== voteStateKey || !voteState?.eligible) return undefined;

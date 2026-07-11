@@ -19,6 +19,7 @@ function injectStyles(doc: Document): void {
     #${CHIP_ID} {
       display: inline-flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       margin: 6px 0 2px 0;
       padding: 4px 10px;
@@ -94,6 +95,19 @@ function injectStyles(doc: Document): void {
       color: #f0b429;
       font-size: 11px;
     }
+    @media (pointer: coarse) {
+      #${CHIP_ID} {
+        gap: 6px;
+      }
+      #${CHIP_ID} .jp343-dc-sep,
+      #${CHIP_ID} .jp343-dc-tag {
+        display: none;
+      }
+      #${CHIP_ID} .jp343-dc-vote-btn {
+        font-size: 12px;
+        padding: 5px 8px;
+      }
+    }
   `;
   doc.head.appendChild(style);
 }
@@ -151,7 +165,12 @@ function voteButton(doc: Document, label: string, colorClass: string, selected: 
     : `jp343-dc-vote-btn ${colorClass}`;
   btn.textContent = label;
   btn.title = title;
-  btn.addEventListener('click', onClick);
+  btn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  btn.addEventListener('pointerdown', event => event.stopPropagation());
   return btn;
 }
 
