@@ -30,6 +30,7 @@ export default defineContentScript({
     let originalTitle: string | null = null;
     let videoAudioLanguage: string | null = null;
     let videoDescription: string | null = null;
+    let videoAuthor: string | null = null;
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let originalTitleResponsePending = false;
@@ -439,13 +440,19 @@ export default defineContentScript({
         }
       }
 
+      // m.youtube watch pages show only the @handle as text
+      if (!channelName && videoAuthor && originalTitleVideoId === getVideoId()) {
+        channelName = videoAuthor;
+      }
+
       if (!channelUrl) {
         const linkSelectors = [
           '#owner #channel-name a',
           '#owner ytd-channel-name a',
           'ytd-video-owner-renderer #channel-name a',
           '#owner a.yt-simple-endpoint',
-          'a.slim-owner-icon-and-title[href*="/@"]'
+          'a.slim-owner-icon-and-title[href*="/@"]',
+          'a.slim-video-owner-icon'
         ];
         for (const selector of linkSelectors) {
           const link = document.querySelector(selector) as HTMLAnchorElement | null;
@@ -501,6 +508,7 @@ export default defineContentScript({
       videoId: string | null;
       audioLang?: string | null;
       desc?: string | null;
+      author?: string | null;
     }
 
     function handleOriginalTitleResponse(e: Event): void {
@@ -514,6 +522,10 @@ export default defineContentScript({
       }
       if (typeof detail.desc === 'string' && detail.desc) {
         videoDescription = detail.desc;
+      }
+      if (typeof detail.author === 'string' && detail.author) {
+        videoAuthor = detail.author;
+        gotSignal = true;
       }
       if (detail.title && typeof detail.title === 'string') {
         originalTitle = detail.title;
@@ -538,6 +550,7 @@ export default defineContentScript({
         originalTitle = null;
         videoAudioLanguage = null;
         videoDescription = null;
+        videoAuthor = null;
         originalTitleVideoId = null;
         originalTitleResponsePending = false;
         return;
@@ -545,6 +558,7 @@ export default defineContentScript({
       originalTitle = null;
       videoAudioLanguage = null;
       videoDescription = null;
+      videoAuthor = null;
       originalTitleVideoId = videoId;
       originalTitleResponsePending = true;
       if (originalTitleRetryTimer) {
@@ -918,6 +932,7 @@ export default defineContentScript({
         originalTitle = null;
         videoAudioLanguage = null;
         videoDescription = null;
+        videoAuthor = null;
         originalTitleResponsePending = false;
 
         if (currentVideoElement) {
