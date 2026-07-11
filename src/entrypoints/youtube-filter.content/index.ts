@@ -5,24 +5,40 @@ import {
 } from '../../lib/youtube-utils';
 import type { WhitelistedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { claimContentScript } from '../../lib/content-guard';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('youtube-filter')) return;
+
     const observers: MutationObserver[] = [];
     const navHandler = () => { if (filterEnabled) setTimeout(scheduleUpdate, 200); };
 
-    function cleanup() {
+    function stopAll() {
       clearRetry();
       document.removeEventListener('yt-navigate-finish', navHandler);
       window.removeEventListener('popstate', navHandler);
       observers.forEach(o => o.disconnect());
       observers.length = 0;
+    }
+
+    function cleanup() {
+      stopAll();
       showAllVideos();
     }
     window.addEventListener('pagehide', cleanup);
+
+    // Orphan must not touch the shared DOM
+    function contextLost(): boolean {
+      try {
+        if (browser.runtime?.id) return false;
+      } catch { /* context gone */ }
+      stopAll();
+      return true;
+    }
 
     let filterEnabled = false;
     let whitelistedChannels: WhitelistedChannel[] = [];
@@ -92,6 +108,7 @@ export default defineContentScript({
     }
 
     function processAllVideos(): void {
+      if (contextLost()) return;
       const videos = document.querySelectorAll(VIDEO_CARD_SELECTORS);
       videos.forEach((video) => {
         processVideo(video);
@@ -109,6 +126,7 @@ export default defineContentScript({
       retryTimer = setTimeout(() => {
         retryTimer = null;
         if (!filterEnabled) return;
+        if (contextLost()) return;
         retryCount++;
         processAllVideos();
         scheduleRetry();
@@ -120,6 +138,7 @@ export default defineContentScript({
       updateScheduled = true;
       requestAnimationFrame(() => {
         updateScheduled = false;
+        if (contextLost()) return;
         processAllVideos();
         retryCount = 0;
         scheduleRetry();

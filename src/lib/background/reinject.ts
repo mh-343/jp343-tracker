@@ -100,6 +100,12 @@ async function reinjectTab(tabId: number, target: ReinjectTarget): Promise<void>
         (window as unknown as { __jp343Claimed?: unknown }).__jp343Claimed = {};
         document.querySelectorAll('[data-jp343-tracked]')
           .forEach(el => el.removeAttribute('data-jp343-tracked'));
+        document.querySelectorAll('[data-jp343-processed]')
+          .forEach(el => el.removeAttribute('data-jp343-processed'));
+        document.querySelectorAll('[data-jp343-title-replaced]')
+          .forEach(el => el.removeAttribute('data-jp343-title-replaced'));
+        document.querySelectorAll('.jp343-jp-hidden')
+          .forEach(el => el.classList.remove('jp343-jp-hidden'));
       } catch { /* page locked down */ }
     }
   });

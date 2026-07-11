@@ -7,7 +7,6 @@ import {
   initSettingsSyncCallbacks,
   syncSettingsToServer,
   pullAndMergeSettingsFromServer,
-  isSettingsPullComplete,
   getSettingsLastPullTime,
 } from '../lib/background/settings-sync';
 import { loadPendingEntries } from '../lib/pending-entries';
@@ -818,8 +817,8 @@ export default defineBackground(() => {
   }
 
   async function ensureFreshSettings(): Promise<void> {
-    const pullAge = Date.now() - getSettingsLastPullTime();
-    if (!isSettingsPullComplete() || pullAge > 60000) {
+    const pullAge = Date.now() - await getSettingsLastPullTime();
+    if (pullAge > 60000) {
       await pullAndMergeSettingsFromServer().catch(() => {});
     }
   }

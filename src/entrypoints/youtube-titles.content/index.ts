@@ -4,6 +4,7 @@ import {
   extractVideoIdFromUrl, extractVideoIdFromElement, fetchOembedTitle
 } from '../../lib/youtube-utils';
 import { createDebugLogger } from '../../lib/debug-logger';
+import { claimContentScript } from '../../lib/content-guard';
 
 interface CacheEntry {
   title: string;
@@ -19,18 +20,36 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
+    if (!claimContentScript('youtube-titles')) return;
+
     const observers: MutationObserver[] = [];
     const timeoutIds: ReturnType<typeof setTimeout>[] = [];
-    function cleanup() {
+    function stopAll() {
       observers.forEach(o => o.disconnect());
       observers.length = 0;
       timeoutIds.forEach(id => clearTimeout(id));
       timeoutIds.length = 0;
-      restoreAllTitles();
+      window.removeEventListener('popstate', scheduleUrlChange);
+      document.removeEventListener('yt-navigate-finish', scheduleUrlChange);
+      document.removeEventListener('yt-page-data-updated', scheduleUrlChange);
       if (feedObserver) { feedObserver.disconnect(); feedObserver = null; }
       if (documentTitleObserver) { documentTitleObserver.disconnect(); documentTitleObserver = null; }
     }
+
+    function cleanup() {
+      stopAll();
+      restoreAllTitles();
+    }
     window.addEventListener('pagehide', cleanup);
+
+    // Orphan must not touch the shared DOM
+    function contextLost(): boolean {
+      try {
+        if (browser.runtime?.id) return false;
+      } catch { /* context gone */ }
+      stopAll();
+      return true;
+    }
 
     const { log } = createDebugLogger('youtube-titles');
 
@@ -241,6 +260,7 @@ export default defineContentScript({
       setElementText(el, newText);
 
       const obs = new MutationObserver(() => {
+        if (contextLost()) return;
         if (el.textContent?.trim() !== newText) {
           obs.disconnect();
           setElementText(el, newText);
@@ -267,6 +287,7 @@ export default defineContentScript({
       card.setAttribute(REPLACED_ATTR, videoId);
 
       const obs = new MutationObserver(() => {
+        if (contextLost()) return;
         const currentVideoId = extractVideoIdFromElement(card);
         if (currentVideoId !== videoId) {
           removeObserver(obs);
@@ -307,6 +328,7 @@ export default defineContentScript({
 
       documentTitleObserver = new MutationObserver(() => {
         if (titleGuard) return;
+        if (contextLost()) return;
         if (!documentTitleExpected) return;
         if (document.title !== documentTitleExpected) {
           titleGuard = true;
@@ -381,6 +403,7 @@ export default defineContentScript({
     // --- Browsing pages ---
 
     async function replaceBrowsingTitles(): Promise<void> {
+      if (contextLost()) return;
       const cards = document.querySelectorAll(VIDEO_CARD_SELECTORS);
 
       for (const card of Array.from(cards)) {
@@ -452,6 +475,7 @@ export default defineContentScript({
     // --- SPA navigation ---
 
     function handleUrlChange(): void {
+      if (contextLost()) return;
       currentWatchVideoId = null;
 
       for (const [el, obs] of watchObservers) {

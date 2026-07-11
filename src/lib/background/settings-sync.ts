@@ -36,17 +36,29 @@ export function normalizeTargetStartTimes(raw: unknown): (string | null)[] {
 let settingsPullComplete = false;
 let settingsLastUpdated = '';
 let settingsLastPullTime = 0;
+let settingsPullInFlight: Promise<boolean> | null = null;
 
 export function initSettingsSyncCallbacks(callbacks: SettingsSyncDeps): void {
   deps = callbacks;
 }
 
-export function isSettingsPullComplete(): boolean {
-  return settingsPullComplete;
+export async function getSettingsLastPullTime(): Promise<number> {
+  if (settingsLastPullTime) return settingsLastPullTime;
+  try {
+    const result = await browser.storage.session.get(STORAGE_KEYS.SETTINGS_PULL_ATTEMPT);
+    const stored: unknown = result[STORAGE_KEYS.SETTINGS_PULL_ATTEMPT];
+    return typeof stored === 'number' ? stored : 0;
+  } catch {
+    return 0;
+  }
 }
 
-export function getSettingsLastPullTime(): number {
-  return settingsLastPullTime;
+// Stamp survives service worker restarts
+function stampPullAttempt(): void {
+  settingsLastPullTime = Date.now();
+  try {
+    browser.storage.session.set({ [STORAGE_KEYS.SETTINGS_PULL_ATTEMPT]: settingsLastPullTime }).catch(() => {});
+  } catch { /* session storage unavailable */ }
 }
 
 export async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
@@ -102,7 +114,19 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
   }
 }
 
-export async function pullAndMergeSettingsFromServer(): Promise<boolean> {
+export function pullAndMergeSettingsFromServer(): Promise<boolean> {
+  if (!settingsPullInFlight) {
+    settingsPullInFlight = doPullAndMergeSettings().finally(() => {
+      settingsPullInFlight = null;
+    });
+  }
+  return settingsPullInFlight;
+}
+
+async function doPullAndMergeSettings(): Promise<boolean> {
+  // Stamp attempts so failed pulls throttle
+  stampPullAttempt();
+
   const userState: JP343UserState | null = (
     await browser.storage.local.get(STORAGE_KEYS.USER)
   )[STORAGE_KEYS.USER] ?? null;
@@ -203,7 +227,7 @@ export async function pullAndMergeSettingsFromServer(): Promise<boolean> {
       deps.log('[JP343] Settings merged from server');
     }
     settingsPullComplete = true;
-    settingsLastPullTime = Date.now();
+    stampPullAttempt();
 
     deps.pullChannelsFromServer().catch(() => {});
 

@@ -461,7 +461,8 @@ export const STORAGE_KEYS = {
   DIFFICULTY_VOTE_STATE: 'jp343_difficulty_vote_state',
   DIFFICULTY_VOTE_STATE_V2: 'jp343_difficulty_vote_state_v2',
   INSTALL_ID: 'jp343_install_id',
-  DIFFICULTY_CONTRIB_QUEUE: 'jp343_difficulty_contrib_queue'
+  DIFFICULTY_CONTRIB_QUEUE: 'jp343_difficulty_contrib_queue',
+  SETTINGS_PULL_ATTEMPT: 'jp343_settings_pull_attempt'
 } as const;
 
 export interface CachedServerSession {
