@@ -7,6 +7,8 @@ const MOUNT_SELECTORS = [
   '#above-the-fold #title',
   'ytd-watch-metadata #title',
   'ytd-watch-metadata',
+  'ytm-slim-video-metadata-section-renderer h2',
+  'h2.slim-video-information-title',
 ];
 
 function injectStyles(doc: Document): void {
@@ -115,8 +117,15 @@ function span(doc: Document, className: string, text: string): HTMLSpanElement {
   return el;
 }
 
+export interface ChipOwnVote {
+  level: number | null;
+  mixed: boolean;
+  choice: string | null;
+  shownLevel: number | null;
+}
+
 export interface ChipVoteContext {
-  ownVote: { level: number | null; mixed: boolean } | null;
+  ownVote: ChipOwnVote | null;
   onVote: (level: number | null, mixed: boolean, choice: string, shownLevel: number) => Promise<{ ok: boolean; message?: string }>;
 }
 
@@ -161,6 +170,8 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
   function selectionKey(): string | null {
     if (!currentVote) return null;
     if (currentVote.mixed) return 'mixed';
+    if (currentVote.choice) return currentVote.choice;
+    if (currentVote.shownLevel !== anchorLevel) return null;
     if (currentVote.level == null) return null;
     if (currentVote.level < anchorLevel) return 'easier';
     if (currentVote.level > anchorLevel) return 'harder';
@@ -181,7 +192,7 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
       void ctx.onVote(level, mixed, choice, anchorLevel).then(result => {
         sending = false;
         if (result.ok) {
-          currentVote = { level, mixed };
+          currentVote = { level, mixed, choice, shownLevel: anchorLevel };
           render();
         } else {
           buttons.forEach(b => { if (!b.locked) b.el.disabled = false; });
@@ -233,8 +244,11 @@ export function showDifficultyChip(seed: DifficultySeed, source: string, voteCtx
     chip.appendChild(buildVoteArea(doc, voteCtx, clampLevel(seed.level)));
   }
 
-  if (mount.tagName.toLowerCase() === 'ytd-watch-metadata') {
+  const mountTag = mount.tagName.toLowerCase();
+  if (mountTag === 'ytd-watch-metadata') {
     mount.prepend(chip);
+  } else if (mountTag === 'h2') {
+    mount.insertAdjacentElement('afterend', chip);
   } else {
     mount.appendChild(chip);
   }

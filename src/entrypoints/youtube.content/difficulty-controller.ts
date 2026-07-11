@@ -2,7 +2,7 @@
 
 import { STORAGE_KEYS } from '../../types';
 import { showDifficultyChip, hideDifficultyChip } from '../../lib/difficulty-chip';
-import type { ChipVoteContext } from '../../lib/difficulty-chip';
+import type { ChipVoteContext, ChipOwnVote } from '../../lib/difficulty-chip';
 import { parseTitleLevel } from '../../lib/difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../../lib/difficulty-seeds';
 import { estimateLocalBand, LOCAL_METHOD_VERSION } from '../../lib/difficulty-local/estimator';
@@ -34,7 +34,7 @@ let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
 let difficultyChannelBounds: Record<string, ChannelBounds> | null = null;
 const localBandCache = new Map<string, { seed: DifficultySeed; source: string } | null>();
 const localComputing = new Set<string>();
-let voteState: { eligible: boolean; vote: { level: number | null; mixed: boolean } | null } | null = null;
+let voteState: { eligible: boolean; vote: ChipOwnVote | null } | null = null;
 let voteStateKey: string | null = null;
 let voteStateRequested: string | null = null;
 
@@ -122,30 +122,38 @@ function resetVoteState(): void {
   voteStateRequested = null;
 }
 
-function ensureVoteState(channelInfo: { id: string | null; name: string | null; url: string | null }): void {
+function voteKeyOf(videoId: string | null, channelInfo: { id: string | null; name: string | null }): string | null {
+  const channelKey = channelKeyOf(channelInfo);
+  return channelKey ? `${channelKey}|${videoId ?? ''}` : null;
+}
+
+function ensureVoteState(videoId: string | null, channelInfo: { id: string | null; name: string | null; url: string | null }): void {
   if (!deps) return;
-  const key = channelKeyOf(channelInfo);
+  const key = voteKeyOf(videoId, channelInfo);
   if (!key || key === voteStateKey || key === voteStateRequested) return;
   voteStateRequested = key;
-  void deps.sendMessage('GET_VOTE_STATE', { channelId: channelInfo.id, channelName: channelInfo.name, channelUrl: channelInfo.url })
+  void deps.sendMessage('GET_VOTE_STATE', { channelId: channelInfo.id, channelName: channelInfo.name, channelUrl: channelInfo.url, videoId })
     .then(response => {
       if (voteStateRequested !== key) return;
       voteStateRequested = null;
       voteStateKey = key;
-      const data = response as { eligible?: boolean; vote?: { level: number | null; mixed: boolean } | null } | undefined;
+      const data = response as { eligible?: boolean; vote?: ChipOwnVote | null } | undefined;
       voteState = data ? { eligible: data.eligible ?? false, vote: data.vote ?? null } : null;
       if (voteState?.eligible) updateDifficultyChip();
     });
 }
+
+// vote UI is desktop-only
+const votingSupported = !window.location.hostname.startsWith('m.');
 
 function voteContextFor(
   videoId: string | null,
   channelInfo: { id: string | null; name: string | null; url: string | null }
 ): ChipVoteContext | undefined {
   // local-only never hits the server
-  if (!difficultyVotingEnabled || difficultyLocalOnly) return undefined;
-  ensureVoteState(channelInfo);
-  const key = channelKeyOf(channelInfo);
+  if (!votingSupported || !difficultyVotingEnabled || difficultyLocalOnly) return undefined;
+  ensureVoteState(videoId, channelInfo);
+  const key = voteKeyOf(videoId, channelInfo);
   if (!key || key !== voteStateKey || !voteState?.eligible) return undefined;
   const vote = voteState.vote;
   return {
@@ -164,7 +172,7 @@ function voteContextFor(
       });
       const result = response as { success?: boolean; message?: string } | undefined;
       if (result?.success) {
-        voteState = { eligible: true, vote: { level, mixed } };
+        voteState = { eligible: true, vote: { level, mixed, choice, shownLevel } };
         return { ok: true };
       }
       return { ok: false, message: result?.message };

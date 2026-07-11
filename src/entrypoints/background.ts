@@ -23,6 +23,7 @@ import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
+import { clearVoteStateCache } from '../lib/background/difficulty-messages';
 import {
   loadDiagnostics,
   saveDiagnostics,
@@ -217,9 +218,14 @@ export default defineBackground(() => {
         : null;
     }
     if (area === 'local' && changes[STORAGE_KEYS.USER]) {
-      const oldUrl = changes[STORAGE_KEYS.USER].oldValue?.avatarUrlSmall || null;
-      const newUrl = changes[STORAGE_KEYS.USER].newValue?.avatarUrlSmall || null;
-      const newUserId = changes[STORAGE_KEYS.USER].newValue?.userId;
+      const oldUser = changes[STORAGE_KEYS.USER].oldValue as JP343UserState | undefined;
+      const newUser = changes[STORAGE_KEYS.USER].newValue as JP343UserState | undefined;
+      if (oldUser && (oldUser.userId !== newUser?.userId || oldUser.extApiToken !== newUser?.extApiToken)) {
+        void clearVoteStateCache();
+      }
+      const oldUrl = oldUser?.avatarUrlSmall || null;
+      const newUrl = newUser?.avatarUrlSmall || null;
+      const newUserId = newUser?.userId;
       if (oldUrl !== newUrl && newUrl && newUserId) {
         fetchAndStoreAvatar(newUrl, newUserId);
       }

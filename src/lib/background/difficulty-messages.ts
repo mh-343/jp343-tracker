@@ -195,16 +195,30 @@ const VOTE_FETCH_TIMEOUT_MS = 10000;
 const VOTE_STATE_ELIGIBLE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const VOTE_STATE_RETRY_TTL_MS = 45 * 60 * 1000;
 const VOTE_STATE_CAP = 300;
+const VOTE_STATE_VIDEO_CAP = 50;
+const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+
+interface StoredVote {
+  level: number | null;
+  mixed: boolean;
+  choice: string | null;
+  shownLevel: number | null;
+}
+
+interface VideoVoteEntry {
+  vote: StoredVote | null;
+  at: number;
+}
 
 interface VoteStateEntry {
   eligible: boolean;
-  vote: { level: number | null; mixed: boolean } | null;
   at: number;
+  votes: Record<string, VideoVoteEntry>;
 }
 
 export interface VoteStateResponse {
   eligible: boolean;
-  vote: { level: number | null; mixed: boolean } | null;
+  vote: StoredVote | null;
 }
 
 export interface VoteSubmitResponse {
@@ -224,36 +238,59 @@ async function loadUserState(): Promise<JP343UserState | null> {
   return (result[STORAGE_KEYS.USER] as JP343UserState | undefined) ?? null;
 }
 
+let channelScopedCacheRemoved = false;
+
 async function loadVoteStateCache(): Promise<Record<string, VoteStateEntry>> {
-  const result = await browser.storage.local.get(STORAGE_KEYS.DIFFICULTY_VOTE_STATE);
-  return (result[STORAGE_KEYS.DIFFICULTY_VOTE_STATE] as Record<string, VoteStateEntry> | undefined) ?? {};
+  if (!channelScopedCacheRemoved) {
+    channelScopedCacheRemoved = true;
+    void browser.storage.local.remove(STORAGE_KEYS.DIFFICULTY_VOTE_STATE);
+  }
+  const result = await browser.storage.local.get(STORAGE_KEYS.DIFFICULTY_VOTE_STATE_V2);
+  return (result[STORAGE_KEYS.DIFFICULTY_VOTE_STATE_V2] as Record<string, VoteStateEntry> | undefined) ?? {};
 }
 
-async function saveVoteStateEntry(key: string, entry: VoteStateEntry): Promise<void> {
+async function saveVoteState(key: string, eligible: boolean, videoId: string | null, vote: StoredVote | null): Promise<void> {
   await withStorageLock(async () => {
     const cache = await loadVoteStateCache();
+    const entry: VoteStateEntry = cache[key] ?? { eligible, at: 0, votes: {} };
+    entry.eligible = eligible;
+    entry.at = Date.now();
+    if (videoId) {
+      entry.votes[videoId] = { vote, at: Date.now() };
+      const videoKeys = Object.keys(entry.votes);
+      if (videoKeys.length > VOTE_STATE_VIDEO_CAP) {
+        const oldest = videoKeys.sort((a, b) => entry.votes[a].at - entry.votes[b].at);
+        for (const k of oldest.slice(0, videoKeys.length - VOTE_STATE_VIDEO_CAP)) delete entry.votes[k];
+      }
+    }
     cache[key] = entry;
     const keys = Object.keys(cache);
     if (keys.length > VOTE_STATE_CAP) {
       const oldest = keys.sort((a, b) => cache[a].at - cache[b].at);
       for (const k of oldest.slice(0, keys.length - VOTE_STATE_CAP)) delete cache[k];
     }
-    await browser.storage.local.set({ [STORAGE_KEYS.DIFFICULTY_VOTE_STATE]: cache });
+    await browser.storage.local.set({ [STORAGE_KEYS.DIFFICULTY_VOTE_STATE_V2]: cache });
   });
 }
 
-function toVote(raw: unknown): { level: number | null; mixed: boolean } | null {
+export async function clearVoteStateCache(): Promise<void> {
+  await browser.storage.local.remove([STORAGE_KEYS.DIFFICULTY_VOTE_STATE, STORAGE_KEYS.DIFFICULTY_VOTE_STATE_V2]);
+}
+
+function toVote(raw: unknown): StoredVote | null {
   if (!raw || typeof raw !== 'object') return null;
-  const v = raw as { level?: unknown; mixed?: unknown };
+  const v = raw as { level?: unknown; mixed?: unknown; choice?: unknown; shownLevel?: unknown };
   const level = typeof v.level === 'number' ? v.level : null;
   const mixed = v.mixed === true || v.mixed === 1 || v.mixed === '1';
-  if (level === null && !mixed) return null;
-  return { level, mixed };
+  const choice = typeof v.choice === 'string' && v.choice ? v.choice : null;
+  const shownLevel = typeof v.shownLevel === 'number' ? v.shownLevel : null;
+  if (level === null && !mixed && !choice) return null;
+  return { level, mixed, choice, shownLevel };
 }
 
 // Asks the server, 30 min gate lives there
 export async function handleGetVoteState(
-  message: { channelId: string | null; channelName: string | null; channelUrl: string | null },
+  message: { channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null },
   context: BackgroundMessageContext
 ): Promise<VoteStateResponse> {
   const none: VoteStateResponse = { eligible: false, vote: null };
@@ -263,12 +300,22 @@ export async function handleGetVoteState(
   if (!user?.extApiToken) return none;
   const key = channelVoteKey(message.channelId, message.channelName);
   if (!key) return none;
+  const videoId = typeof message.videoId === 'string' && VIDEO_ID_PATTERN.test(message.videoId)
+    ? message.videoId
+    : null;
 
   const cache = await loadVoteStateCache();
   const cached = cache[key];
+  const now = Date.now();
+  const cachedVideoVote = cached && videoId ? cached.votes?.[videoId] : undefined;
   if (cached) {
     const ttl = cached.eligible ? VOTE_STATE_ELIGIBLE_TTL_MS : VOTE_STATE_RETRY_TTL_MS;
-    if (Date.now() - cached.at < ttl) return { eligible: cached.eligible, vote: cached.vote };
+    if (now - cached.at < ttl) {
+      if (!cached.eligible) return { eligible: false, vote: null };
+      if (cachedVideoVote && now - cachedVideoVote.at < VOTE_STATE_ELIGIBLE_TTL_MS) {
+        return { eligible: true, vote: cachedVideoVote.vote };
+      }
+    }
   }
 
   const ajaxUrl = user.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
@@ -279,8 +326,11 @@ export async function handleGetVoteState(
   if (message.channelId) params.set('channel_id', message.channelId);
   if (message.channelName) params.set('channel_name', message.channelName);
   if (message.channelUrl) params.set('channel_url', message.channelUrl);
+  if (videoId) params.set('video_id', videoId);
 
-  const stale: VoteStateResponse = cached ? { eligible: cached.eligible, vote: cached.vote } : none;
+  const stale: VoteStateResponse = cached
+    ? { eligible: cached.eligible, vote: cachedVideoVote?.vote ?? null }
+    : none;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOTE_FETCH_TIMEOUT_MS);
   let result: { success?: boolean; data?: { eligible?: boolean; vote?: unknown } };
@@ -294,13 +344,10 @@ export async function handleGetVoteState(
     clearTimeout(timeout);
   }
   if (!result.success || !result.data) return stale;
-  const entry: VoteStateEntry = {
-    eligible: result.data.eligible === true,
-    vote: toVote(result.data.vote),
-    at: Date.now()
-  };
-  await saveVoteStateEntry(key, entry);
-  return { eligible: entry.eligible, vote: entry.vote };
+  const eligible = result.data.eligible === true;
+  const vote = videoId ? toVote(result.data.vote) : null;
+  await saveVoteState(key, eligible, videoId, vote);
+  return { eligible, vote };
 }
 
 export async function handleSubmitDifficultyVote(message: {
@@ -349,10 +396,11 @@ export async function handleSubmitDifficultyVote(message: {
   }
   const key = channelVoteKey(message.channelId, message.channelName);
   if (key) {
-    await saveVoteStateEntry(key, {
-      eligible: true,
-      vote: { level: message.mixed ? null : message.level, mixed: message.mixed },
-      at: Date.now()
+    await saveVoteState(key, true, message.videoId, {
+      level: message.mixed ? null : message.level,
+      mixed: message.mixed,
+      choice: message.choice || null,
+      shownLevel: message.shownLevel
     });
   }
   return { success: true, votesForChannel: result.data?.votesForChannel };
