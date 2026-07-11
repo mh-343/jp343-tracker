@@ -5,6 +5,7 @@ type Logger = (...args: unknown[]) => void;
 interface ReinjectTarget {
   matches: string[];
   file: string;
+  extraFiles?: string[];
   allFrames?: boolean;
 }
 
@@ -15,7 +16,11 @@ const TARGETS: ReinjectTarget[] = [
   },
   {
     matches: ['*://*.youtube.com/*'],
-    file: 'content-scripts/youtube.js'
+    file: 'content-scripts/youtube.js',
+    extraFiles: [
+      'content-scripts/youtube-titles.js',
+      'content-scripts/youtube-filter.js'
+    ]
   },
   {
     matches: ['*://*.twitch.tv/*'],
@@ -100,7 +105,7 @@ async function reinjectTab(tabId: number, target: ReinjectTarget): Promise<void>
   });
   await browser.scripting.executeScript({
     target: { tabId, allFrames },
-    files: [target.file]
+    files: [target.file, ...(target.extraFiles ?? [])]
   });
 }
 
