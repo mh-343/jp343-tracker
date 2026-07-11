@@ -197,6 +197,7 @@ const VOTE_STATE_RETRY_TTL_MS = 45 * 60 * 1000;
 const VOTE_STATE_CAP = 300;
 const VOTE_STATE_VIDEO_CAP = 50;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const VOTE_CHOICES = ['nothing', 'little', 'most', 'all'];
 
 interface StoredVote {
   level: number | null;
@@ -355,14 +356,12 @@ export async function handleSubmitDifficultyVote(message: {
   channelName: string | null;
   channelUrl: string | null;
   videoId: string | null;
-  level: number | null;
-  mixed: boolean;
   choice: string;
   shownLevel: number;
 }): Promise<VoteSubmitResponse> {
   const user = await loadUserState();
   if (!user?.extApiToken) return { success: false, code: 'auth_required' };
-  if (!message.mixed && (!message.level || message.level < 1 || message.level > 5)) {
+  if (!VOTE_CHOICES.includes(message.choice)) {
     return { success: false, code: 'invalid_input' };
   }
   const ajaxUrl = user.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
@@ -374,10 +373,8 @@ export async function handleSubmitDifficultyVote(message: {
   if (message.channelName) params.set('channel_name', message.channelName);
   if (message.channelUrl) params.set('channel_url', message.channelUrl);
   if (message.videoId) params.set('video_id', message.videoId);
-  if (message.choice) params.set('choice', message.choice);
+  params.set('choice', message.choice);
   params.set('shown_level', String(message.shownLevel));
-  if (message.mixed) params.set('mixed', '1');
-  else params.set('level', String(message.level));
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOTE_FETCH_TIMEOUT_MS);
@@ -397,9 +394,9 @@ export async function handleSubmitDifficultyVote(message: {
   const key = channelVoteKey(message.channelId, message.channelName);
   if (key) {
     await saveVoteState(key, true, message.videoId, {
-      level: message.mixed ? null : message.level,
-      mixed: message.mixed,
-      choice: message.choice || null,
+      level: null,
+      mixed: false,
+      choice: message.choice,
       shownLevel: message.shownLevel
     });
   }

@@ -81,14 +81,10 @@ function injectStyles(doc: Document): void {
       color: #111;
       font-weight: 600;
     }
-    #${CHIP_ID} .jp343-dc-easier { --vc: #4ade80; }
-    #${CHIP_ID} .jp343-dc-spot { --vc: #60a5fa; }
-    #${CHIP_ID} .jp343-dc-harder { --vc: #fb923c; }
-    #${CHIP_ID} .jp343-dc-vmix { --vc: #9ca3af; }
-    #${CHIP_ID} .jp343-dc-vmix.jp343-dc-selected {
-      background: #f0b429;
-      border-color: #f0b429;
-    }
+    #${CHIP_ID} .jp343-dc-nothing { --vc: #fb923c; }
+    #${CHIP_ID} .jp343-dc-little { --vc: #f0b429; }
+    #${CHIP_ID} .jp343-dc-most { --vc: #60a5fa; }
+    #${CHIP_ID} .jp343-dc-all { --vc: #4ade80; }
     #${CHIP_ID} .jp343-dc-vote-prompt {
       color: #999;
       font-size: 11px;
@@ -126,7 +122,7 @@ export interface ChipOwnVote {
 
 export interface ChipVoteContext {
   ownVote: ChipOwnVote | null;
-  onVote: (level: number | null, mixed: boolean, choice: string, shownLevel: number) => Promise<{ ok: boolean; message?: string }>;
+  onVote: (choice: string, shownLevel: number) => Promise<{ ok: boolean; message?: string }>;
 }
 
 interface VoteOption {
@@ -134,15 +130,13 @@ interface VoteOption {
   label: string;
   colorClass: string;
   title: string;
-  mixed: boolean;
-  delta: number;
 }
 
 const VOTE_OPTIONS: VoteOption[] = [
-  { key: 'easier', label: 'Easier', colorClass: 'jp343-dc-easier', title: 'Easier than our estimate', mixed: false, delta: -1 },
-  { key: 'spot', label: 'Spot on', colorClass: 'jp343-dc-spot', title: 'Our estimate is about right', mixed: false, delta: 0 },
-  { key: 'harder', label: 'Harder', colorClass: 'jp343-dc-harder', title: 'Harder than our estimate', mixed: false, delta: 1 },
-  { key: 'mixed', label: 'Mixed', colorClass: 'jp343-dc-vmix', title: 'Mixed difficulty', mixed: true, delta: 0 }
+  { key: 'nothing', label: 'Nothing', colorClass: 'jp343-dc-nothing', title: 'Barely anything, even with effort' },
+  { key: 'little', label: 'A little', colorClass: 'jp343-dc-little', title: 'Single words and fragments' },
+  { key: 'most', label: 'Most', colorClass: 'jp343-dc-most', title: 'Followed the content, missed some details' },
+  { key: 'all', label: 'All', colorClass: 'jp343-dc-all', title: 'Practically everything, comfortably' }
 ];
 
 function clampLevel(value: number): number {
@@ -166,50 +160,43 @@ function buildVoteArea(doc: Document, ctx: ChipVoteContext, anchorLevel: number)
   area.className = 'jp343-dc-vote';
   let currentVote = ctx.ownVote;
   let sending = false;
-
-  function selectionKey(): string | null {
-    if (!currentVote) return null;
-    if (currentVote.mixed) return 'mixed';
-    if (currentVote.choice) return currentVote.choice;
-    if (currentVote.shownLevel !== anchorLevel) return null;
-    if (currentVote.level == null) return null;
-    if (currentVote.level < anchorLevel) return 'easier';
-    if (currentVote.level > anchorLevel) return 'harder';
-    return 'spot';
-  }
+  let expanded = false;
 
   function render(): void {
     area.textContent = '';
-    area.appendChild(span(doc, 'jp343-dc-vote-prompt', 'This felt:'));
-    const selected = selectionKey();
-    const buttons: Array<{ el: HTMLButtonElement; locked: boolean }> = [];
+    const selected = currentVote?.choice ?? null;
+    const answered = VOTE_OPTIONS.find(opt => opt.key === selected);
+    if (answered && !expanded) {
+      area.appendChild(voteButton(doc, `✓ ${answered.label}`, answered.colorClass, true, 'Click to change your answer', () => {
+        expanded = true;
+        render();
+      }));
+      return;
+    }
+    area.appendChild(span(doc, 'jp343-dc-vote-prompt', 'Understood:'));
+    const buttons: HTMLButtonElement[] = [];
     const msg = span(doc, 'jp343-dc-vote-msg', '');
-    const cast = (level: number | null, mixed: boolean, choice: string): void => {
+    const cast = (choice: string): void => {
       if (sending) return;
       sending = true;
-      buttons.forEach(b => { b.el.disabled = true; });
+      buttons.forEach(b => { b.disabled = true; });
       msg.textContent = '';
-      void ctx.onVote(level, mixed, choice, anchorLevel).then(result => {
+      void ctx.onVote(choice, anchorLevel).then(result => {
         sending = false;
         if (result.ok) {
-          currentVote = { level, mixed, choice, shownLevel: anchorLevel };
+          currentVote = { level: null, mixed: false, choice, shownLevel: anchorLevel };
+          expanded = false;
           render();
         } else {
-          buttons.forEach(b => { if (!b.locked) b.el.disabled = false; });
+          buttons.forEach(b => { b.disabled = false; });
           msg.textContent = result.message || 'Vote failed, try again later';
         }
       });
     };
     for (const opt of VOTE_OPTIONS) {
-      const locked = (opt.key === 'easier' && anchorLevel <= 1) || (opt.key === 'harder' && anchorLevel >= 5);
-      const btn = voteButton(doc, opt.label, opt.colorClass, selected === opt.key, opt.title, () => {
-        if (opt.mixed) cast(null, true, opt.key);
-        else cast(clampLevel(anchorLevel + opt.delta), false, opt.key);
-      });
-      if (locked) btn.disabled = true;
-      buttons.push({ el: btn, locked });
+      buttons.push(voteButton(doc, opt.label, opt.colorClass, selected === opt.key, opt.title, () => cast(opt.key)));
     }
-    buttons.forEach(b => area.appendChild(b.el));
+    buttons.forEach(b => area.appendChild(b));
     area.appendChild(msg);
   }
 

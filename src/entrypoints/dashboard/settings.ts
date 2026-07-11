@@ -275,7 +275,7 @@ function buildDifficultyPanel(container: HTMLElement, settings: ExtensionSetting
   // voting is account-only
   const voteRow = hasAccount ? createToggleRow(
     'Rate difficulty',
-    'Show the easier / spot-on / harder buttons on the badge so you can rate videos. Turn off to just see the level.',
+    'Show the Understood buttons on the badge so you can rate how much you understood. Turn off to just see the level.',
     settings.difficultyVotingEnabled ?? true,
     async (val) => { await updateSettings({ difficultyVotingEnabled: val }); },
     !showLevels

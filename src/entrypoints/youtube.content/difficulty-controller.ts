@@ -158,21 +158,21 @@ function voteContextFor(
   const vote = voteState.vote;
   return {
     ownVote: vote,
-    onVote: async (level, mixed, choice, shownLevel) => {
+    onVote: async (choice, shownLevel) => {
       if (!deps) return { ok: false };
       const response = await deps.sendMessage('SUBMIT_DIFFICULTY_VOTE', {
         channelId: channelInfo.id,
         channelName: channelInfo.name,
         channelUrl: channelInfo.url,
         videoId,
-        level,
-        mixed,
         choice,
         shownLevel
       });
       const result = response as { success?: boolean; message?: string } | undefined;
       if (result?.success) {
-        voteState = { eligible: true, vote: { level, mixed, choice, shownLevel } };
+        if (voteStateKey === key) {
+          voteState = { eligible: true, vote: { level: null, mixed: false, choice, shownLevel } };
+        }
         return { ok: true };
       }
       return { ok: false, message: result?.message };
