@@ -1,4 +1,5 @@
 import { getMokuroReinjectTarget } from './mokuro-sync';
+import { getCustomSitesReinjectTargets } from './custom-sites';
 
 type Logger = (...args: unknown[]) => void;
 
@@ -143,6 +144,7 @@ export async function reinjectTrackedTabs(log: Logger): Promise<void> {
   const targets = [...TARGETS];
   const mokuro = await getMokuroReinjectTarget();
   if (mokuro) targets.push(mokuro);
+  targets.push(...await getCustomSitesReinjectTargets());
 
   for (const target of targets) {
     await reinjectTarget(target, log);
@@ -154,4 +156,11 @@ export async function reinjectMokuroTabs(log: Logger): Promise<void> {
   if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
   const mokuro = await getMokuroReinjectTarget();
   if (mokuro) await reinjectTarget(mokuro, log);
+}
+
+// Re-inject only the custom-site tabs
+export async function reinjectCustomSitesTabs(log: Logger): Promise<void> {
+  if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
+  const targets = await getCustomSitesReinjectTargets();
+  for (const target of targets) await reinjectTarget(target, log);
 }

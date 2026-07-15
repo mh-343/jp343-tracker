@@ -5,6 +5,7 @@ import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { isJapaneseContent, isLikelyJapaneseVideo } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import { getMokuroState } from './mokuro-sync';
+import { getCustomSitesState } from './custom-sites';
 import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
@@ -152,6 +153,9 @@ export async function handleTrackingMessage(
         context.setLastSkippedChannel(null);
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
+        if (message.state.platform === 'generic') {
+          try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
+        }
         maybeRecoverAdState(message.state, message.state.platform, recordDiagnostic, false);
         await context.saveSessionState(session);
         scheduleStatusBadgeUpdate();
@@ -488,7 +492,14 @@ export async function handleTrackingMessage(
         /twitch\.tv/,
         /app\.asbplayer\.dev/
       ];
-      const isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
+      let isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
+      if (!isStreamingSite) {
+        try {
+          const host = new URL(tab.url).hostname.replace(/^www\./, '');
+          const custom = await getCustomSitesState();
+          if (custom.sites.some(s => s.host === host)) isStreamingSite = true;
+        } catch { /* ignore */ }
+      }
 
       let domain = '';
       try {

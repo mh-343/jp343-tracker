@@ -4,11 +4,11 @@ export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
 
-  // mokuro host stays optional-only
+  // mokuro + custom-sites wildcard stay optional-only
   hooks: {
     'build:manifestGenerated'(wxt, manifest) {
-      const MOKURO = '*://reader.mokuro.app/*';
-      const keep = (p: string): boolean => p !== MOKURO;
+      const OPTIONAL_ONLY = ['*://reader.mokuro.app/*', 'https://*/*'];
+      const keep = (p: string): boolean => !OPTIONAL_ONLY.includes(p);
       if (manifest.host_permissions) {
         manifest.host_permissions = manifest.host_permissions.filter(keep);
       }
@@ -16,12 +16,12 @@ export default defineConfig({
         manifest.permissions = manifest.permissions.filter(keep);
       }
       const inScripts = (manifest.content_scripts ?? []).some(
-        cs => (cs.matches ?? []).some(m => m.includes('reader.mokuro.app'))
+        cs => (cs.matches ?? []).some(m => m.includes('reader.mokuro.app') || m === 'https://*/*')
       );
-      const inRequired = (manifest.host_permissions ?? []).includes(MOKURO)
-        || (Array.isArray(manifest.permissions) && manifest.permissions.includes(MOKURO));
+      const inRequired = (manifest.host_permissions ?? []).some(p => OPTIONAL_ONLY.includes(p))
+        || (Array.isArray(manifest.permissions) && manifest.permissions.some(p => OPTIONAL_ONLY.includes(p)));
       if (inScripts || inRequired) {
-        throw new Error('reader.mokuro.app must stay optional-only; would auto-disable on update');
+        throw new Error('optional-only hosts must not be in required perms or content_scripts');
       }
     }
   },
@@ -81,8 +81,8 @@ export default defineConfig({
 
     // requested at runtime
     ...(manifestVersion === 3
-      ? { optional_host_permissions: ['http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }
-      : { optional_permissions: ['http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }),
+      ? { optional_host_permissions: ['https://*/*', 'http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }
+      : { optional_permissions: ['https://*/*', 'http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }),
 
     commands: {
       'toggle-tracking': {

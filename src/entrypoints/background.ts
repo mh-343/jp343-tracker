@@ -43,7 +43,8 @@ import {
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
 import { syncMokuroRegistration } from '../lib/background/mokuro-sync';
-import { reinjectTrackedTabs, reinjectMokuroTabs } from '../lib/background/reinject';
+import { syncCustomSitesRegistration, originsIncludeHost } from '../lib/background/custom-sites';
+import { reinjectTrackedTabs, reinjectMokuroTabs, reinjectCustomSitesTabs } from '../lib/background/reinject';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -842,6 +843,29 @@ export default defineBackground(() => {
     void syncMokuroRegistration().then(() => reinjectMokuroTabs(log));
   });
 
+  async function finalizeRevokedCustomSession(origins: string[]): Promise<void> {
+    const session = tracker.getCurrentSession();
+    if (!session || session.platform !== 'generic') return;
+    let host: string;
+    try { host = new URL(session.url).hostname; } catch { return; }
+    if (!originsIncludeHost(origins, host)) return;
+    const entry = tracker.finalizeSession();
+    if (entry) await savePendingEntry(entry);
+    await saveSessionState(null);
+    scheduleStatusBadgeUpdate();
+  }
+
+  browser.permissions.onAdded.addListener((perms) => {
+    if (!perms.origins?.length) return;
+    void syncCustomSitesRegistration().then(() => reinjectCustomSitesTabs(log));
+  });
+
+  browser.permissions.onRemoved.addListener((perms) => {
+    if (!perms.origins?.length) return;
+    void syncCustomSitesRegistration();
+    void finalizeRevokedCustomSession(perms.origins);
+  });
+
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 
   initChannelSyncCallbacks({
@@ -926,6 +950,13 @@ export default defineBackground(() => {
 
     if (sessionAge < MAX_RESTORE_AGE_MS) {
       if (savedSession.platform === 'generic') {
+        if (savedSession.customSiteHost) {
+          savedSession.isActive = false;
+          savedSession.isPaused = true;
+          tracker.restoreSession(savedSession);
+          scheduleStatusBadgeUpdate();
+          return;
+        }
         if (savedSession.isActive && !savedSession.isPaused && sessionAge > 0) {
           savedSession.accumulatedMs += sessionAge;
           log('[JP343] Recovery: Manual session gap compensation:', Math.round(sessionAge / 1000), 's');
@@ -1033,6 +1064,8 @@ export default defineBackground(() => {
 
   // Mokuro: reconcile runtime registration
   syncMokuroRegistration().catch(() => {});
+
+  syncCustomSitesRegistration().catch(() => {});
 
   (async function migrateLocalHubBgFlag(): Promise<void> {
     const flagRes = await browser.storage.local.get(STORAGE_KEYS.MIGRATED_HUB_BG);

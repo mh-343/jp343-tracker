@@ -8,6 +8,7 @@ import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleAnkiMessage } from './anki-messages';
 import { handleMokuroMessage } from './mokuro-messages';
+import { handleCustomSitesMessage } from './custom-sites-messages';
 import { handleDifficultyMapMessage, handleSaveLocalDifficultyBand, handleGetVoteState, handleSubmitDifficultyVote } from './difficulty-messages';
 
 function getMessageType(message: unknown): string {
@@ -90,6 +91,11 @@ export function createBackgroundMessageHandler(
         case 'SET_MOKURO_ENABLED':
         case 'MOKURO_SYNC':
           return handleMokuroMessage(message, context);
+
+        case 'CUSTOM_SITES_GET':
+        case 'CUSTOM_SITE_ADD':
+        case 'CUSTOM_SITE_REMOVE':
+          return handleCustomSitesMessage(message, context);
 
         case 'GET_DIFFICULTY_MAP':
           return handleDifficultyMapMessage(context);

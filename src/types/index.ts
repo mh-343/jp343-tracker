@@ -57,6 +57,7 @@ export interface TrackingSession {
   tabId: number | null;
   startTime: number;
   accumulatedMs: number;
+  customSiteHost?: string;
   lastUpdate: number;
   isActive: boolean;
   isPaused: boolean;
@@ -264,7 +265,10 @@ export type ExtensionMessage =
   | { type: 'GET_DIFFICULTY_MAP' }
   | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null }
   | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null }
-  | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number };
+  | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number }
+  | { type: 'CUSTOM_SITES_GET' }
+  | { type: 'CUSTOM_SITE_ADD'; host: string }
+  | { type: 'CUSTOM_SITE_REMOVE'; id: string };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -462,8 +466,25 @@ export const STORAGE_KEYS = {
   DIFFICULTY_VOTE_STATE_V2: 'jp343_difficulty_vote_state_v2',
   INSTALL_ID: 'jp343_install_id',
   DIFFICULTY_CONTRIB_QUEUE: 'jp343_difficulty_contrib_queue',
-  SETTINGS_PULL_ATTEMPT: 'jp343_settings_pull_attempt'
+  SETTINGS_PULL_ATTEMPT: 'jp343_settings_pull_attempt',
+  CUSTOM_SITES: 'jp343_extension_custom_sites'
 } as const;
+
+export interface CustomSite {
+  id: string;
+  host: string;
+  addedAt: number;
+}
+
+export interface CustomSitesState {
+  version: number;
+  sites: CustomSite[];
+}
+
+export const DEFAULT_CUSTOM_SITES_STATE: CustomSitesState = {
+  version: 1,
+  sites: []
+};
 
 export interface CachedServerSession {
   id: number | string;

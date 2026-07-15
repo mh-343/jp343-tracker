@@ -8,6 +8,7 @@ import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
 import { buildShortcutPanel } from './settings-shortcut';
 import { buildSettingsLayout, NAV_ICONS } from './settings-nav';
+import { buildCustomSitesPanel } from './settings-custom-sites';
 import { rebuildChannelsPanel } from './settings-channels';
 import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
 
@@ -596,6 +597,7 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, h
       build: (el: HTMLElement) => {
         buildPlatformsPanel(el, settings);
         buildDifficultyPanel(el, settings, hasAccount);
+        buildCustomSitesPanel(el);
       }
     },
     {

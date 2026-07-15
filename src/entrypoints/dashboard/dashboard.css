@@ -2138,6 +2138,84 @@
       gap: 10px;
       margin-bottom: 16px;
     }
+    .custom-site-beta {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: rgba(var(--accent-rgb), 0.15);
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+    .custom-site-add {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .custom-site-input {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .custom-site-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .custom-site-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .custom-site-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .custom-site-host {
+      flex: 1;
+      min-width: 0;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .custom-site-state {
+      font-size: 11px;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .custom-site-state.missing { color: var(--text-muted); }
+    .custom-site-remove {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .custom-site-remove:hover {
+      color: var(--text-secondary);
+      border-color: var(--accent);
+    }
+
     .export-btn {
       background: var(--accent);
       border: none;

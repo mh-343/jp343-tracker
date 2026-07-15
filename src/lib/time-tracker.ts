@@ -25,6 +25,10 @@ export function isReading(entry: { activityType?: ActivityType; platform: Platfo
   return entry.activityType === 'reading' || PLATFORM_ACTIVITY_TYPE[entry.platform] === 'reading';
 }
 
+function stripToOrigin(url: string): string {
+  try { return new URL(url).origin + '/'; } catch { return url; }
+}
+
 export class TimeTracker {
   private session: TrackingSession | null = null;
   private isInAd: boolean = false;
@@ -141,6 +145,7 @@ export class TimeTracker {
   private tick(): void {
     if (!this.session || !this.session.isActive || this.isInAd) return;
     if (this.session.platform !== 'generic') return;
+    if (this.session.customSiteHost) return;
 
     const now = Date.now();
     const delta = now - this.session.lastUpdate;
@@ -179,7 +184,7 @@ export class TimeTracker {
       ),
       platform: this.session.platform,
       source: 'extension',
-      url: this.session.url,
+      url: this.session.customSiteHost ? stripToOrigin(this.session.url) : this.session.url,
       thumbnail: this.session.thumbnailUrl,
       synced: false,
       syncedAt: null,
@@ -306,7 +311,7 @@ export class TimeTracker {
   }
 
   updateSessionUrl(newUrl: string): void {
-    if (this.session) {
+    if (this.session && !this.session.customSiteHost) {
       this.session.url = newUrl;
     }
   }
