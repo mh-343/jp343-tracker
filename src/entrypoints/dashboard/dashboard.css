@@ -1949,6 +1949,7 @@
     .settings-row-disabled .settings-toggle { cursor: default; box-shadow: none; }
     [data-theme="light"] .settings-toggle { background: rgba(0, 0, 0, 0.08); border-color: rgba(0, 0, 0, 0.18); }
     [data-theme="light"] .settings-toggle::after { background: #8a8a94; }
+    [data-theme="light"] .settings-toggle.enabled::after { background: #fff; }
     [data-theme="light"] .settings-toggle.enabled {
       background: var(--accent);
       box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.25);
