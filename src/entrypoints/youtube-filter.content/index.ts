@@ -1,7 +1,8 @@
 import { isJapaneseContent } from '../../lib/language-detection';
 import {
   VIDEO_CARD_SELECTORS, getCardTitleText, extractVideoIdFromElement,
-  getChannelIdFromElement, getChannelNameFromElement, fetchOembedTitle
+  getChannelIdFromElement, getChannelNameFromElement, getChannelUrlFromElement,
+  getChannelPageIdentity, isChannelInList, fetchOembedTitle
 } from '../../lib/youtube-utils';
 import type { WhitelistedChannel } from '../../types';
 import { STORAGE_KEYS } from '../../types';
@@ -42,6 +43,7 @@ export default defineContentScript({
 
     let filterEnabled = false;
     let whitelistedChannels: WhitelistedChannel[] = [];
+    let pageChannelAllowlisted = false;
     let filterObserver: MutationObserver | null = null;
     let updateScheduled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -68,6 +70,12 @@ export default defineContentScript({
       return title;
     }
 
+    function recomputePageChannel(): void {
+      const identity = getChannelPageIdentity();
+      pageChannelAllowlisted = !!identity
+        && isChannelInList(whitelistedChannels, identity.channelId, identity.channelUrl);
+    }
+
     async function processVideo(element: Element): Promise<void> {
       if (element.hasAttribute(PROCESSED_ATTR)) return;
       if (element.closest(`[${PROCESSED_ATTR}]`)) return;
@@ -79,8 +87,11 @@ export default defineContentScript({
 
       element.setAttribute(PROCESSED_ATTR, '1');
 
+      if (pageChannelAllowlisted) return;
+
       const channelId = getChannelIdFromElement(element);
-      if (channelId && whitelistedChannels.some(c => c.channelId === channelId)) {
+      const channelUrl = getChannelUrlFromElement(element);
+      if (channelId && isChannelInList(whitelistedChannels, channelId, channelUrl)) {
         return;
       }
 
@@ -109,6 +120,7 @@ export default defineContentScript({
 
     function processAllVideos(): void {
       if (contextLost()) return;
+      recomputePageChannel();
       const videos = document.querySelectorAll(VIDEO_CARD_SELECTORS);
       videos.forEach((video) => {
         processVideo(video);

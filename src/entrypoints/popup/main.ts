@@ -569,7 +569,7 @@ async function unblockChannel(channelId: string): Promise<void> {
 async function allowChannel(): Promise<void> {
   if (!currentChannelId) return;
   const channelName = currentSession?.channelName || elements.currentChannelName.textContent || currentChannelId;
-  const channelUrl = currentSession?.channelUrl || null;
+  const channelUrl = currentSession?.channelUrl || lastSkippedChannel?.channelUrl || null;
   const channel: WhitelistedChannel = {
     channelId: currentChannelId,
     channelName: channelName,

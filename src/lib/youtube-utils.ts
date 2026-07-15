@@ -103,6 +103,13 @@ export function getChannelNameFromElement(element: Element): string | null {
   return link?.textContent?.trim() || null;
 }
 
+export function getChannelUrlFromElement(element: Element): string | null {
+  const link = element.querySelector(
+    'ytd-channel-name a, #channel-name a, a[href*="/@"], a[href*="/channel/"]'
+  ) as HTMLAnchorElement | null;
+  return link?.href || null;
+}
+
 function extractHandleFromUrl(url: string | null | undefined): string | null {
   if (!url) return null;
   const m = url.match(/\/@([^/?#]+)/);
@@ -124,6 +131,32 @@ export function isChannelInList(
     );
   }
   return false;
+}
+
+function parseChannelUrl(pathname: string): { channelId: string; channelUrl: string } | null {
+  const handleMatch = pathname.match(/^\/@([^/?#]+)/);
+  if (handleMatch) {
+    let handle = handleMatch[1];
+    try { handle = decodeURIComponent(handle); } catch { /* keep raw */ }
+    return { channelId: `@${handle}`, channelUrl: `https://www.youtube.com/@${handle}` };
+  }
+  const idMatch = pathname.match(/^\/channel\/(UC[a-zA-Z0-9_-]+)/);
+  if (idMatch) {
+    return { channelId: idMatch[1], channelUrl: `https://www.youtube.com/channel/${idMatch[1]}` };
+  }
+  return null;
+}
+
+export function getChannelPageIdentity(): { channelId: string; channelUrl: string } | null {
+  const direct = parseChannelUrl(location.pathname);
+  if (direct) return direct;
+  if (/^\/(c|user)\//.test(location.pathname)) {
+    const canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (canonical?.href) {
+      try { return parseChannelUrl(new URL(canonical.href).pathname); } catch { return null; }
+    }
+  }
+  return null;
 }
 
 interface OembedResponse {
