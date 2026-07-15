@@ -18,6 +18,7 @@ import {
   updateBadge,
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
+import { handleShortcutCommand } from '../lib/background/shortcut-commands';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
@@ -875,6 +876,10 @@ export default defineBackground(() => {
       () => sendResponse({ success: false, error: 'Internal error' })
     );
     return true;
+  });
+
+  browser.commands.onCommand.addListener((command: string) => {
+    handleShortcutCommand(command, handleMessage);
   });
 
   const updateTrackingMenu = initContextMenu({

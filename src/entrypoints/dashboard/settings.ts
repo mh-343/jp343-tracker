@@ -6,6 +6,7 @@ import { buildTargetStartSection } from './target-start-settings';
 import { getSettings, getFreshSettings, updateSettings, createToggleRow, setToggleRowDisabled, showStatus } from './settings-helpers';
 import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
+import { buildShortcutPanel } from './settings-shortcut';
 import { rebuildChannelsPanel } from './settings-channels';
 import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
 
@@ -576,6 +577,7 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, h
   buildAppearancePanel(panel, settings);
   buildTargetStartSection(panel, settings);
   buildTrackingPanel(panel, settings);
+  buildShortcutPanel(panel);
   buildDifficultyPanel(panel, settings, hasAccount);
   buildPlatformsPanel(panel, settings);
   buildAnkiPanel(panel);

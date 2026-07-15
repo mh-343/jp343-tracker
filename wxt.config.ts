@@ -84,6 +84,15 @@ export default defineConfig({
       ? { optional_host_permissions: ['http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }
       : { optional_permissions: ['http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }),
 
+    commands: {
+      'toggle-tracking': {
+        description: 'Start or stop tracking the current page'
+      },
+      'toggle-pause': {
+        description: 'Pause or resume time tracking'
+      }
+    },
+
     icons: {
       16: 'icon/icon-16.png',
       32: 'icon/icon-32.png',
