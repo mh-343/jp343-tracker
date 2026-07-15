@@ -7,6 +7,7 @@ import { getSettings, getFreshSettings, updateSettings, createToggleRow, setTogg
 import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
 import { buildShortcutPanel } from './settings-shortcut';
+import { buildSettingsLayout, NAV_ICONS } from './settings-nav';
 import { rebuildChannelsPanel } from './settings-channels';
 import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
 
@@ -574,16 +575,46 @@ function buildMokuroPanel(container: HTMLElement): void {
 
 function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, hasAccount: boolean): void {
   panel.textContent = '';
-  buildAppearancePanel(panel, settings);
-  buildTargetStartSection(panel, settings);
-  buildTrackingPanel(panel, settings);
-  buildShortcutPanel(panel);
-  buildDifficultyPanel(panel, settings, hasAccount);
-  buildPlatformsPanel(panel, settings);
-  buildAnkiPanel(panel);
-  buildMokuroPanel(panel);
-  buildDiagnosticsPanel(panel, settings);
-  buildExportImportPanel(panel);
+
+  const groups = [
+    {
+      id: 'general', label: 'General', icon: NAV_ICONS.general,
+      build: (el: HTMLElement) => {
+        buildTrackingPanel(el, settings);
+        buildTargetStartSection(el, settings);
+        buildShortcutPanel(el);
+      }
+    },
+    {
+      id: 'appearance', label: 'Appearance', icon: NAV_ICONS.appearance,
+      build: (el: HTMLElement) => {
+        buildAppearancePanel(el, settings);
+      }
+    },
+    {
+      id: 'platforms', label: 'Platforms', icon: NAV_ICONS.platforms,
+      build: (el: HTMLElement) => {
+        buildPlatformsPanel(el, settings);
+        buildDifficultyPanel(el, settings, hasAccount);
+      }
+    },
+    {
+      id: 'integrations', label: 'Integrations', icon: NAV_ICONS.integrations,
+      build: (el: HTMLElement) => {
+        buildAnkiPanel(el);
+        buildMokuroPanel(el);
+      }
+    },
+    {
+      id: 'data', label: 'Data & Privacy', icon: NAV_ICONS.data,
+      build: (el: HTMLElement) => {
+        buildDiagnosticsPanel(el, settings);
+        buildExportImportPanel(el);
+      }
+    }
+  ];
+
+  buildSettingsLayout(panel, groups);
 }
 
 export async function setupSettings(): Promise<void> {

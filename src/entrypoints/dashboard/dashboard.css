@@ -1801,6 +1801,66 @@
     }
 
     /* ── Settings Tab ──────────────────────────────── */
+    .settings-layout {
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .settings-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      position: sticky;
+      top: 16px;
+    }
+    .settings-nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .settings-nav-btn svg { width: 17px; height: 17px; flex-shrink: 0; }
+    .settings-nav-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+    .settings-nav-btn[aria-selected="true"] {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .settings-groups { min-width: 0; }
+    .settings-group[hidden] { display: none; }
+    [data-theme="light"] .settings-nav-btn:hover { background: rgba(0, 0, 0, 0.04); }
+    body.has-bg .settings-nav-btn[aria-selected="true"] {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+    }
+    @media (max-width: 720px) {
+      .settings-layout { grid-template-columns: 1fr; gap: 12px; }
+      .settings-nav {
+        position: static;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .settings-nav-btn {
+        flex: 1 1 auto;
+        flex-direction: column;
+        gap: 5px;
+        padding: 9px 6px;
+        font-size: 11px;
+        text-align: center;
+      }
+    }
     .settings-section {
       background: var(--bg-card);
       border-radius: 16px;
