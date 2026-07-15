@@ -1,4 +1,5 @@
-import { getMokuroReinjectTarget } from './mokuro-sync';
+import { getReaderReinjectTarget } from './reader-sync';
+import { READER_SOURCE_LIST } from '../reader-sources';
 import { getCustomSitesReinjectTargets } from './custom-sites';
 
 type Logger = (...args: unknown[]) => void;
@@ -142,8 +143,10 @@ export async function reinjectTrackedTabs(log: Logger): Promise<void> {
   if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
 
   const targets = [...TARGETS];
-  const mokuro = await getMokuroReinjectTarget();
-  if (mokuro) targets.push(mokuro);
+  for (const source of READER_SOURCE_LIST) {
+    const target = await getReaderReinjectTarget(source);
+    if (target) targets.push(target);
+  }
   targets.push(...await getCustomSitesReinjectTargets());
 
   for (const target of targets) {
@@ -151,11 +154,13 @@ export async function reinjectTrackedTabs(log: Logger): Promise<void> {
   }
 }
 
-// Re-inject only the Mokuro tabs
-export async function reinjectMokuroTabs(log: Logger): Promise<void> {
+// Re-inject only the reader tabs
+export async function reinjectReaderTabs(log: Logger): Promise<void> {
   if (import.meta.env.MANIFEST_VERSION !== 3 || !browser.scripting?.executeScript) return;
-  const mokuro = await getMokuroReinjectTarget();
-  if (mokuro) await reinjectTarget(mokuro, log);
+  for (const source of READER_SOURCE_LIST) {
+    const target = await getReaderReinjectTarget(source);
+    if (target) await reinjectTarget(target, log);
+  }
 }
 
 // Re-inject only the custom-site tabs

@@ -7,7 +7,7 @@ import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleAnkiMessage } from './anki-messages';
-import { handleMokuroMessage } from './mokuro-messages';
+import { handleReaderMessage } from './reader-messages';
 import { handleCustomSitesMessage } from './custom-sites-messages';
 import { handleDifficultyMapMessage, handleSaveLocalDifficultyBand, handleGetVoteState, handleSubmitDifficultyVote } from './difficulty-messages';
 
@@ -87,10 +87,10 @@ export function createBackgroundMessageHandler(
         case 'ANKI_RESET':
           return handleAnkiMessage(message);
 
-        case 'GET_MOKURO_STATE':
-        case 'SET_MOKURO_ENABLED':
-        case 'MOKURO_SYNC':
-          return handleMokuroMessage(message, context);
+        case 'READER_GET_STATE':
+        case 'READER_SET_ENABLED':
+        case 'READER_SNAPSHOT':
+          return handleReaderMessage(message, context);
 
         case 'CUSTOM_SITES_GET':
         case 'CUSTOM_SITE_ADD':

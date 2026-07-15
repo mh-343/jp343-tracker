@@ -4,10 +4,15 @@ export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
 
-  // mokuro + custom-sites wildcard stay optional-only
+  // readers + custom-sites wildcard stay optional-only
   hooks: {
     'build:manifestGenerated'(wxt, manifest) {
-      const OPTIONAL_ONLY = ['*://reader.mokuro.app/*', 'https://*/*'];
+      const OPTIONAL_ONLY = [
+        '*://reader.mokuro.app/*',
+        '*://reader.ttsu.app/*',
+        '*://ttu-ebook.web.app/*',
+        'https://*/*'
+      ];
       const keep = (p: string): boolean => !OPTIONAL_ONLY.includes(p);
       if (manifest.host_permissions) {
         manifest.host_permissions = manifest.host_permissions.filter(keep);
@@ -15,8 +20,13 @@ export default defineConfig({
       if (Array.isArray(manifest.permissions)) {
         manifest.permissions = manifest.permissions.filter(keep);
       }
+      const matchesOptionalOnly = (m: string): boolean =>
+        m.includes('reader.mokuro.app') ||
+        m.includes('reader.ttsu.app') ||
+        m.includes('ttu-ebook.web.app') ||
+        m === 'https://*/*';
       const inScripts = (manifest.content_scripts ?? []).some(
-        cs => (cs.matches ?? []).some(m => m.includes('reader.mokuro.app') || m === 'https://*/*')
+        cs => (cs.matches ?? []).some(matchesOptionalOnly)
       );
       const inRequired = (manifest.host_permissions ?? []).some(p => OPTIONAL_ONLY.includes(p))
         || (Array.isArray(manifest.permissions) && manifest.permissions.some(p => OPTIONAL_ONLY.includes(p)));
@@ -81,8 +91,20 @@ export default defineConfig({
 
     // requested at runtime
     ...(manifestVersion === 3
-      ? { optional_host_permissions: ['https://*/*', 'http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }
-      : { optional_permissions: ['https://*/*', 'http://127.0.0.1:8765/*', '*://reader.mokuro.app/*'] }),
+      ? { optional_host_permissions: [
+          'https://*/*',
+          'http://127.0.0.1:8765/*',
+          '*://reader.mokuro.app/*',
+          '*://reader.ttsu.app/*',
+          '*://ttu-ebook.web.app/*'
+        ] }
+      : { optional_permissions: [
+          'https://*/*',
+          'http://127.0.0.1:8765/*',
+          '*://reader.mokuro.app/*',
+          '*://reader.ttsu.app/*',
+          '*://ttu-ebook.web.app/*'
+        ] }),
 
     commands: {
       'toggle-tracking': {

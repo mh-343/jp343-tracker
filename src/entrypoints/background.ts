@@ -1,5 +1,4 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
-import { getLocalDateString } from '../lib/format-utils';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure } from '../lib/auth-helpers';
@@ -42,9 +41,11 @@ import {
   handleChannelFlushAlarm,
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
-import { syncMokuroRegistration } from '../lib/background/mokuro-sync';
+import { syncReaderRegistration } from '../lib/background/reader-sync';
+import { READER_SOURCE_LIST, readerSourceForOrigins } from '../lib/reader-sources';
+import { findMergeTarget, applyMergeUpdate } from '../lib/background/pending-merge';
 import { syncCustomSitesRegistration, originsIncludeHost } from '../lib/background/custom-sites';
-import { reinjectTrackedTabs, reinjectMokuroTabs, reinjectCustomSitesTabs } from '../lib/background/reinject';
+import { reinjectTrackedTabs, reinjectReaderTabs, reinjectCustomSitesTabs } from '../lib/background/reinject';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -392,28 +393,9 @@ export default defineBackground(() => {
         const settings = await loadSettings();
         if (settings.mergeSameDaySessions) {
           const dsh = settings.dayStartHour || 0;
-          const entryDay = getLocalDateString(new Date(entry.date), dsh);
-          const mergeTarget = pending.find(e =>
-            e.project_id === entry.project_id &&
-            (entry.platform === 'mokuro' || e.project === entry.project) &&
-            getLocalDateString(new Date(e.date), dsh) === entryDay
-          );
+          const mergeTarget = findMergeTarget(pending, entry, dsh);
           if (mergeTarget) {
-            if (entry.platform === 'mokuro' && entry.project && !/^Mokuro [0-9a-f]{8}$/i.test(entry.project)) {
-              mergeTarget.project = entry.project;
-            }
-            mergeTarget.duration_min += entry.duration_min;
-            if (entry.chars) mergeTarget.chars = (mergeTarget.chars ?? 0) + entry.chars;
-            if (!mergeTarget.thumbnail && entry.thumbnail) {
-              mergeTarget.thumbnail = entry.thumbnail;
-            }
-            if (mergeTarget.synced) {
-              mergeTarget.synced = false;
-              mergeTarget.syncedAt = null;
-              mergeTarget.syncAttempts = 0;
-              mergeTarget.lastSyncError = null;
-              mergeTarget.mergeResync = true;
-            }
+            applyMergeUpdate(mergeTarget, entry);
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
             log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
             return true;
@@ -837,10 +819,11 @@ export default defineBackground(() => {
     return recoveryReady.then(() => reinjectTrackedTabs(log));
   });
 
-  // Re-grant of Mokuro host access
+  // Re-grant of a reader host access
   browser.permissions.onAdded.addListener((perms) => {
-    if (!perms.origins?.some(o => o.includes('reader.mokuro.app'))) return;
-    void syncMokuroRegistration().then(() => reinjectMokuroTabs(log));
+    const source = readerSourceForOrigins(perms.origins);
+    if (!source) return;
+    void syncReaderRegistration(source).then(() => reinjectReaderTabs(log));
   });
 
   async function finalizeRevokedCustomSession(origins: string[]): Promise<void> {
@@ -1062,8 +1045,10 @@ export default defineBackground(() => {
   // Channel sync: migration + init on SW start
   migrateToChannelSync().catch(() => {});
 
-  // Mokuro: reconcile runtime registration
-  syncMokuroRegistration().catch(() => {});
+  // Readers: reconcile runtime registration
+  for (const source of READER_SOURCE_LIST) {
+    syncReaderRegistration(source).catch(() => {});
+  }
 
   syncCustomSitesRegistration().catch(() => {});
 

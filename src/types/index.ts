@@ -1,6 +1,6 @@
 import type { DifficultySeed } from '../lib/difficulty-seeds';
 
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mokuro' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mokuro' | 'ttu' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -26,6 +26,7 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   twitch: 'watching',
   asbplayer: 'watching',
   mokuro: 'reading',
+  ttu: 'reading',
   generic: 'watching',
 };
 
@@ -259,9 +260,9 @@ export type ExtensionMessage =
   | { type: 'SET_ANKI_DECKS'; decks: string[] }
   | { type: 'ANKI_FLUSH_AND_RESET' }
   | { type: 'ANKI_RESET' }
-  | { type: 'MOKURO_SYNC'; volumes: Record<string, MokuroVolumeSnapshot> }
-  | { type: 'SET_MOKURO_ENABLED'; enabled: boolean }
-  | { type: 'GET_MOKURO_STATE' }
+  | { type: 'READER_SNAPSHOT'; source: Platform; volumes: Record<string, ReaderVolumeSnapshot> }
+  | { type: 'READER_SET_ENABLED'; source: Platform; enabled: boolean }
+  | { type: 'READER_GET_STATE'; source: Platform }
   | { type: 'GET_DIFFICULTY_MAP' }
   | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null }
   | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null }
@@ -372,7 +373,7 @@ export const DEFAULT_ANKI_STATE: AnkiState = {
   collections: {}
 };
 
-export interface MokuroVolumeSnapshot {
+export interface ReaderVolumeSnapshot {
   effectiveMin: number;
   chars: number;
   currentPage: number;
@@ -383,22 +384,22 @@ export interface MokuroVolumeSnapshot {
   deleted: boolean;
 }
 
-export interface MokuroBaseline {
+export interface ReaderBaseline {
   lastEffectiveMin: number;
   lastChars: number;
   lastObservedAt: number;
 }
 
-export interface MokuroState {
+export interface ReaderState {
   enabled: boolean;
-  baselines: Record<string, MokuroBaseline>;
+  baselines: Record<string, ReaderBaseline>;
   creditedByDay: Record<string, number>;
   lastSyncAt: number | null;
   totalMinutes: number;
   totalChars: number;
 }
 
-export const DEFAULT_MOKURO_STATE: MokuroState = {
+export const DEFAULT_READER_STATE: ReaderState = {
   enabled: false,
   baselines: {},
   creditedByDay: {},
@@ -459,6 +460,7 @@ export const STORAGE_KEYS = {
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
   ANKI: 'jp343_extension_anki',
   MOKURO: 'jp343_extension_mokuro',
+  TTU: 'jp343_extension_ttu',
   DIFFICULTY_HOTSET: 'jp343_difficulty_hotset',
   DIFFICULTY_VIDEOSET: 'jp343_difficulty_videoset',
   DIFFICULTY_LOCAL: 'jp343_difficulty_local',

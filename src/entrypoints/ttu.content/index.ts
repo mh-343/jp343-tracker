@@ -1,9 +1,8 @@
-import { createDebugLogger } from '../../lib/debug-logger';
 import { startReaderContentLoop } from '../../lib/reader-content';
-import { buildSnapshot } from './mokuro-parsers';
+import { buildTtuSnapshot } from './ttu-parsers';
 
 export default defineContentScript({
-  matches: ['*://reader.mokuro.app/*'],
+  matches: ['*://reader.ttsu.app/*', '*://ttu-ebook.web.app/*'],
   registration: 'runtime',
   runAt: 'document_idle',
 
@@ -20,19 +19,16 @@ export default defineContentScript({
     }
     window.addEventListener('pagehide', cleanup);
 
-    const { log } = createDebugLogger('mokuro');
-    log('[JP343] Mokuro content script loaded');
+    const DEBUG_MODE = import.meta.env.DEV;
+    const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
+    log('[JP343] ttu content script loaded');
 
     startReaderContentLoop({
-      source: 'mokuro',
+      source: 'ttu',
       log,
       intervalIds,
       signal: ac.signal,
-      buildSnapshot: () => buildSnapshot(
-        window.localStorage.getItem('volumes'),
-        window.localStorage.getItem('profiles'),
-        window.localStorage.getItem('currentProfile')
-      )
+      buildSnapshot: buildTtuSnapshot
     });
   }
 });

@@ -16,6 +16,7 @@ import { renderStretchGoals } from './stretch-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
+import { READER_SOURCE_LIST, readerSourceForOrigins } from '../../lib/reader-sources';
 
 interface DashboardData {
   entries: PendingEntry[];
@@ -223,7 +224,7 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[STORAGE_KEYS.ANKI]) {
     void renderAnkiCard();
   }
-  if (area === 'local' && changes[STORAGE_KEYS.MOKURO]) {
+  if (area === 'local' && READER_SOURCE_LIST.some(s => changes[s.stateKey])) {
     void renderReadingCard();
   }
   if (area === 'local' && changes[STORAGE_KEYS.SETTINGS]) {
@@ -261,12 +262,12 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-const onMokuroPermissionChange = (perms: { origins?: string[] }): void => {
-  if (!perms.origins?.some(o => o.includes('reader.mokuro.app'))) return;
+const onReaderPermissionChange = (perms: { origins?: string[] }): void => {
+  if (!readerSourceForOrigins(perms.origins)) return;
   void renderReadingCard();
 };
-browser.permissions.onAdded.addListener(onMokuroPermissionChange);
-browser.permissions.onRemoved.addListener(onMokuroPermissionChange);
+browser.permissions.onAdded.addListener(onReaderPermissionChange);
+browser.permissions.onRemoved.addListener(onReaderPermissionChange);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {

@@ -70,6 +70,7 @@ const platformIcons: Record<Platform, string> = {
   twitch: 'T',
   asbplayer: 'A',
   mokuro: '本',
+  ttu: '📗',
   generic: '⏵'
 };
 

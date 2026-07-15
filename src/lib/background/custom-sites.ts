@@ -9,7 +9,8 @@ const BUILTIN_HOST_SUFFIXES = [
   'youtube.com', 'netflix.com', 'crunchyroll.com', 'primevideo.com',
   'amazon.com', 'amazon.de', 'amazon.co.jp', 'amazon.com.br',
   'disneyplus.com', 'cijapanese.com', 'nijapanese.com', 'nihongo-jikan.com',
-  'spotify.com', 'twitch.tv', 'asbplayer.dev', 'jp343.com', 'mokuro.app'
+  'spotify.com', 'twitch.tv', 'asbplayer.dev', 'jp343.com', 'mokuro.app',
+  'ttsu.app', 'ttu-ebook.web.app'
 ];
 
 const DEBUG = import.meta.env.DEV;

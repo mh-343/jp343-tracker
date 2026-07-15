@@ -1,38 +1,51 @@
-import type { MokuroState, PendingEntry, ExtensionStats } from '../../types';
-import { STORAGE_KEYS, DEFAULT_MOKURO_STATE, DEFAULT_SETTINGS, DEFAULT_STATS } from '../../types';
+import type { ReaderState, PendingEntry, ExtensionStats } from '../../types';
+import { STORAGE_KEYS, DEFAULT_READER_STATE, DEFAULT_SETTINGS, DEFAULT_STATS } from '../../types';
 import { getLocalDateString, formatStatDuration } from '../../lib/format-utils';
 import { isReading } from '../../lib/time-tracker';
-import { hasMokuroPermission, requestMokuroPermission } from './mokuro-permission';
+import type { ReaderSource } from '../../lib/reader-sources';
+import { READER_SOURCE_LIST, readerOriginHost } from '../../lib/reader-sources';
+import { hasReaderPermission, requestReaderPermission } from './reader-permission';
 
 const MYHUB_URL = 'https://jp343.com/my-hub/?src=ext_reading';
 
+interface SourceState {
+  source: ReaderSource;
+  state: ReaderState;
+}
+
 interface ReadingView {
-  state: MokuroState;
+  states: SourceState[];
   entries: PendingEntry[];
   readingDaily: Record<string, number>;
   dayStartHour: number;
 }
 
 function isFallbackName(name: string): boolean {
-  return /^Mokuro [0-9a-f]{8}$/i.test(name);
+  return READER_SOURCE_LIST.some(s => s.fallbackNameRe.test(name));
 }
 
 async function loadView(): Promise<ReadingView | null> {
-  const res = await browser.storage.local.get([
-    STORAGE_KEYS.MOKURO, STORAGE_KEYS.PENDING, STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS
-  ]);
-  const stored = res[STORAGE_KEYS.MOKURO] as Partial<MokuroState> | undefined;
-  const state: MokuroState = { ...DEFAULT_MOKURO_STATE, ...(stored || {}) };
+  const keys = [
+    STORAGE_KEYS.PENDING, STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS,
+    ...READER_SOURCE_LIST.map(s => s.stateKey)
+  ];
+  const res = await browser.storage.local.get(keys);
+  const states: SourceState[] = READER_SOURCE_LIST.map(source => {
+    const stored = res[source.stateKey] as Partial<ReaderState> | undefined;
+    return { source, state: { ...DEFAULT_READER_STATE, ...(stored || {}) } };
+  });
   const all = (res[STORAGE_KEYS.PENDING] as PendingEntry[] | undefined) || [];
   const entries = all.filter(isReading);
   const stats = (res[STORAGE_KEYS.STATS] as ExtensionStats | undefined) || DEFAULT_STATS;
   const readingDaily = stats.readingDailyMinutes ?? {};
 
   const durableReadingMin = Object.values(readingDaily).reduce((sum, m) => sum + m, 0);
-  if (durableReadingMin <= 0 && state.totalMinutes <= 0 && entries.length === 0 && !state.enabled) return null;
+  const anyEnabled = states.some(s => s.state.enabled);
+  const anyTotalMinutes = states.some(s => s.state.totalMinutes > 0);
+  if (durableReadingMin <= 0 && !anyTotalMinutes && entries.length === 0 && !anyEnabled) return null;
 
   const settings = { ...DEFAULT_SETTINGS, ...(res[STORAGE_KEYS.SETTINGS] || {}) };
-  return { state, entries, readingDaily, dayStartHour: settings.dayStartHour || 0 };
+  return { states, entries, readingDaily, dayStartHour: settings.dayStartHour || 0 };
 }
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
@@ -121,15 +134,16 @@ function buildSeriesList(entries: PendingEntry[]): HTMLElement {
   return box;
 }
 
-function buildPermissionWarning(): HTMLElement {
+function buildPermissionWarning(source: ReaderSource): HTMLElement {
   const box = el('div', 'reading-warning');
-  box.appendChild(el('span', 'reading-warning-text', 'Mokuro tracking is paused. Access to reader.mokuro.app was turned off.'));
+  box.appendChild(el('span', 'reading-warning-text',
+    `${source.label} tracking is paused. Access to ${readerOriginHost(source.origins[0])} was turned off.`));
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'mokuro-regrant-btn';
   btn.textContent = 'Re-allow access';
   btn.addEventListener('click', async () => {
-    if (await requestMokuroPermission()) await renderReadingCard();
+    if (await requestReaderPermission(source)) await renderReadingCard();
   });
   box.appendChild(btn);
   return box;
@@ -148,24 +162,27 @@ export async function renderReadingCard(): Promise<void> {
   card.style.display = '';
   body.textContent = '';
 
-  const { state, entries, readingDaily, dayStartHour } = view;
+  const { states, entries, readingDaily, dayStartHour } = view;
 
-  if (state.enabled && !(await hasMokuroPermission())) {
-    body.appendChild(buildPermissionWarning());
+  for (const { source, state } of states) {
+    if (state.enabled && !(await hasReaderPermission(source))) {
+      body.appendChild(buildPermissionWarning(source));
+    }
   }
   const today = getLocalDateString(new Date(), dayStartHour);
   const todayMin = readingDaily[today] ?? 0;
   const weekMin = lastDays(readingDaily, today, 7).reduce((sum, m) => sum + m, 0);
-  const hasMokuro = state.totalMinutes > 0;
-  const totalChars = state.totalChars ?? 0;
-  const speed = hasMokuro ? Math.round(totalChars / state.totalMinutes) : 0;
+  const totalMinutes = states.reduce((sum, s) => sum + (s.state.totalMinutes ?? 0), 0);
+  const totalChars = states.reduce((sum, s) => sum + (s.state.totalChars ?? 0), 0);
+  const hasTimedReading = totalMinutes > 0;
+  const speed = hasTimedReading ? Math.round(totalChars / totalMinutes) : 0;
 
   const grid = el('div', 'reading-grid');
   grid.appendChild(tile(formatStatDuration(todayMin), 'Read today', 'all sources'));
   grid.appendChild(tile(formatStatDuration(weekMin), 'Last 7 days', 'all sources'));
-  if (hasMokuro) {
-    grid.appendChild(tile(totalChars.toLocaleString('en-US'), 'Characters', 'Mokuro'));
-    grid.appendChild(tile(speed > 0 ? String(speed) : '—', 'chars/min', speed > 0 ? 'Mokuro speed' : 'no timed reading yet'));
+  if (hasTimedReading) {
+    grid.appendChild(tile(totalChars.toLocaleString('en-US'), 'Characters', 'all sources'));
+    grid.appendChild(tile(speed > 0 ? String(speed) : '—', 'chars/min', speed > 0 ? 'all sources' : 'no timed reading yet'));
   }
   body.appendChild(grid);
 

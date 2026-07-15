@@ -1,4 +1,4 @@
-import type { MokuroVolumeSnapshot } from '../../types';
+import type { ReaderVolumeSnapshot } from '../../types';
 
 interface RawVolume {
   timeReadInMinutes?: number;
@@ -53,7 +53,7 @@ export function buildSnapshot(
   volumesRaw: string | null,
   profilesRaw: string | null,
   currentProfile: string | null
-): Record<string, MokuroVolumeSnapshot> {
+): Record<string, ReaderVolumeSnapshot> {
   let volumes: Record<string, RawVolume> = {};
   try {
     volumes = volumesRaw ? (JSON.parse(volumesRaw) as Record<string, RawVolume>) : {};
@@ -62,7 +62,7 @@ export function buildSnapshot(
   }
 
   const userIdleMin = readIdleMin(profilesRaw, currentProfile);
-  const out: Record<string, MokuroVolumeSnapshot> = {};
+  const out: Record<string, ReaderVolumeSnapshot> = {};
   for (const id of Object.keys(volumes)) {
     if (!id) continue;
     const v = volumes[id];

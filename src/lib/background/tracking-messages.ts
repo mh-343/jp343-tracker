@@ -4,7 +4,9 @@ import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { isJapaneseContent, isLikelyJapaneseVideo } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
-import { getMokuroState } from './mokuro-sync';
+import { getReaderState } from './reader-sync';
+import type { ReaderSource } from '../reader-sources';
+import { READER_SOURCE_LIST, readerOriginHost } from '../reader-sources';
 import { getCustomSitesState } from './custom-sites';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -14,9 +16,10 @@ export function isJapaneseGatedPlatform(platform: Platform): boolean {
   return platform === 'youtube' || platform === 'twitch';
 }
 
-function isMokuroHost(url: string): boolean {
+function isReaderHost(url: string, source: ReaderSource): boolean {
   try {
-    return new URL(url).hostname === 'reader.mokuro.app';
+    const hostname = new URL(url).hostname;
+    return source.origins.some(o => readerOriginHost(o) === hostname);
   } catch {
     return false;
   }
@@ -528,9 +531,15 @@ export async function handleTrackingMessage(
         return { success: false, error: 'Missing required fields' };
       }
 
-      const mokuro = await getMokuroState();
-      if (mokuro.enabled && isMokuroHost(message.url as string)) {
-        return { success: false, error: 'reader.mokuro.app is tracked automatically by Mokuro import.' };
+      for (const readerSource of READER_SOURCE_LIST) {
+        if (!isReaderHost(message.url as string, readerSource)) continue;
+        const readerState = await getReaderState(readerSource);
+        if (readerState.enabled) {
+          return {
+            success: false,
+            error: `${readerOriginHost(readerSource.origins[0])} is tracked automatically by ${readerSource.label} import.`
+          };
+        }
       }
 
       const currentSession = tracker.getCurrentSession();
