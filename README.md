@@ -20,12 +20,15 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - Nihongo no Jikan
 - asbplayer (local video files)
 - Mokuro (manga reading, opt-in)
+- ttu ebook reader (book reading, opt-in)
 
 ## Features
 
 - **Automatic tracking** on all supported platforms
 - **Ad exclusion** across YouTube, Netflix, Prime Video, Disney+ and Twitch
 - **Manual tracking** on any website with one click
+- **Custom sites (beta)** for auto-tracking video on sites you add yourself
+- **Keyboard shortcuts** to start and stop tracking
 - **Built-in dashboard** with heatmap, streaks, session history, and monthly overview
 - **Channel/title blocking** to exclude specific content from tracking
 - **Title editing** during or after tracking sessions
@@ -36,7 +39,7 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 
 - **Storage** for saving sessions and settings locally
 - **Tabs** for the manual tracking feature (reads the active tab's title and URL when you start a session)
-- **Host access** limited to the supported platforms and jp343.com; Mokuro and Anki access is optional and requested only when you enable those features
+- **Host access** limited to the supported platforms and jp343.com; Mokuro, ttu and Anki access is optional and requested only when you enable those features
 
 ## Privacy
 
