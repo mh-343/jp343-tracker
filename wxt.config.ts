@@ -4,9 +4,13 @@ export default defineConfig({
   srcDir: 'src',
   outDir: 'dist',
 
+  zip: {
+    excludeSources: ['AGENTS.md', 'docs', 'docs/**', '.agents/**', '.codex/**'],
+  },
+
   // readers + custom-sites wildcard stay optional-only
   hooks: {
-    'build:manifestGenerated'(wxt, manifest) {
+    'build:manifestGenerated'(_wxt, manifest) {
       const OPTIONAL_ONLY = [
         '*://reader.mokuro.app/*',
         '*://reader.ttsu.app/*',
@@ -28,7 +32,7 @@ export default defineConfig({
       const inScripts = (manifest.content_scripts ?? []).some(
         cs => (cs.matches ?? []).some(matchesOptionalOnly)
       );
-      const inRequired = (manifest.host_permissions ?? []).some(p => OPTIONAL_ONLY.includes(p))
+      const inRequired = (manifest.host_permissions ?? []).some((p: string) => OPTIONAL_ONLY.includes(p))
         || (Array.isArray(manifest.permissions) && manifest.permissions.some(p => OPTIONAL_ONLY.includes(p)));
       if (inScripts || inRequired) {
         throw new Error('optional-only hosts must not be in required perms or content_scripts');
