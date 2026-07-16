@@ -22,7 +22,7 @@ import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
-import { clearVoteStateCache } from '../lib/background/difficulty-messages';
+import { clearVoteStateCache, retryQueuedVotes } from '../lib/background/difficulty-messages';
 import {
   loadDiagnostics,
   saveDiagnostics,
@@ -452,6 +452,7 @@ export default defineBackground(() => {
       await triggerSync();
       await pullAndMergeSettingsFromServer().catch(() => {});
       flushChannelOps().catch(() => {});
+      void retryQueuedVotes();
     }
     if (alarm.name === 'jp343-channel-flush') {
       handleChannelFlushAlarm().catch(() => {});
@@ -649,6 +650,7 @@ export default defineBackground(() => {
           failed = batchResult.data.failed || 0;
           await onAuthSuccess();
           scheduleStatusBadgeUpdate();
+          void retryQueuedVotes(batch.filter(e => resultMap.get(e.id)?.success).map(e => e.channelId));
           return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
         }
 
@@ -717,6 +719,7 @@ export default defineBackground(() => {
           });
           succeeded++;
           await onAuthSuccess();
+          void retryQueuedVotes([entry.channelId]);
           log('[JP343] Direct sync succeeded:', entry.project);
         } else {
           if (isAuthFailure(result)) {

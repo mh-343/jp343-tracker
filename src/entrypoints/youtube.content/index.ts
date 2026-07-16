@@ -8,7 +8,7 @@ import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
 import { stopFeedBadges, scheduleFeedBadgeSweep } from './feed-badges';
-import { initDifficulty, applyDifficultySettings, handleDifficultyStorageChange, updateDifficultyChip } from './difficulty-controller';
+import { initDifficulty, applyDifficultySettings, handleDifficultyStorageChange, updateDifficultyChip, pollLocalVoteGate } from './difficulty-controller';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 
@@ -1054,6 +1054,9 @@ export default defineContentScript({
       if (!isDifficultyChipMounted()) updateDifficultyChip();
     }, 4000);
     intervalIds.push(chipKeepAliveId);
+
+    const voteGatePollId = setInterval(pollLocalVoteGate, 5000);
+    intervalIds.push(voteGatePollId);
 
     window.addEventListener('popstate', () => setTimeout(handleUrlChange, 100));
 

@@ -37,6 +37,9 @@ const localComputing = new Set<string>();
 let voteState: { eligible: boolean; vote: ChipOwnVote | null } | null = null;
 let voteStateKey: string | null = null;
 let voteStateRequested: string | null = null;
+// mirrors server-side JP343_DIFFICULTY_VIEW_MIN_S
+const LOCAL_VOTE_GATE_MS = 60_000;
+const localWatchGate = new Set<string>();
 
 export function initDifficulty(d: DifficultyDeps): void {
   deps = d;
@@ -139,7 +142,7 @@ function ensureVoteState(videoId: string | null, channelInfo: { id: string | nul
       voteStateKey = key;
       const data = response as { eligible?: boolean; vote?: ChipOwnVote | null } | undefined;
       voteState = data ? { eligible: data.eligible ?? false, vote: data.vote ?? null } : null;
-      if (voteState?.eligible) updateDifficultyChip();
+      if (voteState) updateDifficultyChip();
     });
 }
 
@@ -151,8 +154,11 @@ function voteContextFor(
   if (!difficultyVotingEnabled || difficultyLocalOnly) return undefined;
   ensureVoteState(videoId, channelInfo);
   const key = voteKeyOf(videoId, channelInfo);
-  if (!key || key !== voteStateKey || !voteState?.eligible) return undefined;
-  const vote = voteState.vote;
+  if (!key || key !== voteStateKey) return undefined;
+  const channelKey = channelKeyOf(channelInfo);
+  const locallyWatched = channelKey ? localWatchGate.has(channelKey) : false;
+  if (!voteState?.eligible && !locallyWatched) return undefined;
+  const vote = voteState?.vote ?? null;
   return {
     ownVote: vote,
     onVote: async (choice, shownLevel) => {
@@ -175,6 +181,25 @@ function voteContextFor(
       return { ok: false, message: result?.message };
     }
   };
+}
+
+export function pollLocalVoteGate(): void {
+  if (!deps) return;
+  if (!difficultyEnabled || !difficultyVotingEnabled || difficultyLocalOnly) return;
+  if (!window.location.pathname.includes('/watch')) return;
+  const channelInfo = deps.getChannelInfo();
+  const channelKey = channelKeyOf(channelInfo);
+  if (!channelKey || !channelInfo.id || localWatchGate.has(channelKey)) return;
+  if (voteState?.eligible && voteStateKey === voteKeyOf(deps.getVideoId(), channelInfo)) return;
+  void deps.sendMessage('GET_CURRENT_SESSION').then(response => {
+    const data = (response as { data?: { durationMs?: number; session?: { platform?: string; channelId?: string | null } | null } } | undefined)?.data;
+    const session = data?.session;
+    if (!session || session.platform !== 'youtube') return;
+    if (session.channelId !== channelInfo.id) return;
+    if ((data?.durationMs ?? 0) < LOCAL_VOTE_GATE_MS) return;
+    localWatchGate.add(channelKey);
+    updateDifficultyChip();
+  });
 }
 
 export function updateDifficultyChip(): void {

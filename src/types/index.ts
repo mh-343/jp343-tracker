@@ -437,6 +437,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 
 export const STORAGE_KEYS = {
   PENDING: 'jp343_extension_pending',
+  PENDING_VOTES: 'jp343_extension_pending_votes',
   SESSION: 'jp343_extension_session',
   USER: 'jp343_extension_user',
   SETTINGS: 'jp343_extension_settings',

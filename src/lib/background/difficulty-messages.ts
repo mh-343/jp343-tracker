@@ -227,6 +227,7 @@ export interface VoteSubmitResponse {
   code?: string;
   message?: string;
   votesForChannel?: number;
+  queued?: boolean;
 }
 
 function channelVoteKey(channelId: string | null, channelName: string | null): string | null {
@@ -351,54 +352,133 @@ export async function handleGetVoteState(
   return { eligible, vote };
 }
 
-export async function handleSubmitDifficultyVote(message: {
+const WATCH_MORE_CODE = 'E108';
+const MAX_VOTE_RETRY_ATTEMPTS = 5;
+
+interface VotePayload {
   channelId: string | null;
   channelName: string | null;
   channelUrl: string | null;
   videoId: string | null;
   choice: string;
   shownLevel: number;
-}): Promise<VoteSubmitResponse> {
-  const user = await loadUserState();
-  if (!user?.extApiToken) return { success: false, code: 'auth_required' };
-  if (!VOTE_CHOICES.includes(message.choice)) {
-    return { success: false, code: 'invalid_input' };
-  }
+}
+
+interface QueuedVote extends VotePayload {
+  channelId: string;
+  attempts: number;
+  queuedAt: string;
+}
+
+async function loadQueuedVotes(): Promise<QueuedVote[]> {
+  const result = await browser.storage.local.get(STORAGE_KEYS.PENDING_VOTES);
+  return (result[STORAGE_KEYS.PENDING_VOTES] as QueuedVote[] | undefined) ?? [];
+}
+
+async function queueVoteForRetry(vote: VotePayload): Promise<void> {
+  const channelId = vote.channelId;
+  if (!channelId) return;
+  await withStorageLock(async () => {
+    const votes = await loadQueuedVotes();
+    const kept = votes.filter(v => !(v.channelId === channelId && v.videoId === vote.videoId));
+    kept.push({ ...vote, channelId, attempts: 0, queuedAt: new Date().toISOString() });
+    await browser.storage.local.set({ [STORAGE_KEYS.PENDING_VOTES]: kept });
+  });
+}
+
+type VotePostResult =
+  | { ok: true; votesForChannel?: number }
+  | { ok: false; code: string; message?: string };
+
+async function postVoteToServer(user: JP343UserState, vote: VotePayload): Promise<VotePostResult> {
+  if (!user.extApiToken) return { ok: false, code: 'auth_required' };
   const ajaxUrl = user.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
   const params = new URLSearchParams();
   params.set('action', 'jp343_extension_vote_difficulty');
   params.set('ext_api_token', user.extApiToken);
   params.set('platform', 'youtube');
-  if (message.channelId) params.set('channel_id', message.channelId);
-  if (message.channelName) params.set('channel_name', message.channelName);
-  if (message.channelUrl) params.set('channel_url', message.channelUrl);
-  if (message.videoId) params.set('video_id', message.videoId);
-  params.set('choice', message.choice);
-  params.set('shown_level', String(message.shownLevel));
+  if (vote.channelId) params.set('channel_id', vote.channelId);
+  if (vote.channelName) params.set('channel_name', vote.channelName);
+  if (vote.channelUrl) params.set('channel_url', vote.channelUrl);
+  if (vote.videoId) params.set('video_id', vote.videoId);
+  params.set('choice', vote.choice);
+  params.set('shown_level', String(vote.shownLevel));
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOTE_FETCH_TIMEOUT_MS);
   let result: { success?: boolean; data?: { code?: string; message?: string; votesForChannel?: number } };
   try {
     const response = await fetch(ajaxUrl, { method: 'POST', signal: controller.signal, body: params });
-    if (!response.ok) return { success: false, code: 'server_error' };
+    if (!response.ok) return { ok: false, code: 'server_error' };
     result = await response.json() as typeof result;
   } catch {
-    return { success: false, code: 'network' };
+    return { ok: false, code: 'network' };
   } finally {
     clearTimeout(timeout);
   }
   if (!result.success) {
-    return { success: false, code: result.data?.code || 'server_error', message: result.data?.message };
+    return { ok: false, code: result.data?.code || 'server_error', message: result.data?.message };
   }
-  const key = channelVoteKey(message.channelId, message.channelName);
-  if (key) {
-    await saveVoteState(key, true, message.videoId, {
-      level: null,
-      mixed: false,
-      choice: message.choice,
-      shownLevel: message.shownLevel
-    });
+  return { ok: true, votesForChannel: result.data?.votesForChannel };
+}
+
+async function cacheOwnVote(vote: VotePayload): Promise<void> {
+  const key = channelVoteKey(vote.channelId, vote.channelName);
+  if (!key) return;
+  await saveVoteState(key, true, vote.videoId, {
+    level: null,
+    mixed: false,
+    choice: vote.choice,
+    shownLevel: vote.shownLevel
+  });
+}
+
+export async function handleSubmitDifficultyVote(message: VotePayload): Promise<VoteSubmitResponse> {
+  const user = await loadUserState();
+  if (!user?.extApiToken) return { success: false, code: 'auth_required' };
+  if (!VOTE_CHOICES.includes(message.choice)) {
+    return { success: false, code: 'invalid_input' };
   }
-  return { success: true, votesForChannel: result.data?.votesForChannel };
+  const result = await postVoteToServer(user, message);
+  if (result.ok) {
+    await cacheOwnVote(message);
+    return { success: true, votesForChannel: result.votesForChannel };
+  }
+  // channel has no synced session yet: keep the vote, resubmit after sync
+  if (result.code === WATCH_MORE_CODE && message.channelId) {
+    await queueVoteForRetry(message);
+    return { success: true, queued: true };
+  }
+  return { success: false, code: result.code, message: result.message };
+}
+
+export async function retryQueuedVotes(channelIds?: Array<string | null | undefined>): Promise<void> {
+  const queued = await loadQueuedVotes();
+  if (queued.length === 0) return;
+  const ids = channelIds ? new Set(channelIds.filter((id): id is string => !!id)) : null;
+  const targets = ids ? queued.filter(v => ids.has(v.channelId)) : queued;
+  if (targets.length === 0) return;
+  const user = await loadUserState();
+  if (!user?.extApiToken) return;
+  const keyOf = (v: QueuedVote): string => v.channelId + '|' + (v.videoId ?? '') + '|' + v.queuedAt;
+  const done = new Set<string>();
+  const bump = new Set<string>();
+  for (const vote of targets) {
+    const result = await postVoteToServer(user, vote);
+    if (result.ok) {
+      await cacheOwnVote(vote);
+      done.add(keyOf(vote));
+    } else if (vote.attempts + 1 >= MAX_VOTE_RETRY_ATTEMPTS) {
+      done.add(keyOf(vote));
+    } else {
+      bump.add(keyOf(vote));
+    }
+  }
+  await withStorageLock(async () => {
+    const current = await loadQueuedVotes();
+    const updated = current
+      .filter(v => !done.has(keyOf(v)))
+      .map(v => (bump.has(keyOf(v)) ? { ...v, attempts: v.attempts + 1 } : v));
+    await browser.storage.local.set({ [STORAGE_KEYS.PENDING_VOTES]: updated });
+  });
 }
