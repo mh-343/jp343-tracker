@@ -2,9 +2,10 @@
 
 import { STORAGE_KEYS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
-import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, formatSessionDate, getWeekDates } from '../../lib/format-utils';
+import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
+import { renderPendingList } from './pending-list';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -626,6 +627,15 @@ elements.btnEditTitle.addEventListener('click', () => {
   startTitleEdit();
 });
 
+function showTitleEditError(): void {
+  const el = elements.sessionPlatform;
+  const prev = el.textContent;
+  el.textContent = 'Rename failed';
+  setTimeout(() => {
+    if (el.textContent === 'Rename failed') el.textContent = prev;
+  }, 3000);
+}
+
 function startTitleEdit(): void {
   if (!currentSession) return;
   isEditingTitle = true;
@@ -647,17 +657,28 @@ function startTitleEdit(): void {
   input.focus();
   input.select();
 
+  let isSavingTitle = false;
   const saveEdit = async () => {
+    if (isSavingTitle) return;
     const newTitle = input.value.trim();
     if (newTitle && newTitle !== currentTitle) {
+      isSavingTitle = true;
+      input.disabled = true;
       try {
-        await browser.runtime.sendMessage({
+        const res = await browser.runtime.sendMessage({
           type: 'UPDATE_SESSION_TITLE',
           title: newTitle
         });
-        elements.sessionTitle.textContent = newTitle;
-        log('[JP343 Popup] Title updated:', newTitle);
+        if (res?.success) {
+          elements.sessionTitle.textContent = res.data?.title ?? newTitle;
+          log('[JP343 Popup] Title updated:', newTitle);
+        } else {
+          elements.sessionTitle.textContent = currentTitle;
+          showTitleEditError();
+          log('[JP343 Popup] Title update rejected:', res?.error);
+        }
       } catch (error) {
+        showTitleEditError();
         log('[JP343 Popup] Failed to update title:', error);
       }
     }
@@ -759,248 +780,18 @@ function updatePendingDisplay(entries: PendingEntry[]): void {
   elements.pendingSection.style.display = entries.length > 0 ? 'flex' : 'none';
 }
 
-// Grouped entry for popup display
-interface GroupedEntry {
-  primary: PendingEntry;
-  entries: PendingEntry[];
-  entryIds: string[];
-  totalMinutes: number;
-  sessionCount: number;
-  hasError: boolean;
-}
-
-function groupEntriesByVideo(entries: PendingEntry[]): GroupedEntry[] {
-  const groups = new Map<string, GroupedEntry>();
-
-  for (const entry of entries) {
-    const key = entry.project_id || entry.url;
-
-    if (groups.has(key)) {
-      const group = groups.get(key)!;
-      group.entries.push(entry);
-      group.entryIds.push(entry.id);
-      group.totalMinutes += entry.duration_min;
-      group.sessionCount++;
-      if (entry.lastSyncError) group.hasError = true;
-      if (new Date(entry.date) > new Date(group.primary.date)) {
-        group.primary = entry;
-      }
-    } else {
-      groups.set(key, {
-        primary: entry,
-        entries: [entry],
-        entryIds: [entry.id],
-        totalMinutes: entry.duration_min,
-        sessionCount: 1,
-        hasError: !!entry.lastSyncError
-      });
-    }
-  }
-
-  const result = Array.from(groups.values());
-  for (const group of result) {
-    group.entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    group.entryIds = group.entries.map(e => e.id);
-  }
-  return result;
-}
-
-function renderEntryGroup(group: GroupedEntry): HTMLElement {
-  const entry = group.primary;
-  const groupKey = entry.project_id || entry.url;
-  const ids = group.entryIds.join(',');
-  const hasMultiple = group.sessionCount > 1;
-
-  const container = document.createElement('div');
-  container.className = 'pending-entry-group';
-  container.dataset.groupKey = groupKey;
-
-  const entryDiv = document.createElement('div');
-  entryDiv.className = 'pending-entry';
-  entryDiv.dataset.ids = ids;
-  entryDiv.dataset.url = entry.url || '';
-
-  const thumbWrap = document.createElement('div');
-  thumbWrap.className = `pending-entry-thumb-wrap${entry.url ? ' clickable' : ''}`;
-  thumbWrap.dataset.url = entry.url || '';
-  if (entry.url) thumbWrap.title = 'Open video';
-
-  if (entry.thumbnail && isValidImageUrl(entry.thumbnail)) {
-    const img = document.createElement('img');
-    img.src = entry.thumbnail;
-    img.className = 'pending-entry-thumb';
-    img.alt = '';
-    thumbWrap.appendChild(img);
-  } else {
-    const placeholder = document.createElement('div');
-    placeholder.className = 'pending-entry-thumb';
-    Object.assign(placeholder.style, { display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' });
-    placeholder.textContent = platformIcons[entry.platform] || '\u23f5';
-    thumbWrap.appendChild(placeholder);
-  }
-  if (entry.url) {
-    const playIcon = document.createElement('span');
-    playIcon.className = 'pending-entry-play';
-    playIcon.textContent = '\u25b6';
-    thumbWrap.appendChild(playIcon);
-  }
-
-  const info = document.createElement('div');
-  info.className = 'pending-entry-info';
-
-  const titleRow = document.createElement('div');
-  titleRow.className = 'pending-entry-title-row';
-  const titleSpan = document.createElement('span');
-  titleSpan.className = `pending-entry-title${entry.url ? ' clickable' : ''}`;
-  titleSpan.dataset.ids = ids;
-  titleSpan.dataset.url = entry.url || '';
-  titleSpan.textContent = entry.project;
-  titleRow.appendChild(titleSpan);
-
-  const meta = document.createElement('div');
-  meta.className = 'pending-entry-meta';
-  const platformLabel = entry.platform === 'generic' && entry.activityType ? entry.activityType : entry.platform;
-  meta.append(`${platformLabel} \u00b7 `);
-  const strong = document.createElement('strong');
-  strong.textContent = formatDuration(group.totalMinutes);
-  meta.appendChild(strong);
-
-  if (hasMultiple) {
-    const expandBtn = document.createElement('button');
-    expandBtn.className = 'pending-entry-expand';
-    expandBtn.dataset.groupKey = groupKey;
-    expandBtn.title = `Show ${group.sessionCount} sessions`;
-    expandBtn.textContent = `(${group.sessionCount}\u00d7) \u25bc`;
-    meta.appendChild(expandBtn);
-  }
-  if (entry.url) {
-    const continueBtn = document.createElement('button');
-    continueBtn.className = 'pending-entry-continue';
-    continueBtn.dataset.url = entry.url;
-    continueBtn.title = 'Continue watching';
-    continueBtn.textContent = 'Continue \u25b6';
-    meta.appendChild(continueBtn);
-  }
-
-  info.append(titleRow, meta);
-  entryDiv.append(thumbWrap, info);
-  container.appendChild(entryDiv);
-
-  if (hasMultiple) {
-    const detailsList = document.createElement('div');
-    detailsList.className = 'session-details-list';
-    detailsList.dataset.groupKey = groupKey;
-    detailsList.style.display = 'none';
-
-    for (const e of group.entries) {
-      const detail = document.createElement('div');
-      detail.className = 'session-detail';
-      detail.dataset.id = e.id;
-
-      const dateSpan = document.createElement('span');
-      dateSpan.className = 'session-detail-date';
-      dateSpan.textContent = formatSessionDate(e.date, _popupDayStartHour);
-      detail.appendChild(dateSpan);
-
-      const durSpan = document.createElement('span');
-      durSpan.className = 'session-detail-duration';
-      durSpan.textContent = formatDuration(e.duration_min);
-      detail.appendChild(durSpan);
-      detailsList.appendChild(detail);
-    }
-    container.appendChild(detailsList);
-  }
-
-  return container;
-}
-
-function renderPendingList(entries: PendingEntry[]): void {
-  updatePendingDisplay(entries);
-
-  if (entries.length === 0) {
-    elements.pendingList.innerHTML = '';
-    return;
-  }
-
-  const expandedGroups = new Set<string>();
-  elements.pendingList.querySelectorAll('.session-details-list').forEach(el => {
-    if ((el as HTMLElement).style.display !== 'none') {
-      expandedGroups.add((el as HTMLElement).dataset.groupKey || '');
-    }
-  });
-
-  const grouped = groupEntriesByVideo(entries);
-  const sorted = [...grouped]
-    .sort((a, b) => new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime())
-    .slice(0, 8);
-
-  elements.pendingList.textContent = '';
-  for (const g of sorted) {
-    elements.pendingList.appendChild(renderEntryGroup(g));
-  }
-
-  elements.pendingList.querySelectorAll('.pending-entry-thumb-wrap.clickable').forEach(thumb => {
-    thumb.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const url = (thumb as HTMLElement).dataset.url;
-      if (url && /^https?:\/\//i.test(url)) {
-        browser.tabs.create({ url });
-      }
-    });
-  });
-
-  elements.pendingList.querySelectorAll('.pending-entry-title.clickable').forEach(title => {
-    title.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const url = (title as HTMLElement).dataset.url;
-      if (url && /^https?:\/\//i.test(url)) {
-        browser.tabs.create({ url });
-      }
-    });
-  });
-
-  elements.pendingList.querySelectorAll('.pending-entry-continue').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const url = (btn as HTMLElement).dataset.url;
-      if (url && /^https?:\/\//i.test(url)) {
-        await browser.tabs.create({ url });
-        window.close();
-      }
-    });
-  });
-
-  elements.pendingList.querySelectorAll('.pending-entry-expand').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const groupKey = (btn as HTMLElement).dataset.groupKey;
-      const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group-key="${groupKey}"]`) as HTMLElement;
-      if (detailsList) {
-        const isExpanded = detailsList.style.display !== 'none';
-        detailsList.style.display = isExpanded ? 'none' : 'block';
-        btn.textContent = btn.textContent?.replace(isExpanded ? '▲' : '▼', isExpanded ? '▼' : '▲') || '';
-      }
-    });
-  });
-
-  expandedGroups.forEach(groupKey => {
-    const detailsList = elements.pendingList.querySelector(`.session-details-list[data-group-key="${groupKey}"]`) as HTMLElement;
-    const expandBtn = elements.pendingList.querySelector(`.pending-entry-expand[data-group-key="${groupKey}"]`) as HTMLElement;
-    if (detailsList) {
-      detailsList.style.display = 'block';
-      if (expandBtn) {
-        expandBtn.textContent = expandBtn.textContent?.replace('▼', '▲') || '';
-      }
-    }
-  });
-}
 
 async function fetchPendingEntries(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_PENDING_ENTRIES' });
 
     if (response.success && response.data?.entries) {
-      renderPendingList(response.data.entries);
+      renderPendingList(response.data.entries, {
+        listEl: elements.pendingList,
+        platformIcons,
+        getDayStartHour: () => _popupDayStartHour,
+        onEntriesChanged: updatePendingDisplay
+      });
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load entries:', error);
