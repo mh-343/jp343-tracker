@@ -1,7 +1,7 @@
 import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
-import { resolveCustomSiteMeta } from './custom-sites-meta';
+import { resolveCustomSiteMeta, isWatchableVideo } from './custom-sites-meta';
 
 export default defineContentScript({
   matches: ['https://*/*'],
@@ -28,15 +28,15 @@ export default defineContentScript({
     let currentVideoId = '';
     let currentUrl = location.origin + '/';
     let currentSessionId: string | null = null;
+    let pendingPlay = false;
+    let playToken = 0;
+    let boundSrc = '';
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     window.addEventListener('pagehide', () => {
-      if (currentSessionId) {
-        flushDelta();
-        sendMessage('VIDEO_ENDED');
-      }
+      endSession();
       cleanup();
     });
 
@@ -109,7 +109,11 @@ export default defineContentScript({
       flushDelta();
       accumulatedDeltaMs = 0;
       lastVideoTime = video.currentTime;
+      pendingPlay = true;
+      const token = ++playToken;
       sendMessage('VIDEO_PLAY', { state: buildState(video) }).then(response => {
+        if (token !== playToken) return;
+        pendingPlay = false;
         if (response && typeof response === 'object' && 'sessionId' in response) {
           currentSessionId = (response as { sessionId: string }).sessionId;
         }
@@ -117,19 +121,32 @@ export default defineContentScript({
       log('[JP343] custom-sites: play', currentTitle);
     }
 
+    function endSession(): void {
+      if (!currentSessionId && !pendingPlay) return;
+      flushDelta();
+      sendMessage('VIDEO_ENDED');
+      currentSessionId = null;
+      pendingPlay = false;
+      playToken++;
+    }
+
     function bindVideo(video: HTMLVideoElement): void {
       if (video.hasAttribute('data-jp343-tracked')) return;
       video.setAttribute('data-jp343-tracked', 'true');
 
       video.addEventListener('play', () => {
+        if (video !== boundVideo) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
+        if (!isWatchableVideo(video)) return;
         startTracking(video);
       });
       video.addEventListener('playing', () => {
+        if (video !== boundVideo) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
       });
       video.addEventListener('pause', () => {
+        if (video !== boundVideo) return;
         flushDelta();
         if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
         pauseDebounceTimer = setTimeout(() => {
@@ -138,17 +155,18 @@ export default defineContentScript({
         }, 300);
       });
       video.addEventListener('ended', () => {
-        flushDelta();
+        if (video !== boundVideo) return;
         log('[JP343] custom-sites: ended');
-        sendMessage('VIDEO_ENDED');
-        currentSessionId = null;
+        endSession();
       });
-      video.addEventListener('waiting', () => { flushDelta(); });
+      video.addEventListener('waiting', () => { if (video === boundVideo) flushDelta(); });
       video.addEventListener('timeupdate', () => {
+        if (video !== boundVideo) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
         const delta = ct - lastVideoTime;
         lastVideoTime = ct;
+        if (delta < 0 && video.loop) { endSession(); return; }
         if (delta > 0 && delta <= 10) {
           accumulatedDeltaMs += (delta / (video.playbackRate || 1)) * 1000;
           if (accumulatedDeltaMs >= 10_000) flushDelta();
@@ -159,29 +177,29 @@ export default defineContentScript({
     function syncVideo(): void {
       const vids = collectVideos();
 
-      if (boundVideo && vids.includes(boundVideo)) {
+      // early return only shields a live session; strong signals still end it
+      if (boundVideo && vids.includes(boundVideo) && (currentSessionId || pendingPlay)) {
         const meta = resolveCustomSiteMeta(location);
-        if (meta.videoId !== currentVideoId) {
-          if (currentSessionId) { flushDelta(); sendMessage('VIDEO_ENDED'); currentSessionId = null; }
+        const srcChanged = boundSrc !== '' && boundVideo.currentSrc !== '' && boundVideo.currentSrc !== boundSrc;
+        if (meta.videoId !== currentVideoId || boundVideo.loop || srcChanged) {
+          endSession();
           currentTitle = meta.title;
           currentVideoId = meta.videoId;
           currentUrl = meta.url;
-          if (!boundVideo.paused && !boundVideo.ended) startTracking(boundVideo);
+          boundSrc = boundVideo.currentSrc;
+          if (!boundVideo.paused && !boundVideo.ended && isWatchableVideo(boundVideo)) startTracking(boundVideo);
         }
         return;
       }
 
-      if (boundVideo && currentSessionId) {
-        flushDelta();
-        sendMessage('VIDEO_ENDED');
-        currentSessionId = null;
-      }
+      endSession();
       boundVideo = null;
 
-      const video = pickVideo(vids);
+      const video = pickVideo(vids.filter(isWatchableVideo));
       if (!video) return;
       const meta = resolveCustomSiteMeta(location);
       boundVideo = video;
+      boundSrc = video.currentSrc;
       currentTitle = meta.title;
       currentVideoId = meta.videoId;
       currentUrl = meta.url;

@@ -12,6 +12,11 @@ function hashString(input: string): string {
   return (hash >>> 0).toString(36);
 }
 
+// autoplay decoration is muted and/or looping; watchable content is neither
+export function isWatchableVideo(v: HTMLVideoElement): boolean {
+  return !v.loop && !v.muted && v.volume > 0;
+}
+
 export function resolveCustomSiteMeta(loc: Location): CustomSiteMeta {
   const host = loc.hostname.replace(/^www\./, '');
   const segments = loc.pathname.split('/').filter(Boolean);
