@@ -65,4 +65,12 @@ npm run build:firefox
 
 ## License
 
-GPL-3.0. See [LICENSE](LICENSE).
+Source-available, not open source.
+
+The code is public so you can read it, audit what the extension actually does,
+build it yourself and check that a store release matches this source. You may
+not redistribute it or build your own product on top of it, free or paid.
+
+Licensed under PolyForm Strict 1.0.0 with additional permissions for local
+builds, private changes and contributions (see [LICENSE](LICENSE)). Versions
+up to v2.10.1 were published under GPL-3.0 and remain under that license.
