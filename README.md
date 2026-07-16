@@ -65,12 +65,10 @@ npm run build:firefox
 
 ## License
 
-Source-available, not open source.
+Open source under [AGPL-3.0](LICENSE) (up to v2.10.1: GPL-3.0). Read the
+code, audit what the extension actually does, build it yourself and check
+that a store release matches this source.
 
-The code is public so you can read it, audit what the extension actually does,
-build it yourself and check that a store release matches this source. You may
-not redistribute it or build your own product on top of it, free or paid.
-
-Licensed under PolyForm Strict 1.0.0 with additional permissions for local
-builds, private changes and contributions (see [LICENSE](LICENSE)). Versions
-up to v2.10.1 were published under GPL-3.0 and remain under that license.
+AGPL is the strongest copyleft license: forks and derived works must stay
+open under the same license. The jp343 name and logo are not part of the
+code license and may not be used for derived products.
