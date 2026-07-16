@@ -179,5 +179,5 @@ export async function removeCustomSite(id: string): Promise<void> {
 }
 
 export function originsIncludeHost(origins: string[], host: string): boolean {
-  return origins.some(o => o.includes(host));
+  return origins.some(o => o === customSiteOrigin(host));
 }

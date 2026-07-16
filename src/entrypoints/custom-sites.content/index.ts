@@ -40,6 +40,10 @@ export default defineContentScript({
       cleanup();
     });
 
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) flushDelta();
+    });
+
     async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
       try {
         return await browser.runtime.sendMessage({ type, platform: PLATFORM, ...data });
