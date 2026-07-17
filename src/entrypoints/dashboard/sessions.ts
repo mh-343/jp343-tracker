@@ -33,6 +33,147 @@ function requestRefresh(): void {
   document.dispatchEvent(new CustomEvent('jp343:refresh'));
 }
 
+function isRenamableSeries(projectId?: string): boolean {
+  return !!projectId?.startsWith('ext_generic_cs_');
+}
+
+interface RenameResponse {
+  success?: boolean;
+  data?: { title?: string; pendingServerSync?: boolean };
+  error?: string;
+}
+
+function attachSeriesRename(
+  info: HTMLElement,
+  titleEl: HTMLElement,
+  projectId: string,
+  getTitle: () => string,
+  applyTitle: (title: string) => void
+): void {
+  const row = document.createElement('div');
+  row.className = 'session-title-row';
+  info.insertBefore(row, titleEl);
+  row.appendChild(titleEl);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'session-rename-btn';
+  btn.title = 'Rename series (applies to all sessions of this series)';
+  btn.textContent = '✎';
+  row.appendChild(btn);
+
+  const status = document.createElement('span');
+  status.className = 'session-rename-status';
+  row.appendChild(status);
+
+  let editing = false;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (editing) return;
+    editing = true;
+    const previousTitle = getTitle();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'session-rename-input';
+    input.value = previousTitle;
+    titleEl.style.display = 'none';
+    btn.style.display = 'none';
+    status.textContent = '';
+    row.insertBefore(input, titleEl);
+
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'session-rename-reset';
+    resetBtn.textContent = 'Reset';
+    resetBtn.style.display = 'none';
+    row.insertBefore(resetBtn, status);
+
+    input.focus();
+    input.select();
+
+    let saving = false;
+    const finish = (): void => {
+      input.remove();
+      resetBtn.remove();
+      titleEl.style.display = '';
+      btn.style.display = '';
+      editing = false;
+    };
+    const showStatus = (text: string): void => {
+      status.textContent = text;
+      if (text) setTimeout(() => { if (status.textContent === text) status.textContent = ''; }, 4000);
+    };
+    const save = async (): Promise<void> => {
+      if (saving) return;
+      const newTitle = input.value.trim();
+      if (!newTitle || newTitle === previousTitle) { finish(); return; }
+      saving = true;
+      input.disabled = true;
+      try {
+        const res = await browser.runtime.sendMessage({
+          type: 'RENAME_CUSTOM_SITE_SERIES',
+          projectId,
+          title: newTitle,
+          previousTitle
+        }) as RenameResponse;
+        if (res?.success) {
+          applyTitle(res.data?.title ?? newTitle);
+          showStatus(res.data?.pendingServerSync ? 'Saved, account sync pending' : '');
+        } else {
+          showStatus(res?.error || 'Rename failed');
+        }
+      } catch {
+        showStatus('Rename failed');
+      }
+      finish();
+    };
+    input.addEventListener('blur', () => { void save(); });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); void save(); }
+      if (ev.key === 'Escape') { input.value = previousTitle; finish(); }
+    });
+
+    void (async () => {
+      try {
+        const res = await browser.runtime.sendMessage({ type: 'CUSTOM_SITES_GET' }) as {
+          success?: boolean;
+          data?: { customSites?: { names?: Record<string, { originalLabel?: string }> } };
+        };
+        const videoId = projectId.slice('ext_generic_'.length);
+        const original = res?.data?.customSites?.names?.[videoId]?.originalLabel;
+        if (original && editing && !saving) {
+          resetBtn.title = `Restore "${original}"`;
+          resetBtn.style.display = '';
+        }
+      } catch { /* ignore */ }
+    })();
+    resetBtn.addEventListener('mousedown', (ev) => { ev.preventDefault(); });
+    resetBtn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (saving) return;
+      saving = true;
+      input.disabled = true;
+      resetBtn.disabled = true;
+      try {
+        const res = await browser.runtime.sendMessage({
+          type: 'CUSTOM_SITE_NAME_RESET',
+          projectId
+        }) as RenameResponse;
+        if (res?.success) {
+          if (res.data?.title) applyTitle(res.data.title);
+          showStatus(res.error || (res.data?.pendingServerSync ? 'Reset, account sync pending' : ''));
+        } else {
+          showStatus(res?.error || 'Reset failed');
+        }
+      } catch {
+        showStatus('Reset failed');
+      }
+      finish();
+    });
+  });
+}
+
 export function resetSessionDisplayCount(): void {
   sessionDisplayCount = 20;
 }
@@ -123,6 +264,11 @@ export function renderSessions(entries: PendingEntry[]): void {
       ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = entry.project; a.href = entry.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
       : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = entry.project; return d; })();
     info.appendChild(titleEl);
+    if (isRenamableSeries(entry.project_id)) {
+      attachSeriesRename(info, titleEl, entry.project_id,
+        () => entry.project,
+        (t) => { entry.project = t; titleEl.textContent = t; });
+    }
 
     const meta = document.createElement('div');
     meta.className = 'session-meta';
@@ -203,6 +349,7 @@ export function renderSessions(entries: PendingEntry[]): void {
 function pendingToServerSession(entry: PendingEntry): ServerSession {
   return {
     id: entry.id,
+    project_id: entry.project_id,
     title: entry.project,
     platform: entry.platform,
     duration_seconds: Math.round(entry.duration_min * 60),
@@ -238,6 +385,17 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
     ? (() => { const a = document.createElement('a'); a.className = 'session-title session-title-link'; a.textContent = session.title!; a.href = session.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; })()
     : (() => { const d = document.createElement('div'); d.className = 'session-title'; d.textContent = session.title!; return d; })();
   info.appendChild(titleEl);
+  if (isRenamableSeries(session.project_id)) {
+    attachSeriesRename(info, titleEl, session.project_id!,
+      () => session.title || '',
+      (t) => {
+        session.title = t;
+        titleEl.textContent = t;
+        if (rawServerCache) {
+          rawServerCache = rawServerCache.map(s => s.project_id === session.project_id ? { ...s, title: t } : s);
+        }
+      });
+  }
 
   const meta = document.createElement('div');
   meta.className = 'session-meta';

@@ -23,7 +23,7 @@ export async function handlePendingMessage(
             date: s.date,
             duration_min: s.duration_min,
             project: s.title,
-            project_id: '',
+            project_id: s.project_id ?? '',
             platform: (s.platform || 'generic') as Platform,
             source: 'extension' as const,
             url: s.url || '',

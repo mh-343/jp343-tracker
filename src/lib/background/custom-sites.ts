@@ -34,8 +34,8 @@ interface Mv2ContentScripts {
 async function loadState(): Promise<CustomSitesState> {
   const res = await browser.storage.local.get(STORAGE_KEYS.CUSTOM_SITES);
   const stored = res[STORAGE_KEYS.CUSTOM_SITES] as CustomSitesState | undefined;
-  if (!stored) return { ...DEFAULT_CUSTOM_SITES_STATE, sites: [] };
-  return { ...DEFAULT_CUSTOM_SITES_STATE, ...stored };
+  if (!stored) return { ...DEFAULT_CUSTOM_SITES_STATE, sites: [], names: {} };
+  return { ...DEFAULT_CUSTOM_SITES_STATE, ...stored, names: { ...(stored.names ?? {}) } };
 }
 
 async function saveState(state: CustomSitesState): Promise<void> {
@@ -44,6 +44,18 @@ async function saveState(state: CustomSitesState): Promise<void> {
 
 export async function getCustomSitesState(): Promise<CustomSitesState> {
   return loadState();
+}
+
+export async function isAllowedCustomSiteUrl(url: string): Promise<boolean> {
+  let host = '';
+  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
+  if (host.startsWith('www.')) host = host.slice(4);
+  const state = await loadState();
+  return state.sites.some(s => s.host === host);
+}
+
+export async function saveCustomSitesState(state: CustomSitesState): Promise<void> {
+  return saveState(state);
 }
 
 export function customSiteOrigin(host: string): string {
@@ -168,6 +180,10 @@ export async function removeCustomSite(id: string): Promise<void> {
     if (!site) return;
     removedHost = site.host;
     state.sites = state.sites.filter(s => s.id !== id);
+    for (const [videoId, name] of Object.entries(state.names)) {
+      const host = name.host.startsWith('www.') ? name.host.slice(4) : name.host;
+      if (host === removedHost) delete state.names[videoId];
+    }
     await saveState(state);
   });
   await syncCustomSitesRegistration();

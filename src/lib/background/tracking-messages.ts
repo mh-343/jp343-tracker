@@ -7,7 +7,8 @@ import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import { getReaderState } from './reader-sync';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../reader-sources';
-import { getCustomSitesState } from './custom-sites';
+import { getCustomSitesState, isAllowedCustomSiteUrl } from './custom-sites';
+import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
 
 const jpCheckCache = new Map<string, boolean>();
@@ -68,6 +69,28 @@ function maybeRecoverAdState(
   if (emitDiagnostic) recordDiagnostic?.('ad_state_recovered', platform);
 }
 
+async function renameActiveCustomSiteSession(
+  session: TrackingSession,
+  rawTitle: string,
+  context: BackgroundMessageContext
+): Promise<unknown> {
+  const normalized = normalizeCustomTitle(rawTitle);
+  if (!normalized || !session.videoId) {
+    return { success: false, error: 'Name cannot be empty' };
+  }
+  const result = await applyCustomSiteRename(session.videoId, normalized, {
+    saveSessionState: context.saveSessionState
+  }, {
+    originalLabelHint: session.title,
+    hostHint: session.customSiteHost
+  });
+  return {
+    success: result.ok,
+    data: { title: result.title, localOnly: result.localOnly, pendingServerSync: result.pendingServerSync },
+    error: result.error
+  };
+}
+
 export async function handleTrackingMessage(
   message: ExtensionMessage,
   messageSender: Browser.runtime.MessageSender,
@@ -88,6 +111,14 @@ export async function handleTrackingMessage(
       }
 
       if ('state' in message && message.state && typeof message.state === 'object') {
+        if (
+          message.state.platform === 'generic' &&
+          message.state.videoId?.startsWith('cs_') &&
+          !(await isAllowedCustomSiteUrl(message.state.url))
+        ) {
+          context.log('[JP343] Custom site removed - ignoring VIDEO_PLAY');
+          return { success: true, skipped: true };
+        }
         const channelId = message.state.channelId;
         if (channelId && isChannelInList(settings.blockedChannels, channelId, message.state.channelUrl)) {
           if (settings.trackJapaneseOnly && isJapaneseGatedPlatform(message.state.platform)) {
@@ -154,10 +185,18 @@ export async function handleTrackingMessage(
         }
 
         context.setLastSkippedChannel(null);
+        let customSiteName: string | null = null;
+        if (message.state.platform === 'generic' && message.state.videoId?.startsWith('cs_')) {
+          customSiteName = await getCustomSiteName(message.state.videoId);
+          if (customSiteName) message.state.title = customSiteName;
+        }
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
         if (message.state.platform === 'generic') {
           try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
+        }
+        if (customSiteName) {
+          tracker.updateSessionTitle(customSiteName);
         }
         maybeRecoverAdState(message.state, message.state.platform, recordDiagnostic, false);
         await context.saveSessionState(session);
@@ -454,6 +493,10 @@ export async function handleTrackingMessage(
 
     case 'UPDATE_SESSION_TITLE': {
       if ('title' in message && message.title) {
+        const active = tracker.getCurrentSession();
+        if (active?.platform === 'generic' && active.videoId?.startsWith('cs_')) {
+          return renameActiveCustomSiteSession(active, message.title as string, context);
+        }
         const updated = tracker.updateSessionTitle(message.title as string);
         if (updated) {
           const session = tracker.getCurrentSession();

@@ -95,6 +95,8 @@ export function createBackgroundMessageHandler(
         case 'CUSTOM_SITES_GET':
         case 'CUSTOM_SITE_ADD':
         case 'CUSTOM_SITE_REMOVE':
+        case 'RENAME_CUSTOM_SITE_SERIES':
+        case 'CUSTOM_SITE_NAME_RESET':
           return handleCustomSitesMessage(message, context);
 
         case 'GET_DIFFICULTY_MAP':

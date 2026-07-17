@@ -8,6 +8,7 @@ import {
 } from '../badge-service';
 import { isLikelyJapaneseVideo } from '../language-detection';
 import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../server-sessions';
+import { flushCustomSiteRenames } from './custom-site-names';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -59,6 +60,7 @@ export async function handleSettingsMessage(
           await context.pullAndMergeSettingsFromServer().catch(() => {});
           context.fetchAndCacheServerStats();
           fetchAndCacheServerSessions().catch(() => {});
+          flushCustomSiteRenames({ saveSessionState: context.saveSessionState }).catch(() => {});
         } else if (!merged.isLoggedIn) {
           clearCachedServerSessions().catch(() => {});
         }

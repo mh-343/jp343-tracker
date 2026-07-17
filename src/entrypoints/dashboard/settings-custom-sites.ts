@@ -1,10 +1,13 @@
 import type { CustomSitesState, CustomSite } from '../../types';
 import { normalizeHost, customSiteOrigin } from '../../lib/background/custom-sites';
 
-async function loadSites(): Promise<CustomSite[]> {
+async function loadCustomState(): Promise<CustomSitesState | null> {
   const res = await browser.runtime.sendMessage({ type: 'CUSTOM_SITES_GET' });
-  const data = res?.success ? res.data as { customSites: CustomSitesState } : null;
-  return data?.customSites.sites ?? [];
+  return res?.success ? (res.data as { customSites: CustomSitesState }).customSites : null;
+}
+
+async function loadSites(): Promise<CustomSite[]> {
+  return (await loadCustomState())?.sites ?? [];
 }
 
 async function siteIsActive(host: string): Promise<boolean> {

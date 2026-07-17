@@ -269,7 +269,9 @@ export type ExtensionMessage =
   | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number }
   | { type: 'CUSTOM_SITES_GET' }
   | { type: 'CUSTOM_SITE_ADD'; host: string }
-  | { type: 'CUSTOM_SITE_REMOVE'; id: string };
+  | { type: 'CUSTOM_SITE_REMOVE'; id: string }
+  | { type: 'RENAME_CUSTOM_SITE_SERIES'; projectId: string; title: string; previousTitle?: string }
+  | { type: 'CUSTOM_SITE_NAME_RESET'; projectId: string };
 
 export interface DirectSyncResult {
   attempted: number;
@@ -479,14 +481,28 @@ export interface CustomSite {
   addedAt: number;
 }
 
+export interface CustomSiteName {
+  title: string;
+  host: string;
+  originalLabel: string;
+  updatedAt: number;
+  revision: string;
+  serverSynced: boolean;
+  syncAttempts: number;
+  lastAttemptAt: number | null;
+  resetRequested?: boolean;
+}
+
 export interface CustomSitesState {
   version: number;
   sites: CustomSite[];
+  names: Record<string, CustomSiteName>;
 }
 
 export const DEFAULT_CUSTOM_SITES_STATE: CustomSitesState = {
   version: 1,
-  sites: []
+  sites: [],
+  names: {}
 };
 
 export interface CachedServerSession {
@@ -495,6 +511,7 @@ export interface CachedServerSession {
   platform: string;
   duration_min: number;
   date: string;
+  project_id?: string;
   url?: string;
   thumbnail?: string;
   activityType?: string;

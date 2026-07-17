@@ -21,6 +21,7 @@ import { handleShortcutCommand } from '../lib/background/shortcut-commands';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
+import { flushCustomSiteRenames } from '../lib/background/custom-site-names';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
 import { clearVoteStateCache, retryQueuedVotes } from '../lib/background/difficulty-messages';
 import {
@@ -430,6 +431,7 @@ export default defineBackground(() => {
       const result = await syncEntriesDirect();
       log('[JP343] Sync result:', result.succeeded, 'synced,', result.failed, 'failed');
       fetchAndCacheServerSessions().catch(() => {});
+      flushCustomSiteRenames({ saveSessionState }).catch(() => {});
     } catch (error) {
       log('[JP343] Sync error:', error);
     } finally {

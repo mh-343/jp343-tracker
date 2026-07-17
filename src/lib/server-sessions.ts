@@ -32,6 +32,7 @@ export async function fetchAndCacheServerSessions(): Promise<void> {
     if (result.success && result.data?.sessions) {
       const sessions: CachedServerSession[] = (result.data.sessions as Record<string, unknown>[]).map(s => ({
         id: s.id as number | string,
+        project_id: (s.project_id || '') as string,
         title: (s.project_name || s.title || 'Session') as string,
         platform: (s.platform || '') as string,
         duration_min: Math.round(((s.duration_seconds as number) || ((s.duration_minutes || s.minutes || 0) as number) * 60) / 60),

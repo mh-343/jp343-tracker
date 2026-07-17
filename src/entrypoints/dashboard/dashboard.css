@@ -2464,4 +2464,63 @@
       flex-shrink: 0;
     }
 
+    .session-title-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .session-title-row .session-title { min-width: 0; }
+    .session-rename-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      opacity: 0.55;
+      flex-shrink: 0;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .session-rename-btn:hover {
+      opacity: 1;
+      background: rgba(var(--accent-rgb), 0.12);
+      color: var(--accent);
+    }
+    .session-rename-input {
+      flex: 1;
+      min-width: 0;
+      padding: 2px 6px;
+      font-size: 13px;
+      color: var(--text-primary);
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+    }
+    .session-rename-status {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .session-rename-reset {
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .session-rename-reset:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
 
