@@ -16,7 +16,15 @@ export default defineContentScript({
     if (!claimContentScript('youtube-filter')) return;
 
     const observers: MutationObserver[] = [];
-    const navHandler = () => { if (filterEnabled) setTimeout(scheduleUpdate, 200); };
+    // stale verdicts on recycled cards must not survive navigation
+    const navHandler = () => {
+      if (!filterEnabled) return;
+      setTimeout(() => {
+        if (!filterEnabled || contextLost()) return;
+        clearProcessedMarks(true);
+        scheduleUpdate();
+      }, 200);
+    };
 
     function stopAll() {
       clearRetry();
@@ -53,7 +61,7 @@ export default defineContentScript({
     const PROCESSED_ATTR = 'data-jp343-processed';
     const HIDDEN_CLASS = 'jp343-jp-hidden';
 
-    const titleCache = new Map<string, string | null>();
+    const titleCache = new Map<string, Promise<string | null>>();
 
     function injectStyles(): void {
       if (document.getElementById('jp343-filter-styles')) return;
@@ -63,11 +71,13 @@ export default defineContentScript({
       document.head.appendChild(style);
     }
 
-    async function getOriginalTitle(videoId: string): Promise<string | null> {
-      if (titleCache.has(videoId)) return titleCache.get(videoId) ?? null;
-      const title = await fetchOembedTitle(videoId);
-      titleCache.set(videoId, title);
-      return title;
+    function getOriginalTitle(videoId: string): Promise<string | null> {
+      let pending = titleCache.get(videoId);
+      if (!pending) {
+        pending = fetchOembedTitle(videoId);
+        titleCache.set(videoId, pending);
+      }
+      return pending;
     }
 
     function recomputePageChannel(): void {
@@ -77,15 +87,20 @@ export default defineContentScript({
     }
 
     async function processVideo(element: Element): Promise<void> {
-      if (element.hasAttribute(PROCESSED_ATTR)) return;
-      if (element.closest(`[${PROCESSED_ATTR}]`)) return;
+      const prevStamp = element.getAttribute(PROCESSED_ATTR);
+      const videoId = extractVideoIdFromElement(element);
+      // stamp carries the videoId, rebind = re-check
+      if (prevStamp && prevStamp === (videoId || '1')) return;
+      if (!prevStamp && element.closest(`[${PROCESSED_ATTR}]`)) return;
 
       const domTitle = getCardTitleText(element);
-      const videoId = extractVideoIdFromElement(element);
 
       if (!domTitle && !videoId) return;
 
-      element.setAttribute(PROCESSED_ATTR, '1');
+      element.setAttribute(PROCESSED_ATTR, videoId || '1');
+
+      const htmlEl = element as HTMLElement;
+      htmlEl.classList.remove(HIDDEN_CLASS);
 
       if (pageChannelAllowlisted) return;
 
@@ -95,7 +110,6 @@ export default defineContentScript({
         return;
       }
 
-      const htmlEl = element as HTMLElement;
       htmlEl.classList.add(HIDDEN_CLASS);
 
       if (domTitle && isJapaneseContent(domTitle)) {
@@ -111,6 +125,8 @@ export default defineContentScript({
 
       if (videoId) {
         const originalTitle = await getOriginalTitle(videoId);
+        // card may have been rebound during the await
+        if (element.getAttribute(PROCESSED_ATTR) !== videoId) return;
         if (originalTitle && isJapaneseContent(originalTitle)) {
           htmlEl.classList.remove(HIDDEN_CLASS);
           return;
@@ -157,15 +173,21 @@ export default defineContentScript({
       });
     }
 
+    function clearProcessedMarks(visibleOnly = false): void {
+      const processed = document.querySelectorAll(`[${PROCESSED_ATTR}]`);
+      processed.forEach((el) => {
+        // cached pages keep their frozen verdicts
+        if (visibleOnly && el.closest('[hidden]')) return;
+        el.removeAttribute(PROCESSED_ATTR);
+      });
+    }
+
     function showAllVideos(): void {
       const hidden = document.querySelectorAll(`.${HIDDEN_CLASS}`);
       hidden.forEach((el) => {
         el.classList.remove(HIDDEN_CLASS);
       });
-      const processed = document.querySelectorAll(`[${PROCESSED_ATTR}]`);
-      processed.forEach((el) => {
-        el.removeAttribute(PROCESSED_ATTR);
-      });
+      clearProcessedMarks();
     }
 
     function startFiltering(): void {
@@ -180,7 +202,6 @@ export default defineContentScript({
         for (const mutation of mutations) {
           for (const node of Array.from(mutation.addedNodes)) {
             if (!(node instanceof Element)) continue;
-            if (node.hasAttribute(PROCESSED_ATTR)) continue;
             if (node.matches(VIDEO_CARD_SELECTORS) || node.querySelector(VIDEO_CARD_SELECTORS)) {
               scheduleUpdate();
               return;

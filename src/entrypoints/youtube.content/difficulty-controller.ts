@@ -20,6 +20,8 @@ export interface DifficultyDeps {
   getVideoId(): string | null;
   getVideoTitle(): string;
   getChannelInfo(): { id: string | null; name: string | null; url: string | null };
+  // null = language signals still loading
+  getJapaneseSignal(): boolean | null;
   sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -92,6 +94,8 @@ async function computeAndApplyLocalEstimate(videoId: string, channelId: string |
   try {
     const transcript = await acquireYoutubeTranscript(videoId);
     if (deps.getVideoId() !== videoId) return;
+    // re-check, DOM may have lagged at kickoff
+    if (deps.getJapaneseSignal() !== true) return;
     let result: { seed: DifficultySeed; source: string } | null = null;
     if (transcript) {
       const bounds = lookupByChannel(difficultyChannelBounds, channelId, channelName);
@@ -215,12 +219,14 @@ export function updateDifficultyChip(): void {
   const videoSeed = videoId ? difficultyVideoMap?.[videoId] : null;
   if (videoSeed) { show(videoSeed, 'video estimate'); return; }
   if (!difficultyMapLoaded && !difficultyLocalOnly) return;
-  const cachedLocal = videoId ? localBandCache.get(videoId) : undefined;
+  // local estimate only for Japanese videos
+  const jpSignal = deps.getJapaneseSignal();
+  const cachedLocal = videoId && jpSignal === true ? localBandCache.get(videoId) : undefined;
   if (cachedLocal) { show(cachedLocal.seed, cachedLocal.source); return; }
   const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
   if (serverSeed) show(serverSeed, 'channel estimate');
   else hideDifficultyChip();
-  if (videoId && cachedLocal === undefined) {
+  if (videoId && jpSignal === true && cachedLocal === undefined) {
     void computeAndApplyLocalEstimate(videoId, channelInfo.id, channelInfo.name);
   }
 }

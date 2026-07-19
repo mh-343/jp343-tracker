@@ -148,7 +148,7 @@ export default defineContentScript({
       }
     }
 
-    initDifficulty({ getVideoId, getVideoTitle, getChannelInfo, sendMessage });
+    initDifficulty({ getVideoId, getVideoTitle, getChannelInfo, getJapaneseSignal, sendMessage });
 
     browser.runtime.sendMessage({ type: 'GET_SETTINGS' }).then((response) => {
       if (response?.success && response.data?.settings) {
@@ -539,6 +539,7 @@ export default defineContentScript({
         if (state && state.isPlaying && !state.isAd) {
           sendMessage('VIDEO_STATE_UPDATE', { state });
         }
+        updateDifficultyChip();
       }
       checkTrackingToast();
     }
@@ -634,6 +635,20 @@ export default defineContentScript({
           }).catch(() => {});
         }
       });
+    }
+
+    function getJapaneseSignal(): boolean | null {
+      const channelInfo = getChannelInfo();
+      const signals = {
+        title: getVideoTitle(),
+        originalTitle,
+        channelName: channelInfo.name,
+        audioLanguage: videoAudioLanguage,
+        description: videoDescription
+      };
+      if (isLikelyJapaneseVideo(signals)) return true;
+      if (originalTitleResponsePending && originalTitleVideoId === getVideoId()) return null;
+      return false;
     }
 
     function getCurrentVideoState(): VideoState | null {
@@ -831,6 +846,10 @@ export default defineContentScript({
       setTimeout(() => {
         if (!isExtensionContextValid()) return;
         if (!video.paused && !video.ended) {
+          const videoId = getVideoId();
+          if (videoId && originalTitleVideoId !== videoId) {
+            requestOriginalTitle(videoId);
+          }
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
             if (DEBUG_MODE) debugLog('VIDEO_PLAY', 'Video already playing - starting tracking', collectUIState());
