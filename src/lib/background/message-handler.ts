@@ -52,6 +52,9 @@ export function createBackgroundMessageHandler(
         case 'GET_PENDING_ENTRIES':
         case 'DELETE_PENDING_ENTRY':
         case 'DELETE_PENDING_BY_SERVER_ID':
+        case 'GET_DELETED_ENTRIES':
+        case 'RESTORE_DELETED_ENTRY':
+        case 'PURGE_DELETED_ENTRY':
         case 'CLEAR_SYNCED_ENTRIES':
         case 'UPDATE_PENDING_ENTRY_TITLE':
           return handlePendingMessage(message, context);

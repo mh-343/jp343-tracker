@@ -1108,6 +1108,94 @@
     .btn-delete-entry:hover,
     .btn-delete-entry:focus-visible { opacity: 1 !important; color: var(--red); }
 
+    .btn-delete-entry.armed {
+      opacity: 1 !important;
+      color: var(--red);
+      background: rgba(244, 67, 54, 0.12);
+      border: 1px solid var(--red);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* ── Recently deleted ──────────────────────────── */
+    .recently-deleted {
+      margin-top: 10px;
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+    }
+
+    .deleted-toggle {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .deleted-toggle:hover { color: var(--text); }
+
+    .deleted-list {
+      margin-top: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .deleted-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      background: var(--bg-input);
+    }
+
+    .deleted-item-info { flex: 1; min-width: 0; }
+
+    .deleted-item-title {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .deleted-item-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+    }
+
+    .deleted-restore-btn,
+    .deleted-purge-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .deleted-restore-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .deleted-restore-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .deleted-purge-btn:hover { border-color: var(--red); color: var(--red); }
+    .deleted-purge-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .deleted-purge-btn.armed {
+      border-color: var(--red);
+      color: var(--red);
+      background: rgba(244, 67, 54, 0.12);
+      font-weight: 600;
+    }
+
     /* ── Sync CTA ──────────────────────────────────── */
     .sync-cta {
       text-align: center;

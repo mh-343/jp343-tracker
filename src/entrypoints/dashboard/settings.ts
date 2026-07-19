@@ -579,8 +579,12 @@ function buildReaderPanel(container: HTMLElement, source: ReaderSource): void {
     if (!perms.origins?.some(o => source.origins.includes(o))) return;
     void refreshReaderPanel(source, status, toggle, regrantBtn);
   };
-  browser.permissions.onAdded.addListener(onPermissionChange);
-  browser.permissions.onRemoved.addListener(onPermissionChange);
+  if (browser.permissions?.onAdded) {
+    browser.permissions.onAdded.addListener(onPermissionChange);
+  }
+  if (browser.permissions?.onRemoved) {
+    browser.permissions.onRemoved.addListener(onPermissionChange);
+  }
 
   void refreshReaderPanel(source, status, toggle, regrantBtn);
 }

@@ -1,11 +1,11 @@
-import type { PendingEntry, TrackingSession } from '../../types';
+import type { PendingEntry, SavePendingResult, TrackingSession } from '../../types';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 
 interface ContextMenuDeps {
   recoveryReady: Promise<void>;
   saveSessionState: (session: TrackingSession | null) => Promise<void>;
-  savePendingEntry: (entry: PendingEntry) => Promise<void>;
+  savePendingEntry: (entry: PendingEntry) => Promise<SavePendingResult>;
 }
 
 export function initContextMenu(deps: ContextMenuDeps): () => void {

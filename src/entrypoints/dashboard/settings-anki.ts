@@ -2,6 +2,7 @@ import type { AnkiState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { createToggleRow, getFreshSettings } from './settings-helpers';
+import { armDeleteButton } from './delete-confirm';
 
 function ankiTodayReviews(state: AnkiState, dayStartHour: number): number {
   const col = state.activeCollection ? state.collections[state.activeCollection] : undefined;
@@ -192,29 +193,18 @@ export function buildAnkiPanel(container: HTMLElement): void {
   resetBtn.type = 'button';
   resetBtn.className = 'anki-reset-btn';
   resetBtn.textContent = 'Reset Anki data';
-  let resetArmed = false;
-  let resetTimer: ReturnType<typeof setTimeout> | null = null;
-  const disarmReset = () => {
-    resetArmed = false;
-    resetBtn.classList.remove('armed');
-    resetBtn.textContent = 'Reset Anki data';
-  };
-  resetBtn.addEventListener('click', async () => {
-    if (!resetArmed) {
-      resetArmed = true;
-      resetBtn.classList.add('armed');
-      resetBtn.textContent = 'Click again to delete all Anki stats';
-      resetTimer = setTimeout(disarmReset, 4000);
-      return;
-    }
-    if (resetTimer) clearTimeout(resetTimer);
-    disarmReset();
+  armDeleteButton(resetBtn, async () => {
     resetBtn.disabled = true;
     resetBtn.textContent = 'Resetting…';
     await browser.runtime.sendMessage({ type: 'ANKI_RESET' });
     await refreshAnki(status, toggle, deckContainer);
     resetBtn.disabled = false;
     resetBtn.textContent = 'Reset Anki data';
+  }, {
+    idleLabel: 'Reset Anki data',
+    armedLabel: 'Click again to delete all Anki stats',
+    idleTitle: '',
+    armedTitle: ''
   });
   section.appendChild(resetBtn);
 

@@ -96,6 +96,14 @@ export interface PendingEntry {
   readingCompleted?: boolean;
 }
 
+export interface DeletedEntrySnapshot {
+  deletedAt: number;
+  entry: PendingEntry;
+  userId?: number | null;
+}
+
+export type SavePendingResult = 'saved' | 'merged' | 'duplicate' | 'error';
+
 export interface JP343UserState {
   isLoggedIn: boolean;
   userId: number | null;
@@ -227,8 +235,11 @@ export type ExtensionMessage =
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
   | { type: 'GET_PENDING_ENTRIES' }
-  | { type: 'DELETE_PENDING_ENTRY'; entryId: string }
-  | { type: 'DELETE_PENDING_BY_SERVER_ID'; serverEntryId: number }
+  | { type: 'DELETE_PENDING_ENTRY'; entryId: string; entrySnapshot?: PendingEntry }
+  | { type: 'DELETE_PENDING_BY_SERVER_ID'; serverEntryId: number; entrySnapshot?: PendingEntry }
+  | { type: 'GET_DELETED_ENTRIES' }
+  | { type: 'RESTORE_DELETED_ENTRY'; entryId: string }
+  | { type: 'PURGE_DELETED_ENTRY'; entryId: string }
   | { type: 'CLEAR_SYNCED_ENTRIES' }
   | { type: 'STOP_SESSION' }
   | { type: 'PAUSE_SESSION' }
@@ -440,6 +451,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 export const STORAGE_KEYS = {
   PENDING: 'jp343_extension_pending',
   PENDING_VOTES: 'jp343_extension_pending_votes',
+  DELETED_ENTRIES: 'jp343_deleted_entries',
   SESSION: 'jp343_extension_session',
   USER: 'jp343_extension_user',
   SETTINGS: 'jp343_extension_settings',

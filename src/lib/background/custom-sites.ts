@@ -172,7 +172,7 @@ export async function addCustomSite(host: string): Promise<{ ok: boolean; error?
   return { ok: true, site };
 }
 
-export async function removeCustomSite(id: string): Promise<void> {
+export async function removeCustomSite(id: string): Promise<string | null> {
   let removedHost: string | null = null;
   await withStorageLock(async () => {
     const state = await loadState();
@@ -192,6 +192,7 @@ export async function removeCustomSite(id: string): Promise<void> {
       await browser.permissions.remove({ origins: [customSiteOrigin(removedHost)] });
     } catch { /* skipped */ }
   }
+  return removedHost;
 }
 
 export function originsIncludeHost(origins: string[], host: string): boolean {

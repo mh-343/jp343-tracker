@@ -43,10 +43,11 @@ import {
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
 import { syncReaderRegistration } from '../lib/background/reader-sync';
-import { READER_SOURCE_LIST, readerSourceForOrigins } from '../lib/reader-sources';
+import { READER_SOURCE_LIST } from '../lib/reader-sources';
 import { findMergeTarget, applyMergeUpdate } from '../lib/background/pending-merge';
-import { syncCustomSitesRegistration, originsIncludeHost } from '../lib/background/custom-sites';
-import { reinjectTrackedTabs, reinjectReaderTabs, reinjectCustomSitesTabs } from '../lib/background/reinject';
+import { syncCustomSitesRegistration } from '../lib/background/custom-sites';
+import { reinjectTrackedTabs } from '../lib/background/reinject';
+import { initPermissionListeners, finalizeRevokedCustomSession } from '../lib/background/permission-listeners';
 import type {
   ExtensionMessage,
   PendingEntry,
@@ -58,7 +59,8 @@ import type {
   BatchSyncResponse,
   Platform,
   ExtensionDiagnostics,
-  PlatformHealth
+  PlatformHealth,
+  SavePendingResult
 } from '../types';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../types';
 import { initErrorReporter, reportError, flushErrors } from '../lib/error-reporter';
@@ -385,11 +387,11 @@ export default defineBackground(() => {
     }
   })().catch(() => {});
 
-  async function savePendingEntry(entry: PendingEntry): Promise<void> {
-    const saved = await withStorageLock(async () => {
+  async function savePendingEntry(entry: PendingEntry): Promise<SavePendingResult> {
+    const result = await withStorageLock<SavePendingResult>(async () => {
       try {
         const pending = await loadPendingEntries();
-        if (pending.some(e => e.id === entry.id)) return false;
+        if (pending.some(e => e.id === entry.id)) return 'duplicate';
 
         const settings = await loadSettings();
         if (settings.mergeSameDaySessions) {
@@ -399,7 +401,7 @@ export default defineBackground(() => {
             applyMergeUpdate(mergeTarget, entry);
             await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
             log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
-            return true;
+            return 'merged';
           }
         }
 
@@ -407,14 +409,15 @@ export default defineBackground(() => {
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
         log('[JP343] Entry saved. Pending:', pending.length);
         updateBadge();
-        return true;
+        return 'saved';
       } catch (error) {
         log('[JP343] Failed to save entry:', error);
-        return false;
+        return 'error';
       }
     });
-    if (saved) await updateStats(entry);
+    if (result === 'saved' || result === 'merged') await updateStats(entry);
     await triggerSync();
+    return result;
   }
 
   let syncInProgress = false;
@@ -817,6 +820,7 @@ export default defineBackground(() => {
 
   let resolveRecovery: () => void;
   const recoveryReady = new Promise<void>(r => { resolveRecovery = r; });
+  recoverSession().finally(() => resolveRecovery());
 
   browser.runtime.onInstalled.addListener((details) => {
     if (details.reason !== 'update') return;
@@ -824,35 +828,7 @@ export default defineBackground(() => {
     return recoveryReady.then(() => reinjectTrackedTabs(log));
   });
 
-  // Re-grant of a reader host access
-  browser.permissions.onAdded.addListener((perms) => {
-    const source = readerSourceForOrigins(perms.origins);
-    if (!source) return;
-    void syncReaderRegistration(source).then(() => reinjectReaderTabs(log));
-  });
-
-  async function finalizeRevokedCustomSession(origins: string[]): Promise<void> {
-    const session = tracker.getCurrentSession();
-    if (!session || session.platform !== 'generic') return;
-    let host: string;
-    try { host = new URL(session.url).hostname; } catch { return; }
-    if (!originsIncludeHost(origins, host)) return;
-    const entry = tracker.finalizeSession();
-    if (entry) await savePendingEntry(entry);
-    await saveSessionState(null);
-    scheduleStatusBadgeUpdate();
-  }
-
-  browser.permissions.onAdded.addListener((perms) => {
-    if (!perms.origins?.length) return;
-    void syncCustomSitesRegistration().then(() => reinjectCustomSitesTabs(log));
-  });
-
-  browser.permissions.onRemoved.addListener((perms) => {
-    if (!perms.origins?.length) return;
-    void syncCustomSitesRegistration();
-    void finalizeRevokedCustomSession(perms.origins);
-  });
+  initPermissionListeners({ log, savePendingEntry, saveSessionState });
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 
@@ -880,6 +856,8 @@ export default defineBackground(() => {
     getLastSkippedChannel: () => lastSkippedChannel,
     fetchAndStoreAvatar,
     pullChannelsFromServer,
+    finalizeRevokedCustomOrigins: (origins: string[]) =>
+      finalizeRevokedCustomSession(origins, { savePendingEntry, saveSessionState }),
   }, diagnosticsContext);
 
   browser.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
@@ -890,9 +868,11 @@ export default defineBackground(() => {
     return true;
   });
 
-  browser.commands.onCommand.addListener((command: string) => {
-    handleShortcutCommand(command, handleMessage);
-  });
+  if (browser.commands?.onCommand) {
+    browser.commands.onCommand.addListener((command: string) => {
+      handleShortcutCommand(command, handleMessage);
+    });
+  }
 
   const updateTrackingMenu = initContextMenu({
     recoveryReady,
@@ -1043,7 +1023,6 @@ export default defineBackground(() => {
   }
 
   migrateHourlyMinutes().catch(() => {});
-  recoverSession().finally(() => resolveRecovery());
   fetchAndCacheServerStats();
   fetchAndCacheServerSessions();
 

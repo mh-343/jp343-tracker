@@ -4,6 +4,7 @@ import type {
   ExtensionSettings,
   ExtensionStats,
   PendingEntry,
+  SavePendingResult,
   TrackingSession,
 } from '../../types';
 
@@ -20,7 +21,7 @@ export interface BackgroundMessageContext {
   ensureFreshSettings: () => Promise<void>;
   syncSettingsToServer: (settings: ExtensionSettings) => Promise<void>;
   applyChannelOp: (op: Omit<ChannelOp, 'opId' | 'timestamp'>) => Promise<void>;
-  savePendingEntry: (entry: PendingEntry) => Promise<void>;
+  savePendingEntry: (entry: PendingEntry) => Promise<SavePendingResult>;
   saveSessionState: (session: TrackingSession | null) => Promise<void>;
   loadStats: () => Promise<ExtensionStats>;
   subtractFromStats: (entry: PendingEntry) => Promise<void>;
@@ -32,4 +33,5 @@ export interface BackgroundMessageContext {
   getLastSkippedChannel: () => SkippedChannelInfo | null;
   fetchAndStoreAvatar: (url: string, userId: number) => Promise<void>;
   pullChannelsFromServer: () => Promise<void>;
+  finalizeRevokedCustomOrigins: (origins: string[]) => Promise<void>;
 }

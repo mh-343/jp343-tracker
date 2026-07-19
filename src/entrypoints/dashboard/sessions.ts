@@ -1,5 +1,7 @@
-import type { PendingEntry } from '../../types';
+import type { PendingEntry, Platform, ActivityType } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { renderRecentlyDeleted } from './recently-deleted';
+import { armDeleteButton } from './delete-confirm';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { ajaxPost } from './api';
 import type { ServerSession, ServerStatsResponse } from './api';
@@ -301,8 +303,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     delBtn.className = 'btn-delete-entry';
     delBtn.textContent = '×';
     delBtn.title = 'Delete';
-    delBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
+    armDeleteButton(delBtn, async () => {
       if (entry.synced && entry.serverEntryId) {
         const result = await browser.storage.local.get([STORAGE_KEYS.USER]);
         const userState = result[STORAGE_KEYS.USER];
@@ -357,6 +358,29 @@ function pendingToServerSession(entry: PendingEntry): ServerSession {
     image: entry.thumbnail || undefined,
     url: entry.url,
     activity_type: entry.activityType,
+  };
+}
+
+function serverSessionToPendingEntry(session: ServerSession): PendingEntry {
+  return {
+    id: `server-${session.id}`,
+    date: session.date || new Date().toISOString(),
+    duration_min: (session.duration_seconds || 0) / 60,
+    project: session.title || 'Session',
+    project_id: session.project_id ?? '',
+    platform: (session.platform || 'generic') as Platform,
+    source: 'extension',
+    url: session.url || '',
+    thumbnail: session.image || null,
+    synced: true,
+    syncedAt: session.date || null,
+    syncAttempts: 0,
+    lastSyncError: null,
+    serverEntryId: Number(session.id) || null,
+    channelId: null,
+    channelName: null,
+    channelUrl: null,
+    activityType: session.activity_type as ActivityType | undefined
   };
 }
 
@@ -436,11 +460,37 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   delBtn.className = 'btn-delete-entry';
   delBtn.textContent = '×';
   delBtn.title = 'Delete';
-  delBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
+  armDeleteButton(delBtn, async () => {
+    const idStr = String(session.id ?? '');
+    if (!idStr) return;
+    if (!/^\d+$/.test(idStr)) {
+      // Local entry shown in the merged list
+      await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: idStr });
+      requestRefresh();
+      return;
+    }
+    const result = await browser.storage.local.get([STORAGE_KEYS.USER]);
+    const userState = result[STORAGE_KEYS.USER];
+    if (!userState?.extApiToken && !userState?.nonce) return;
+    try {
+      if (userState.extApiToken) {
+        const res = await ajaxPost('jp343_extension_delete_time_entry', {
+          ext_api_token: userState.extApiToken,
+          entry_id: idStr
+        });
+        if (!res.success) return;
+      } else {
+        const res = await ajaxPost('jp343_delete_time_entry', {
+          nonce: userState.nonce!,
+          entry_id: idStr
+        });
+        if (!res.success) return;
+      }
+    } catch { return; }
+
     item.remove();
     if (rawServerCache) {
-      rawServerCache = rawServerCache.filter(s => String(s.id) !== String(session.id));
+      rawServerCache = rawServerCache.filter(s => String(s.id) !== idStr);
     }
     const durationSec = session.duration_seconds || 0;
     if (durationSec > 0) {
@@ -475,31 +525,18 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
         browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: cached });
       }
     }
-    const result = await browser.storage.local.get([STORAGE_KEYS.USER]);
-    const userState = result[STORAGE_KEYS.USER];
-    if ((userState?.extApiToken || userState?.nonce) && session.id) {
+    let notified = false;
+    for (let attempt = 0; attempt < 2 && !notified; attempt++) {
       try {
-        if (userState.extApiToken) {
-          const result = await ajaxPost('jp343_extension_delete_time_entry', {
-            ext_api_token: userState.extApiToken,
-            entry_id: String(session.id)
-          });
-          if (!result.success) return;
-        } else {
-          const result = await ajaxPost('jp343_delete_time_entry', {
-            nonce: userState.nonce!,
-            entry_id: String(session.id)
-          });
-          if (!result.success) return;
-        }
-      } catch { return; }
+        await browser.runtime.sendMessage({
+          type: 'DELETE_PENDING_BY_SERVER_ID',
+          serverEntryId: Number(idStr),
+          entrySnapshot: serverSessionToPendingEntry(session)
+        });
+        notified = true;
+      } catch { /* retry once */ }
     }
-    if (session.id) {
-      browser.runtime.sendMessage({
-        type: 'DELETE_PENDING_BY_SERVER_ID',
-        serverEntryId: Number(session.id)
-      }).catch(() => {});
-    }
+    void renderRecentlyDeleted();
   });
   item.appendChild(delBtn);
 

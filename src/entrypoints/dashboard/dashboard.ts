@@ -7,6 +7,7 @@ import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBa
 import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats } from './stats';
 import { setTargetStartTimes, setDayStartHourForTargetStart, computeLocalFirstSessions, renderTargetStartFromLocal, renderTargetStartChart } from './target-start';
 import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
+import { renderRecentlyDeleted } from './recently-deleted';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
@@ -86,6 +87,7 @@ async function refresh(): Promise<void> {
     renderFooter(data.userState);
     void renderAnkiCard();
     void renderReadingCard();
+    void renderRecentlyDeleted();
 
     if (isLoggedIn) {
       await applyCachedServerStats();
@@ -266,8 +268,12 @@ const onReaderPermissionChange = (perms: { origins?: string[] }): void => {
   if (!readerSourceForOrigins(perms.origins)) return;
   void renderReadingCard();
 };
-browser.permissions.onAdded.addListener(onReaderPermissionChange);
-browser.permissions.onRemoved.addListener(onReaderPermissionChange);
+if (browser.permissions?.onAdded) {
+  browser.permissions.onAdded.addListener(onReaderPermissionChange);
+}
+if (browser.permissions?.onRemoved) {
+  browser.permissions.onRemoved.addListener(onReaderPermissionChange);
+}
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {

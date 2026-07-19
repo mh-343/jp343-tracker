@@ -1,8 +1,9 @@
-import type { ExtensionMessage, PendingEntry, CachedServerSession, Platform, ActivityType } from '../../types';
+import type { ExtensionMessage, PendingEntry, CachedServerSession, Platform, ActivityType, SavePendingResult } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { updateBadge } from '../badge-service';
 import { loadPendingEntries } from '../pending-entries';
 import { withStorageLock } from '../storage-lock';
+import { loadDeletedSnapshots, stashDeletedEntry, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
 import type { BackgroundMessageContext } from './message-context';
 
 export async function handlePendingMessage(
@@ -48,6 +49,8 @@ export async function handlePendingMessage(
         const { deletedEntry, remaining } = await withStorageLock(async () => {
           const pending = await loadPendingEntries();
           const deletedEntry = pending.find(e => e.id === message.entryId);
+          const snapshot = deletedEntry ?? message.entrySnapshot;
+          if (snapshot) await stashDeletedEntry(snapshot);
           const filtered = pending.filter(e => e.id !== message.entryId);
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
           updateBadge();
@@ -66,6 +69,8 @@ export async function handlePendingMessage(
         const { match, found } = await withStorageLock(async () => {
           const pending = await loadPendingEntries();
           const match = pending.find(e => e.serverEntryId === message.serverEntryId);
+          const snapshot = match ?? message.entrySnapshot;
+          if (snapshot) await stashDeletedEntry(snapshot);
           if (!match) return { match: undefined, found: false };
           const filtered = pending.filter(e => e.serverEntryId !== message.serverEntryId);
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
@@ -78,6 +83,60 @@ export async function handlePendingMessage(
         return { success: true, data: { found } };
       }
       return { success: false, error: 'No serverEntryId provided' };
+    }
+
+    case 'GET_DELETED_ENTRIES': {
+      const snapshots = await loadDeletedSnapshots();
+      const userId = await currentUserId();
+      return { success: true, data: { entries: snapshots.filter(s => snapshotVisibleFor(s, userId)) } };
+    }
+
+    case 'RESTORE_DELETED_ENTRY': {
+      if ('entryId' in message && typeof message.entryId === 'string') {
+        const snapshot = await takeDeletedSnapshot(message.entryId);
+        if (!snapshot) return { success: false, error: 'Entry not found' };
+        if (!snapshotVisibleFor(snapshot, await currentUserId())) {
+          try {
+            await putDeletedSnapshot(snapshot);
+          } catch { /* storage unavailable */ }
+          return { success: false, error: 'Entry not found' };
+        }
+        const entry: PendingEntry = {
+          ...snapshot.entry,
+          synced: false,
+          syncedAt: null,
+          syncAttempts: 0,
+          lastSyncError: null,
+          serverEntryId: null
+        };
+        let result: SavePendingResult = 'error';
+        try {
+          result = await context.savePendingEntry(entry);
+        } catch { /* treated as error */ }
+        if (result === 'error') {
+          try {
+            await putDeletedSnapshot(snapshot);
+          } catch { /* storage unavailable */ }
+          return { success: false, error: 'Could not restore entry' };
+        }
+        return { success: true };
+      }
+      return { success: false, error: 'No entryId provided' };
+    }
+
+    case 'PURGE_DELETED_ENTRY': {
+      if ('entryId' in message && typeof message.entryId === 'string') {
+        const snapshot = await takeDeletedSnapshot(message.entryId);
+        if (!snapshot) return { success: false, error: 'Entry not found' };
+        if (!snapshotVisibleFor(snapshot, await currentUserId())) {
+          try {
+            await putDeletedSnapshot(snapshot);
+          } catch { /* storage unavailable */ }
+          return { success: false, error: 'Entry not found' };
+        }
+        return { success: true };
+      }
+      return { success: false, error: 'No entryId provided' };
     }
 
     case 'CLEAR_SYNCED_ENTRIES': {
