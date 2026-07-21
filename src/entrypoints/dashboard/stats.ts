@@ -608,9 +608,6 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     const dot = msgBtn.querySelector('.header-msg-dot') as HTMLElement | null;
     if (dot) dot.style.display = serverData.has_unread_ticket ? '' : 'none';
   }
-  if (!fromCache) {
-    browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: { ...serverData, cachedAt: Date.now() } });
-  }
 }
 
 export async function applyCachedServerStats(): Promise<void> {

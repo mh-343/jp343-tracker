@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { armDeleteButton } from './delete-confirm';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
+import { subtractSessionFromServerStats } from '../../lib/server-stats';
 import { ajaxPost } from './api';
 import type { ServerSession, ServerStatsResponse } from './api';
 import { getDayStartHour } from './stats';
@@ -325,7 +326,7 @@ export function renderSessions(entries: PendingEntry[]): void {
           } catch { return; }
         }
       }
-      await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id });
+      await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id, entrySnapshot: entry });
       requestRefresh();
     });
     item.appendChild(delBtn);
@@ -497,32 +498,23 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
       const cached: ServerStatsResponse | undefined =
         (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
       if (cached) {
-        if (cached.total_seconds) {
-          cached.total_seconds -= durationSec;
-          renderHeroTime(cached.total_seconds / 60);
-        }
+        const dsh = getDayStartHour();
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const tzMatch = !cached.timezone || cached.timezone === browserTz;
-        const dsh = getDayStartHour();
         const sessionDate = session.date ? getLocalDateString(new Date(session.date), dsh) : '';
         const today = getLocalDateString(new Date(), dsh);
-        if (sessionDate === today && cached.today_seconds && tzMatch) {
-          cached.today_seconds -= durationSec;
-          setText('statToday', formatStatDuration(cached.today_seconds / 60));
-        }
         const weekDays = getWeekDates(dsh);
         const weekStart = weekDays[0]?.date ?? '';
         const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
-        if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {
-          if (cached.calendar_week_seconds !== undefined) {
-            cached.calendar_week_seconds -= durationSec;
-            setText('statWeek', formatStatDuration(cached.calendar_week_seconds / 60));
-          } else if (cached.week_seconds) {
-            cached.week_seconds -= durationSec;
-            setText('statWeek', formatStatDuration(cached.week_seconds / 60));
-          }
+        subtractSessionFromServerStats(cached, durationSec, sessionDate, today, weekStart, weekEnd, browserTz);
+        if (cached.total_seconds !== undefined) renderHeroTime(cached.total_seconds / 60);
+        if (sessionDate === today && tzMatch && cached.today_seconds !== undefined) {
+          setText('statToday', formatStatDuration(cached.today_seconds / 60));
         }
-        browser.storage.local.set({ [CACHED_SERVER_STATS_KEY]: cached });
+        if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {
+          const weekSec = cached.calendar_week_seconds ?? cached.week_seconds;
+          if (weekSec !== undefined) setText('statWeek', formatStatDuration(weekSec / 60));
+        }
       }
     }
     let notified = false;

@@ -798,8 +798,17 @@ export default defineBackground(() => {
     const result = await postJsonWithRetry(ajaxUrl, params, 'get_time_stats');
     if (!result) return;
     if (result.success && result.data) {
-      await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...result.data, cachedAt: Date.now() } });
-      await onAuthSuccess();
+      const data = result.data;
+      const written = await withStorageLock(async () => {
+        const stored = await browser.storage.local.get(STORAGE_KEYS.USER);
+        const fresh = stored[STORAGE_KEYS.USER] as JP343UserState | undefined;
+        if (!fresh?.isLoggedIn) return false;
+        if (userState.extApiToken && fresh.extApiToken !== userState.extApiToken) return false;
+        if (userState.userId != null && fresh.userId != null && fresh.userId !== userState.userId) return false;
+        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...data, cachedAt: Date.now() } });
+        return true;
+      });
+      if (written) await onAuthSuccess();
     } else if (isAuthFailure(result as { success: boolean; data?: { code?: string } }, !!userState.extApiToken)) {
       await onAuthFailure();
     }
