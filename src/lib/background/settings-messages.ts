@@ -58,8 +58,8 @@ export async function handleSettingsMessage(
         if (merged.isLoggedIn && merged.extApiToken) {
           if (identityChanged) clearCachedServerSessions().catch(() => {});
           await context.pullAndMergeSettingsFromServer().catch(() => {});
-          context.fetchAndCacheServerStats();
-          fetchAndCacheServerSessions().catch(() => {});
+          context.fetchAndCacheServerStats(true);
+          fetchAndCacheServerSessions(true).catch(() => {});
           flushCustomSiteRenames({ saveSessionState: context.saveSessionState }).catch(() => {});
         } else if (!merged.isLoggedIn) {
           clearCachedServerSessions().catch(() => {});

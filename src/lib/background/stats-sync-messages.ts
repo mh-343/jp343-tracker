@@ -32,6 +32,7 @@ export async function handleStatsSyncMessage(
     }
 
     case 'GET_STATS': {
+      void context.fetchAndCacheServerStats();
       const stats = await context.loadStats();
       const settings = await context.loadSettings();
       const dsh = settings.dayStartHour || 0;

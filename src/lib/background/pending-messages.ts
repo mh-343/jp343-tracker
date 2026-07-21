@@ -2,6 +2,7 @@ import type { ExtensionMessage, PendingEntry, CachedServerSession, Platform, Act
 import { STORAGE_KEYS } from '../../types';
 import { updateBadge } from '../badge-service';
 import { loadPendingEntries } from '../pending-entries';
+import { fetchAndCacheServerSessions } from '../server-sessions';
 import { withStorageLock } from '../storage-lock';
 import { loadDeletedSnapshots, stashDeletedEntry, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
 import type { BackgroundMessageContext } from './message-context';
@@ -12,6 +13,7 @@ export async function handlePendingMessage(
 ): Promise<unknown> {
   switch (message.type) {
     case 'GET_PENDING_ENTRIES': {
+      void fetchAndCacheServerSessions();
       const pending = await loadPendingEntries();
       const cached = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
       const serverSessions: CachedServerSession[] = cached[STORAGE_KEYS.CACHED_SERVER_SESSIONS] || [];

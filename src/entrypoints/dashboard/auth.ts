@@ -74,6 +74,7 @@ export async function doLogin(email: string, password: string): Promise<{ succes
       invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
+      browser.runtime.sendMessage({ type: 'JP343_SITE_LOADED', userState }).catch(() => {});
 
       return { success: true, userState };
     }
@@ -117,6 +118,7 @@ export async function doRegister(email: string, password: string): Promise<{ suc
       invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
+      browser.runtime.sendMessage({ type: 'JP343_SITE_LOADED', userState }).catch(() => {});
 
       return { success: true };
     }

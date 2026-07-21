@@ -49,6 +49,17 @@ async function loadCachedServerSessions(): Promise<CachedServerSession[]> {
   return (res[STORAGE_KEYS.CACHED_SERVER_SESSIONS] as CachedServerSession[] | undefined) ?? [];
 }
 
+export async function applyLocalRenamesToSessions(sessions: CachedServerSession[]): Promise<CachedServerSession[]> {
+  const state = await getCustomSitesState();
+  const names = state.names;
+  if (!names || Object.keys(names).length === 0) return sessions;
+  return sessions.map(s => {
+    if (!s.project_id?.startsWith('ext_generic_')) return s;
+    const rec = names[s.project_id.slice('ext_generic_'.length)];
+    return rec?.title ? { ...s, title: rec.title } : s;
+  });
+}
+
 async function patchLocalTitles(projectId: string, title: string): Promise<void> {
   const pending = await loadPendingEntries();
   const patched = pending.map((e: PendingEntry) => e.project_id === projectId ? { ...e, project: title } : e);

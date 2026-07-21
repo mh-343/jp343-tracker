@@ -42,7 +42,7 @@ export default defineConfig({
 
   manifest: ({ manifestVersion }) => ({
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.11.1',
+    version: '2.11.2',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {

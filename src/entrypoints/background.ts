@@ -21,6 +21,7 @@ import { handleShortcutCommand } from '../lib/background/shortcut-commands';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
+import { postJsonWithRetry, coalesceRefresh, type RefreshState } from '../lib/server-fetch';
 import { flushCustomSiteRenames } from '../lib/background/custom-site-names';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
 import { clearVoteStateCache, retryQueuedVotes } from '../lib/background/difficulty-messages';
@@ -455,6 +456,7 @@ export default defineBackground(() => {
     if (alarm.name === 'jp343-auto-sync-retry') {
       void syncAnki();
       await triggerSync();
+      fetchAndCacheServerStats().catch(() => {});
       await pullAndMergeSettingsFromServer().catch(() => {});
       flushChannelOps().catch(() => {});
       void retryQueuedVotes();
@@ -770,42 +772,37 @@ export default defineBackground(() => {
     updateTrackingMenu();
   }
 
-  async function fetchAndCacheServerStats(): Promise<void> {
-    try {
-      const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
-      const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
-      if (!userState?.isLoggedIn) return;
+  const statsRefreshState: RefreshState = { inFlight: null, lastAttempt: 0 };
 
-      const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
-      const params = new URLSearchParams();
+  function fetchAndCacheServerStats(force = false): Promise<void> {
+    return coalesceRefresh(statsRefreshState, 30000, force, runStatsFetch);
+  }
 
-      if (userState.extApiToken) {
-        params.set('action', 'jp343_extension_get_time_stats');
-        params.set('ext_api_token', userState.extApiToken);
-      } else if (userState.nonce) {
-        params.set('action', 'jp343_get_time_stats');
-        params.set('nonce', userState.nonce);
-      } else {
-        return;
-      }
+  async function runStatsFetch(): Promise<void> {
+    const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
+    const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
+    if (!userState?.isLoggedIn) return;
 
-      const controller = new AbortController();
-      const statsTimeout = setTimeout(() => controller.abort(), 10000);
-      let response: Response;
-      try {
-        response = await fetch(ajaxUrl, { method: 'POST', signal: controller.signal, body: params });
-      } finally {
-        clearTimeout(statsTimeout);
-      }
-      if (!response.ok) return;
-      const result = await response.json();
-      if (result.success && result.data) {
-        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...result.data, cachedAt: Date.now() } });
-        await onAuthSuccess();
-      } else if (isAuthFailure(result, !!userState.extApiToken)) {
-        await onAuthFailure();
-      }
-    } catch { /* server unreachable */ }
+    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+    const params = new URLSearchParams();
+    if (userState.extApiToken) {
+      params.set('action', 'jp343_extension_get_time_stats');
+      params.set('ext_api_token', userState.extApiToken);
+    } else if (userState.nonce) {
+      params.set('action', 'jp343_get_time_stats');
+      params.set('nonce', userState.nonce);
+    } else {
+      return;
+    }
+
+    const result = await postJsonWithRetry(ajaxUrl, params, 'get_time_stats');
+    if (!result) return;
+    if (result.success && result.data) {
+      await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...result.data, cachedAt: Date.now() } });
+      await onAuthSuccess();
+    } else if (isAuthFailure(result as { success: boolean; data?: { code?: string } }, !!userState.extApiToken)) {
+      await onAuthFailure();
+    }
   }
 
   async function ensureFreshSettings(): Promise<void> {
@@ -1023,8 +1020,8 @@ export default defineBackground(() => {
   }
 
   migrateHourlyMinutes().catch(() => {});
-  fetchAndCacheServerStats();
-  fetchAndCacheServerSessions();
+  fetchAndCacheServerStats(true);
+  fetchAndCacheServerSessions(true);
 
   // Channel sync: migration + init on SW start
   migrateToChannelSync().catch(() => {});

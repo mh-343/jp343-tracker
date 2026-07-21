@@ -27,7 +27,7 @@ export interface BackgroundMessageContext {
   subtractFromStats: (entry: PendingEntry) => Promise<void>;
   syncEntriesDirect: () => Promise<DirectSyncResult>;
   pullAndMergeSettingsFromServer: () => Promise<boolean>;
-  fetchAndCacheServerStats: () => Promise<void>;
+  fetchAndCacheServerStats: (force?: boolean) => Promise<void>;
   recoveryReady: Promise<void>;
   setLastSkippedChannel: (info: SkippedChannelInfo | null) => void;
   getLastSkippedChannel: () => SkippedChannelInfo | null;
