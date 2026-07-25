@@ -30,7 +30,6 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   generic: 'watching',
 };
 
-// script outranks declared
 export type LangSignalSource = 'script' | 'declared';
 
 export interface VideoState {

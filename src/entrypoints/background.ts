@@ -534,11 +534,13 @@ export default defineBackground(() => {
       ...(entry.mergeResync ? { merge_resync: '1' } : {}),
       ...(entry.readingCurrentPage != null ? { reading_current_page: String(entry.readingCurrentPage) } : {}),
       ...(entry.readingCompleted != null ? { reading_completed: entry.readingCompleted ? '1' : '0' } : {}),
-      // nested: imported backups are not field-validated
-      ...(entry.langSignal
+      // exact values: imported backups are not field-validated
+      ...(entry.langSignal === 'ja'
         ? {
-            lang_signal: entry.langSignal,
-            ...(entry.langSignalSrc ? { lang_signal_src: entry.langSignalSrc } : {})
+            lang_signal: 'ja',
+            ...(entry.langSignalSrc === 'script' || entry.langSignalSrc === 'declared'
+              ? { lang_signal_src: entry.langSignalSrc }
+              : {})
           }
         : {})
     };
