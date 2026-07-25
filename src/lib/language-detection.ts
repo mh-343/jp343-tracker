@@ -1,3 +1,5 @@
+import type { LangSignalSource } from '../types';
+
 const KANA_PATTERN = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
 const HIRAGANA_PATTERN = /\p{Script=Hiragana}/u;
 const KANJI_PATTERN = /\p{Script=Han}/u;
@@ -61,20 +63,24 @@ function isClearlyNonJapaneseTitle(text: string | null | undefined): boolean {
   return LATIN_PATTERN.test(text) && !hasJapaneseScript(text);
 }
 
-export function isLikelyJapaneseVideo(signals: JapaneseVideoSignals): boolean {
-  if (isJapaneseContent(signals.title)) return true;
-  if (signals.originalTitle && isJapaneseContent(signals.originalTitle)) return true;
+export function detectJapaneseEvidence(signals: JapaneseVideoSignals): LangSignalSource | null {
+  if (isJapaneseContent(signals.title)) return 'script';
+  if (signals.originalTitle && isJapaneseContent(signals.originalTitle)) return 'script';
   // hiragana channel name = Japanese
-  if (signals.channelName && HIRAGANA_PATTERN.test(signals.channelName)) return true;
-  if (isPredominantlyJapanese(signals.description)) return true;
+  if (signals.channelName && HIRAGANA_PATTERN.test(signals.channelName)) return 'script';
+  if (isPredominantlyJapanese(signals.description)) return 'script';
   const titleHasKanji = containsKanji(signals.title)
     || (!!signals.originalTitle && containsKanji(signals.originalTitle));
-  if (titleHasKanji && !!signals.channelName && isJapaneseContent(signals.channelName)) return true;
+  if (titleHasKanji && !!signals.channelName && isJapaneseContent(signals.channelName)) return 'script';
   // audio language is only a guess
   if (isJapaneseLanguageCode(signals.audioLanguage)) {
     if (!isClearlyNonJapaneseTitle(signals.title) && !isClearlyNonJapaneseTitle(signals.originalTitle)) {
-      return true;
+      return 'declared';
     }
   }
-  return false;
+  return null;
+}
+
+export function isLikelyJapaneseVideo(signals: JapaneseVideoSignals): boolean {
+  return detectJapaneseEvidence(signals) !== null;
 }

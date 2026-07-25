@@ -1,4 +1,4 @@
-import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType } from '../types';
+import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, LangSignalSource } from '../types';
 import { PLATFORM_ACTIVITY_TYPE } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
@@ -125,6 +125,15 @@ export class TimeTracker {
     log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
   }
 
+  // never clears, never downgrades
+  updateSessionLangSignal(src: LangSignalSource): void {
+    if (!this.session) return;
+    this.session.langSignal = 'ja';
+    if (!this.session.langSignalSrc || src === 'script') {
+      this.session.langSignalSrc = src;
+    }
+  }
+
   onAdStart(): void {
     if (!this.isInAd) {
       this.isInAd = true;
@@ -194,6 +203,8 @@ export class TimeTracker {
       channelName: this.session.channelName,
       channelUrl: this.session.channelUrl,
       activityType: this.session.activityType,
+      langSignal: this.session.langSignal,
+      langSignalSrc: this.session.langSignalSrc,
       serverEntryId: null
     };
 

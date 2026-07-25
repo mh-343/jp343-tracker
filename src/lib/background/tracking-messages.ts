@@ -1,8 +1,8 @@
-import type { ActivityType, ExtensionMessage, Platform, TrackingSession, VideoState } from '../../types';
+import type { ActivityType, ExtensionMessage, LangSignalSource, Platform, TrackingSession, VideoState } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
-import { isJapaneseContent, isLikelyJapaneseVideo } from '../language-detection';
+import { detectJapaneseEvidence, isJapaneseContent } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import { getReaderState } from './reader-sync';
 import type { ReaderSource } from '../reader-sources';
@@ -11,7 +11,7 @@ import { getCustomSitesState, isAllowedCustomSiteUrl } from './custom-sites';
 import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
 
-const jpCheckCache = new Map<string, boolean>();
+const jpCheckCache = new Map<string, LangSignalSource | null>();
 
 export function isJapaneseGatedPlatform(platform: Platform): boolean {
   return platform === 'youtube' || platform === 'twitch';
@@ -26,18 +26,19 @@ function isReaderHost(url: string, source: ReaderSource): boolean {
   }
 }
 
-async function checkJapaneseVideo(state: VideoState): Promise<boolean> {
-  if (isLikelyJapaneseVideo(state)) return true;
-  if (!state.videoId || state.platform !== 'youtube') return false;
+async function checkJapaneseVideo(state: VideoState): Promise<LangSignalSource | null> {
+  const direct = detectJapaneseEvidence(state);
+  if (direct) return direct;
+  if (!state.videoId || state.platform !== 'youtube') return null;
   if (jpCheckCache.has(state.videoId)) return jpCheckCache.get(state.videoId)!;
   try {
     const title = await fetchOembedTitle(state.videoId);
-    const result = isJapaneseContent(title ?? '');
+    const result = isJapaneseContent(title ?? '') ? 'script' : null;
     jpCheckCache.set(state.videoId, result);
     return result;
   } catch {
-    jpCheckCache.set(state.videoId, false);
-    return false;
+    jpCheckCache.set(state.videoId, null);
+    return null;
   }
 }
 
@@ -139,6 +140,9 @@ export async function handleTrackingMessage(
           }
         }
 
+        // recorded even when the filter is off
+        let langEvidence = detectJapaneseEvidence(message.state);
+
         if (
           settings.trackJapaneseOnly &&
           isJapaneseGatedPlatform(message.state.platform)
@@ -146,8 +150,9 @@ export async function handleTrackingMessage(
           const isWhitelisted = channelId &&
             isChannelInList(settings.whitelistedChannels, channelId, message.state.channelUrl);
           if (!isWhitelisted && message.state.title) {
-            const isJP = await checkJapaneseVideo(message.state);
-            if (!isJP) {
+            const gateEvidence = await checkJapaneseVideo(message.state);
+            if (gateEvidence) langEvidence = gateEvidence;
+            if (!gateEvidence) {
               if (channelId) {
                 context.setLastSkippedChannel({
                   channelId,
@@ -192,6 +197,7 @@ export async function handleTrackingMessage(
         }
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
+        if (langEvidence) tracker.updateSessionLangSignal(langEvidence);
         if (message.state.platform === 'generic') {
           try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
         }
@@ -278,6 +284,10 @@ export async function handleTrackingMessage(
           tracker.updateSessionThumbnail(message.state.thumbnailUrl);
         }
 
+        // late metadata can turn a session Japanese
+        const lateEvidence = detectJapaneseEvidence(message.state);
+        if (lateEvidence) tracker.updateSessionLangSignal(lateEvidence);
+
         if (message.state.channelId || message.state.title) {
           const settings = await context.loadSettings();
           if (message.state.channelId && isChannelInList(settings.blockedChannels, message.state.channelId, message.state.channelUrl)) {
@@ -305,8 +315,9 @@ export async function handleTrackingMessage(
             const isWhitelisted = chId &&
               isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
             if (!isWhitelisted) {
-              const isJP = await checkJapaneseVideo(message.state);
-              if (!isJP) {
+              const confirmEvidence = await checkJapaneseVideo(message.state);
+              if (confirmEvidence) tracker.updateSessionLangSignal(confirmEvidence);
+              if (!confirmEvidence) {
                 if (chId) {
                   context.setLastSkippedChannel({
                     channelId: chId,
@@ -339,12 +350,14 @@ export async function handleTrackingMessage(
             if (lastSkipped && chId && (lastSkipped.channelId === chId || (lastSkipped.channelUrl && message.state.channelUrl && lastSkipped.channelUrl === message.state.channelUrl))) {
               const isWhitelisted = isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
               if (!isWhitelisted) {
-                const isJP = await checkJapaneseVideo(message.state);
-                if (isJP) {
+                const reEvalEvidence = await checkJapaneseVideo(message.state);
+                if (reEvalEvidence) {
                   context.log('[JP343] Re-evaluation: original title is JP, starting session');
                   context.setLastSkippedChannel(null);
                   const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
                   tracker.startSession(message.state as VideoState, tabId);
+                  // no session existed before startSession above
+                  tracker.updateSessionLangSignal(reEvalEvidence);
                   scheduleStatusBadgeUpdate();
                 }
               }

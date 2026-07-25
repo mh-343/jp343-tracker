@@ -533,7 +533,14 @@ export default defineBackground(() => {
       date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
       ...(entry.mergeResync ? { merge_resync: '1' } : {}),
       ...(entry.readingCurrentPage != null ? { reading_current_page: String(entry.readingCurrentPage) } : {}),
-      ...(entry.readingCompleted != null ? { reading_completed: entry.readingCompleted ? '1' : '0' } : {})
+      ...(entry.readingCompleted != null ? { reading_completed: entry.readingCompleted ? '1' : '0' } : {}),
+      // nested: imported backups are not field-validated
+      ...(entry.langSignal
+        ? {
+            lang_signal: entry.langSignal,
+            ...(entry.langSignalSrc ? { lang_signal_src: entry.langSignalSrc } : {})
+          }
+        : {})
     };
   }
 
@@ -967,6 +974,8 @@ export default defineBackground(() => {
               channelName: savedSession.channelName,
               channelUrl: savedSession.channelUrl,
               activityType: savedSession.activityType,
+              langSignal: savedSession.langSignal,
+              langSignalSrc: savedSession.langSignalSrc,
               serverEntryId: null
             };
             await savePendingEntry(entry);
@@ -1016,6 +1025,8 @@ export default defineBackground(() => {
       channelName: savedSession.channelName,
       channelUrl: savedSession.channelUrl,
       activityType: savedSession.activityType,
+      langSignal: savedSession.langSignal,
+      langSignalSrc: savedSession.langSignalSrc,
       serverEntryId: null
     };
 

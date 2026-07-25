@@ -6,7 +6,7 @@ import {
   scheduleStatusBadgeUpdate,
   updateStatusBadge,
 } from '../badge-service';
-import { isLikelyJapaneseVideo } from '../language-detection';
+import { detectJapaneseEvidence } from '../language-detection';
 import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../server-sessions';
 import { flushCustomSiteRenames } from './custom-site-names';
 import { tracker } from '../time-tracker';
@@ -177,12 +177,13 @@ export async function handleSettingsMessage(
         if (settings.trackJapaneseOnly) {
           const currentSession = tracker.getCurrentSession();
           if (currentSession && currentSession.channelId === message.channelId) {
-            const videoIsJp = isLikelyJapaneseVideo({
+            const evidence = detectJapaneseEvidence({
               title: currentSession.title,
               channelName: currentSession.channelName,
               audioLanguage: currentSession.audioLanguage
             });
-            if (!videoIsJp) {
+            if (evidence) tracker.updateSessionLangSignal(evidence);
+            if (!evidence) {
               const entry = tracker.finalizeSession();
               if (entry) {
                 await context.savePendingEntry(entry);

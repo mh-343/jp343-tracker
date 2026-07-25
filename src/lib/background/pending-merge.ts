@@ -26,6 +26,12 @@ export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry)
   if (!mergeTarget.thumbnail && entry.thumbnail) {
     mergeTarget.thumbnail = entry.thumbnail;
   }
+  if (entry.langSignal === 'ja') {
+    mergeTarget.langSignal = 'ja';
+    if (!mergeTarget.langSignalSrc || entry.langSignalSrc === 'script') {
+      mergeTarget.langSignalSrc = entry.langSignalSrc;
+    }
+  }
   if (mergeTarget.synced) {
     mergeTarget.synced = false;
     mergeTarget.syncedAt = null;

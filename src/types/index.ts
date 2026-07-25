@@ -30,6 +30,9 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   generic: 'watching',
 };
 
+// script outranks declared
+export type LangSignalSource = 'script' | 'declared';
+
 export interface VideoState {
   isPlaying: boolean;
   currentTime: number;
@@ -68,6 +71,8 @@ export interface TrackingSession {
   channelName: string | null;
   channelUrl: string | null;
   audioLanguage?: string | null;
+  langSignal?: 'ja';
+  langSignalSrc?: LangSignalSource;
   activityType?: ActivityType;
 }
 
@@ -94,6 +99,8 @@ export interface PendingEntry {
   chars?: number;
   readingCurrentPage?: number;
   readingCompleted?: boolean;
+  langSignal?: 'ja';
+  langSignalSrc?: LangSignalSource;
 }
 
 export interface DeletedEntrySnapshot {
