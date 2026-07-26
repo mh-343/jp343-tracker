@@ -44,11 +44,18 @@ async function runSessionsFetch(): Promise<void> {
   }));
 
   await withStorageLock(async () => {
+    const stored = await browser.storage.local.get(STORAGE_KEYS.USER);
+    const fresh = stored[STORAGE_KEYS.USER] as JP343UserState | undefined;
+    if (!fresh?.isLoggedIn) return;
+    if (userState.extApiToken && fresh.extApiToken !== userState.extApiToken) return;
+    if (userState.userId != null && fresh.userId != null && fresh.userId !== userState.userId) return;
     const sessions = await applyLocalRenamesToSessions(mapped);
     await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: sessions });
   });
 }
 
 export async function clearCachedServerSessions(): Promise<void> {
-  await browser.storage.local.remove(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
+  await withStorageLock(async () => {
+    await browser.storage.local.remove(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
+  });
 }

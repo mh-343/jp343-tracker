@@ -193,7 +193,7 @@ export function renderHeroTime(totalMinutes: number): void {
   const el = document.getElementById('heroTime');
   if (!el) return;
   el.classList.remove('skeleton');
-  const totalSec = Math.round(totalMinutes * 60);
+  const totalSec = Math.round(Math.max(0, totalMinutes) * 60);
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   el.textContent = '';

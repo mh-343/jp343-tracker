@@ -182,7 +182,10 @@ export async function handleSettingsMessage(
               channelName: currentSession.channelName,
               audioLanguage: currentSession.audioLanguage
             });
-            if (evidence) tracker.updateSessionLangSignal(evidence);
+            if (evidence) {
+              tracker.updateSessionLangSignal(evidence);
+              await context.saveSessionState(tracker.getCurrentSession());
+            }
             if (!evidence) {
               const entry = tracker.finalizeSession();
               if (entry) {

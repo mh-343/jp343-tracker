@@ -6,9 +6,10 @@ import { fetchAndCacheServerSessions } from '../server-sessions';
 import { withStorageLock } from '../storage-lock';
 import { getLocalDateString, getWeekDates } from '../format-utils';
 import { subtractSessionFromServerStats, type DecrementableServerStats } from '../server-stats';
-import { loadDeletedSnapshots, stashDeletedEntry, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
+import { loadDeletedSnapshots, stashDeletedEntry, hasDeletedSnapshot, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
 import type { BackgroundMessageContext } from './message-context';
 
+// Caller must hold the storage lock
 async function applyDeleteToStatsCache(
   snapshot: PendingEntry | undefined,
   context: BackgroundMessageContext
@@ -16,21 +17,30 @@ async function applyDeleteToStatsCache(
   if (snapshot?.serverEntryId == null) return;
   const deltaSeconds = (snapshot.duration_min || 0) * 60;
   if (deltaSeconds <= 0 || !snapshot.date) return;
-  await withStorageLock(async () => {
-    const stored = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_STATS);
-    const cached = stored[STORAGE_KEYS.CACHED_SERVER_STATS] as DecrementableServerStats | undefined;
-    if (!cached) return;
-    const settings = await context.loadSettings();
-    const dsh = settings.dayStartHour || 0;
-    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const weekDays = getWeekDates(dsh);
-    subtractSessionFromServerStats(
-      cached, deltaSeconds,
-      getLocalDateString(new Date(snapshot.date), dsh), getLocalDateString(new Date(), dsh),
-      weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz
-    );
-    await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: cached });
-  });
+  const stored = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_STATS);
+  const cached = stored[STORAGE_KEYS.CACHED_SERVER_STATS] as DecrementableServerStats | undefined;
+  if (!cached) return;
+  const settings = await context.loadSettings();
+  const dsh = settings.dayStartHour || 0;
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const weekDays = getWeekDates(dsh);
+  subtractSessionFromServerStats(
+    cached, deltaSeconds,
+    getLocalDateString(new Date(snapshot.date), dsh), getLocalDateString(new Date(), dsh),
+    weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz
+  );
+  await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: cached });
+}
+
+// Caller must hold the storage lock
+async function stashAndSubtract(
+  snapshot: PendingEntry | undefined,
+  context: BackgroundMessageContext
+): Promise<void> {
+  if (!snapshot) return;
+  const repeat = await hasDeletedSnapshot(snapshot.id, await currentUserId());
+  await stashDeletedEntry(snapshot);
+  if (!repeat) await applyDeleteToStatsCache(snapshot, context);
 }
 
 async function deletePendingById(
@@ -38,18 +48,16 @@ async function deletePendingById(
   entrySnapshot: PendingEntry | undefined,
   context: BackgroundMessageContext
 ): Promise<{ success: boolean; data: { remaining: number } }> {
-  const { deletedEntry, snapshot, remaining } = await withStorageLock(async () => {
+  const { deletedEntry, remaining } = await withStorageLock(async () => {
     const pending = await loadPendingEntries();
     const deletedEntry = pending.find(e => e.id === entryId);
-    const snapshot = deletedEntry ?? entrySnapshot;
-    if (snapshot) await stashDeletedEntry(snapshot);
+    await stashAndSubtract(deletedEntry ?? entrySnapshot, context);
     const filtered = pending.filter(e => e.id !== entryId);
     await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
     updateBadge();
-    return { deletedEntry, snapshot, remaining: filtered.length };
+    return { deletedEntry, remaining: filtered.length };
   });
   if (deletedEntry) await context.subtractFromStats(deletedEntry);
-  await applyDeleteToStatsCache(snapshot, context);
   return { success: true, data: { remaining } };
 }
 
@@ -58,19 +66,17 @@ async function deleteByServerId(
   entrySnapshot: PendingEntry | undefined,
   context: BackgroundMessageContext
 ): Promise<{ success: boolean; data: { found: boolean } }> {
-  const { match, snapshot, found } = await withStorageLock(async () => {
+  const { match, found } = await withStorageLock(async () => {
     const pending = await loadPendingEntries();
     const match = pending.find(e => e.serverEntryId === serverEntryId);
-    const snapshot = match ?? entrySnapshot;
-    if (snapshot) await stashDeletedEntry(snapshot);
-    if (!match) return { match: undefined, snapshot, found: false };
+    await stashAndSubtract(match ?? entrySnapshot, context);
+    if (!match) return { match: undefined, found: false };
     const filtered = pending.filter(e => e.serverEntryId !== serverEntryId);
     await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
     updateBadge();
-    return { match, snapshot, found: true };
+    return { match, found: true };
   });
   if (match) await context.subtractFromStats(match);
-  await applyDeleteToStatsCache(snapshot, context);
   return { success: true, data: { found } };
 }
 

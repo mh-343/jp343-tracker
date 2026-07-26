@@ -45,11 +45,21 @@ export function coalesceRefresh(
   force: boolean,
   run: () => Promise<void>
 ): Promise<void> {
-  if (state.inFlight) return state.inFlight;
-  if (!force && Date.now() - state.lastAttempt < throttleMs) return Promise.resolve();
-  state.lastAttempt = Date.now();
-  state.inFlight = run()
-    .catch(error => { log('[JP343] cache refresh failed', error); })
-    .finally(() => { state.inFlight = null; });
-  return state.inFlight;
+  if (state.inFlight && !force) return state.inFlight;
+  if (!state.inFlight && !force && Date.now() - state.lastAttempt < throttleMs) {
+    return Promise.resolve();
+  }
+
+  // force queues, never joins
+  const previous = state.inFlight ?? Promise.resolve();
+  const chained = previous
+    .then(() => {
+      state.lastAttempt = Date.now();
+      return run();
+    })
+    .catch(error => { log('[JP343] cache refresh failed', error); });
+
+  state.inFlight = chained;
+  chained.finally(() => { if (state.inFlight === chained) state.inFlight = null; });
+  return chained;
 }

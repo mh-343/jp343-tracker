@@ -623,6 +623,8 @@ export async function handleTrackingMessage(
       };
 
       const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType);
+      const manualEvidence = detectJapaneseEvidence(manualState);
+      if (manualEvidence) tracker.updateSessionLangSignal(manualEvidence);
       await context.saveSessionState(session);
       scheduleStatusBadgeUpdate();
 

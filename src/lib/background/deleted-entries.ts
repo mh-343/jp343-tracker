@@ -43,6 +43,12 @@ export function snapshotVisibleFor(snapshot: DeletedEntrySnapshot, userId: numbe
 }
 
 // Caller must hold the storage lock
+export async function hasDeletedSnapshot(entryId: string, userId: number | null): Promise<boolean> {
+  const snapshots = await loadRaw();
+  return snapshots.some(s => s.entry.id === entryId && snapshotVisibleFor(s, userId));
+}
+
+// Caller must hold the storage lock
 export async function stashDeletedEntry(entry: PendingEntry): Promise<void> {
   const userId = entry.serverEntryId != null ? await currentUserId() : null;
   const snapshots = await loadRaw();
