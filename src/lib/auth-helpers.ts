@@ -15,8 +15,18 @@ export function isStableUserId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
+// wp_localize_script casts every scalar to a string
+export function normalizeUserId(value: unknown): number | null {
+  if (isStableUserId(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    return isStableUserId(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export function stableUserId(state: JP343UserState | null | undefined): number | null {
-  return isStableUserId(state?.userId) ? state.userId : null;
+  return normalizeUserId(state?.userId);
 }
 
 export function normalizeAjaxUrl(url: unknown): string | null {
@@ -67,7 +77,7 @@ export function mergeAuthState(
   if (transition === 'explicit-logout') return loggedOut(previousId);
 
   const claimsAnonymous = incoming?.isLoggedIn === false;
-  const incomingId = !claimsAnonymous && isStableUserId(incoming?.userId) ? incoming.userId : null;
+  const incomingId = claimsAnonymous ? null : normalizeUserId(incoming?.userId);
 
   if (incomingId === null) {
     if (transition === 'authoritative') {

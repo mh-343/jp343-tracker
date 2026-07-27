@@ -1,6 +1,7 @@
 import type { JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { loadBackground } from '../../lib/background-image';
+import { normalizeUserId } from '../../lib/auth-helpers';
 import { createDebugLogger } from '../../lib/debug-logger';
 
 export default defineContentScript({
@@ -81,7 +82,7 @@ export default defineContentScript({
 
           return {
             isLoggedIn: userData.isLoggedIn || false,
-            userId: userData.userId || null,
+            userId: normalizeUserId(userData.userId),
             nonce: userData.nonce || null,
             ajaxUrl: validatedAjaxUrl,
             extApiToken: userData.extApiToken || null,
