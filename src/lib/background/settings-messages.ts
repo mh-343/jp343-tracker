@@ -197,8 +197,9 @@ export async function handleSettingsMessage(
 
     case 'REFETCH_AVATAR': {
       const user = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER];
-      if (user?.avatarUrlSmall && user?.userId) {
-        context.fetchAndStoreAvatar(user.avatarUrlSmall, user.userId);
+      const avatarOwner = stableUserId(user);
+      if (user?.avatarUrlSmall && avatarOwner !== null) {
+        context.fetchAndStoreAvatar(user.avatarUrlSmall, avatarOwner);
       }
       return { success: true };
     }

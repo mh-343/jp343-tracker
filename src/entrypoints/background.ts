@@ -1,7 +1,7 @@
 import { tracker, generateProjectId } from '../lib/time-tracker';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
-import { isAuthFailure } from '../lib/auth-helpers';
+import { isAuthFailure, stableUserId } from '../lib/auth-helpers';
 import {
   initSettingsSyncCallbacks,
   syncSettingsToServer,
@@ -228,12 +228,13 @@ export default defineBackground(() => {
     if (area === 'local' && changes[STORAGE_KEYS.USER]) {
       const oldUser = changes[STORAGE_KEYS.USER].oldValue as JP343UserState | undefined;
       const newUser = changes[STORAGE_KEYS.USER].newValue as JP343UserState | undefined;
-      if (oldUser && (oldUser.userId !== newUser?.userId || oldUser.extApiToken !== newUser?.extApiToken)) {
+      const identityChanged = stableUserId(oldUser) !== stableUserId(newUser);
+      if (oldUser && (identityChanged || oldUser.extApiToken !== newUser?.extApiToken)) {
         void clearVoteStateCache();
       }
       const oldUrl = oldUser?.avatarUrlSmall || null;
       const newUrl = newUser?.avatarUrlSmall || null;
-      const newUserId = newUser?.userId;
+      const newUserId = stableUserId(newUser);
       if (oldUrl !== newUrl && newUrl && newUserId) {
         fetchAndStoreAvatar(newUrl, newUserId);
       }

@@ -29,6 +29,14 @@ export function stableUserId(state: JP343UserState | null | undefined): number |
   return normalizeUserId(state?.userId);
 }
 
+// older storage can hold a string id
+export function normalizeStoredUserState(raw: unknown): JP343UserState | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const state = raw as JP343UserState;
+  const normalized = normalizeUserId(state.userId);
+  return normalized === state.userId ? state : { ...state, userId: normalized };
+}
+
 export function normalizeAjaxUrl(url: unknown): string | null {
   if (typeof url !== 'string' || !url) return null;
   try {
@@ -82,7 +90,7 @@ export function mergeAuthState(
   if (incomingId === null) {
     if (transition === 'authoritative') {
       return {
-        state: previous ? { ...previous } : { ...LOGGED_OUT_USER_STATE },
+        state: previous ? { ...previous, userId: previousId } : { ...LOGGED_OUT_USER_STATE },
         identityChanged: false,
         rejected: true
       };
@@ -92,7 +100,7 @@ export function mergeAuthState(
       && previous.extApiToken !== null;
     if (!keepsValidLogin) return loggedOut(previousId);
     return {
-      state: { ...previous, isLoggedIn: true, nonce: null },
+      state: { ...previous, userId: previousId, isLoggedIn: true, nonce: null },
       identityChanged: false,
       rejected: false
     };

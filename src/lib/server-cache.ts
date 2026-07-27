@@ -1,5 +1,5 @@
 import { STORAGE_KEYS, type CachedServerSession, type JP343UserState, type OwnedServerCache } from '../types';
-import { isStableUserId, normalizeAjaxUrl, stableUserId } from './auth-helpers';
+import { isStableUserId, normalizeAjaxUrl, normalizeStoredUserState, stableUserId } from './auth-helpers';
 
 const DEFAULT_AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 
@@ -84,7 +84,7 @@ export function buildCacheInvalidationPatch(nextEpoch: number): Record<string, u
 
 export async function loadUserState(): Promise<JP343UserState | null> {
   const res = await browser.storage.local.get(STORAGE_KEYS.USER);
-  return (res[STORAGE_KEYS.USER] as JP343UserState | undefined) ?? null;
+  return normalizeStoredUserState(res[STORAGE_KEYS.USER]);
 }
 
 export interface ServerRequestContext {

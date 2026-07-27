@@ -1,5 +1,6 @@
-import type { DeletedEntrySnapshot, JP343UserState, PendingEntry } from '../../types';
+import type { DeletedEntrySnapshot, PendingEntry } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { normalizeStoredUserState, normalizeUserId, stableUserId } from '../auth-helpers';
 import { withStorageLock } from '../storage-lock';
 
 const MAX_SNAPSHOTS = 20;
@@ -34,12 +35,13 @@ export async function loadDeletedSnapshots(): Promise<DeletedEntrySnapshot[]> {
 
 export async function currentUserId(): Promise<number | null> {
   const res = await browser.storage.local.get(STORAGE_KEYS.USER);
-  return (res[STORAGE_KEYS.USER] as JP343UserState | undefined)?.userId ?? null;
+  return stableUserId(normalizeStoredUserState(res[STORAGE_KEYS.USER]));
 }
 
 // Server rows bind to the deleting user
 export function snapshotVisibleFor(snapshot: DeletedEntrySnapshot, userId: number | null): boolean {
-  return snapshot.userId == null || snapshot.userId === userId;
+  if (snapshot.userId == null) return true;
+  return normalizeUserId(snapshot.userId) === normalizeUserId(userId);
 }
 
 // Caller must hold the storage lock

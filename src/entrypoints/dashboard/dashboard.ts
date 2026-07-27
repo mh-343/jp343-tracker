@@ -1,6 +1,7 @@
 import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
+import { normalizeUserId } from '../../lib/auth-helpers';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
@@ -255,9 +256,9 @@ browser.storage.onChanged.addListener((changes, area) => {
       const newData = changes[STORAGE_KEYS.AVATAR_DATA].newValue;
       if (newData) {
         browser.storage.local.get([STORAGE_KEYS.USER, STORAGE_KEYS.AVATAR_USER_ID]).then(result => {
-          const currentUserId = result[STORAGE_KEYS.USER]?.userId;
-          const cachedUserId = result[STORAGE_KEYS.AVATAR_USER_ID] as number | undefined;
-          if (cachedUserId == null || cachedUserId === currentUserId) {
+          const currentUserId = normalizeUserId(result[STORAGE_KEYS.USER]?.userId);
+          const cachedUserId = normalizeUserId(result[STORAGE_KEYS.AVATAR_USER_ID]);
+          if (cachedUserId === null || cachedUserId === currentUserId) {
             avatarEl.src = newData;
             avatarEl.style.display = '';
           }
