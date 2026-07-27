@@ -176,11 +176,15 @@ function deduplicateSnapshot(snapshot: { blocked: BlockedChannel[]; whitelisted:
   return { blocked: dedup(snapshot.blocked), whitelisted: dedup(snapshot.whitelisted) };
 }
 
-async function updateSettingsFromView(state: ChannelSyncState): Promise<void> {
+async function updateSettingsFromView(state: ChannelSyncState, expectedOwner: number | null): Promise<void> {
   const view = applyOps(state.serverSnapshot, state.pendingOps);
   const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
   const settings: ExtensionSettings = result[STORAGE_KEYS.SETTINGS];
   if (!settings) return;
+  if (stableUserId(await loadUserState()) !== expectedOwner) {
+    logFn('[JP343] Channel view write discarded: owner changed');
+    return;
+  }
   settings.blockedChannels = view.blocked;
   settings.whitelistedChannels = view.whitelisted;
   await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
@@ -251,7 +255,7 @@ export async function applyChannelOp(
 
     state.pendingOps.push(fullOp);
     await saveSyncState(state);
-    await updateSettingsFromView(state);
+    await updateSettingsFromView(state, state.ownerUserId ?? null);
     logFn('[JP343] Channel op queued:', fullOp.action, fullOp.channelId);
   });
 
@@ -293,7 +297,7 @@ export async function pullFromServer(): Promise<void> {
       state.lastPullAt = new Date().toISOString();
 
       await saveSyncState(state);
-      await updateSettingsFromView(state);
+      await updateSettingsFromView(state, pullOwner);
       logFn('[JP343] Channel pull complete, version:', state.serverVersion);
     } catch (error) {
       logFn('[JP343] Channel pull error:', error);
@@ -338,7 +342,7 @@ export async function flushOpsToServer(): Promise<void> {
         });
         state.serverVersion = result.data.version || 0;
         await saveSyncState(state);
-        await updateSettingsFromView(state);
+        await updateSettingsFromView(state, flushOwner);
         conflictRetries++;
         reconcileRetries = 0;
         if (conflictRetries >= MAX_CONFLICT_RETRIES) {
@@ -362,7 +366,7 @@ export async function flushOpsToServer(): Promise<void> {
       state.serverVersion = result.data.version || 0;
       state.pendingOps = pending;
       await saveSyncState(state);
-      await updateSettingsFromView(state);
+      await updateSettingsFromView(state, flushOwner);
       if (pending.length > 0 && reconcileRetries < MAX_RECONCILE_RETRIES) {
         reconcileRetries++;
         logFn('[JP343] Channel ops not reflected, re-flushing:', pending.length, 'retry:', reconcileRetries);
@@ -371,7 +375,7 @@ export async function flushOpsToServer(): Promise<void> {
         if (pending.length > 0) {
           state.pendingOps = [];
           await saveSyncState(state);
-          await updateSettingsFromView(state);
+          await updateSettingsFromView(state, flushOwner);
           logFn('[JP343] Channel reconcile limit reached, accepting server state');
         }
         reconcileRetries = 0;
@@ -429,10 +433,15 @@ export async function migrateToChannelSync(): Promise<void> {
       return;
     }
 
+    const migrateOwner = stableUserId(userState);
     try {
       const result = await callChannelOpsEndpoint(userState, 0, []);
       if (!result.success || !result.data) {
         logFn('[JP343] Channel sync migration: pull failed, deferring');
+        return;
+      }
+      if (stableUserId(await loadUserState()) !== migrateOwner) {
+        logFn('[JP343] Channel sync migration discarded: owner changed');
         return;
       }
 
@@ -472,7 +481,7 @@ export async function migrateToChannelSync(): Promise<void> {
       }
 
       await saveSyncState(state);
-      await updateSettingsFromView(state);
+      await updateSettingsFromView(state, migrateOwner);
       logFn('[JP343] Channel sync migration complete, pending ops:', state.pendingOps.length);
 
       if (state.pendingOps.length > 0) {
