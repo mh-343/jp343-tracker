@@ -1,16 +1,30 @@
-import type { ExtensionMessage, ExtensionSettings, JP343UserState } from '../../types';
+import type { ExtensionMessage, ExtensionSettings } from '../../types';
 import { STORAGE_KEYS } from '../../types';
-import { withStorageLock } from '../storage-lock';
-import { clearReloginHint } from './auth-recovery';
+import { clearReloginHint, commitAuthState, type AuthCommitResult } from './auth-recovery';
 import {
   scheduleStatusBadgeUpdate,
   updateStatusBadge,
 } from '../badge-service';
 import { detectJapaneseEvidence } from '../language-detection';
-import { fetchAndCacheServerSessions, clearCachedServerSessions } from '../server-sessions';
+import { hasUsableAuth, stableUserId } from '../auth-helpers';
+import { fetchAndCacheServerSessions } from '../server-sessions';
 import { flushCustomSiteRenames } from './custom-site-names';
+import { reconcileConfirmedDeletes } from './server-delete';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
+
+async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMessageContext): Promise<void> {
+  const state = commit.state;
+  if (state.isLoggedIn && state.extApiToken) await clearReloginHint();
+  context.log('[JP343] User state updated:', state.isLoggedIn);
+  if (stableUserId(state) !== null) await reconcileConfirmedDeletes().catch(() => {});
+  if (!hasUsableAuth(state)) return;
+  context.fetchAndCacheServerStats(true);
+  fetchAndCacheServerSessions(true).catch(() => {});
+  if (!state.extApiToken) return;
+  await context.pullAndMergeSettingsFromServer().catch(() => {});
+  flushCustomSiteRenames({ saveSessionState: context.saveSessionState }).catch(() => {});
+}
 
 export async function handleSettingsMessage(
   message: ExtensionMessage,
@@ -25,47 +39,20 @@ export async function handleSettingsMessage(
         return { success: false, error: 'Unauthorized origin' };
       }
       if ('userState' in message) {
-        const newState = message.userState;
-        const { merged, existing } = await withStorageLock(async () => {
-          const existingState = ((await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] ?? null) as JP343UserState | null;
-          const mergedState = {
-            ...newState,
-            extApiToken: newState?.extApiToken || existingState?.extApiToken || null,
-            userId: newState?.userId || (existingState?.userId ?? null),
-            avatarUrlSmall: newState?.avatarUrlSmall
-              ? newState.avatarUrlSmall
-              : newState?.isLoggedIn
-                ? null
-                : (existingState?.avatarUrlSmall ?? null),
-          };
-          if (!mergedState.isLoggedIn && mergedState.extApiToken) {
-            mergedState.isLoggedIn = true;
-          }
-          await browser.storage.local.set({ [STORAGE_KEYS.USER]: mergedState });
-          return { merged: mergedState, existing: existingState };
-        });
-        if (merged.isLoggedIn && merged.extApiToken) {
-          await clearReloginHint();
-        }
-        if (newState?.isLoggedIn && !newState?.avatarUrlSmall && existing?.avatarUrlSmall) {
-          await browser.storage.local.remove([STORAGE_KEYS.AVATAR_DATA, STORAGE_KEYS.AVATAR_USER_ID]);
-        }
-        if ('displayName' in message && message.displayName) {
-          await browser.storage.local.set({ [STORAGE_KEYS.DISPLAY_NAME]: message.displayName });
-        }
-        const identityChanged = existing?.userId && merged.userId && existing.userId !== merged.userId;
-        context.log('[JP343] User state updated:', merged.isLoggedIn);
-        if (merged.isLoggedIn && merged.extApiToken) {
-          if (identityChanged) clearCachedServerSessions().catch(() => {});
-          await context.pullAndMergeSettingsFromServer().catch(() => {});
-          context.fetchAndCacheServerStats(true);
-          fetchAndCacheServerSessions(true).catch(() => {});
-          flushCustomSiteRenames({ saveSessionState: context.saveSessionState }).catch(() => {});
-        } else if (!merged.isLoggedIn) {
-          clearCachedServerSessions().catch(() => {});
-        }
+        const displayName = 'displayName' in message ? message.displayName : undefined;
+        const commit = await commitAuthState(message.userState, 'website-signal', { displayName });
+        await applyAuthCommit(commit, context);
       }
       return { success: true };
+    }
+
+    case 'COMMIT_EXTENSION_AUTH_STATE': {
+      const commit = await commitAuthState(message.userState, message.transition, {
+        displayName: message.displayName
+      });
+      if (commit.rejected) return { success: false, error: 'Rejected auth state' };
+      await applyAuthCommit(commit, context);
+      return { success: true, data: { userState: commit.state } };
     }
 
     case 'GET_SETTINGS': {

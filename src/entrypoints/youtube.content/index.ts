@@ -44,6 +44,8 @@ export default defineContentScript({
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let currentSessionId: string | null = null;
+    let currentSessionVideoId: string | null = null;
+    let playGeneration = 0;
 
     document.querySelectorAll('video[data-jp343-tracked]').forEach(v => {
       v.removeAttribute('data-jp343-tracked');
@@ -64,8 +66,7 @@ export default defineContentScript({
     window.addEventListener('pagehide', () => {
       if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
         flushDelta();
-        const state = getCurrentVideoState();
-        sendMessage('VIDEO_ENDED', state ? { state } : undefined);
+        sendVideoEnded();
       }
       cleanup();
     });
@@ -89,8 +90,7 @@ export default defineContentScript({
         const video = currentVideoElement;
         if (!video) return;
         if (video.ended) {
-          const state = getCurrentVideoState();
-          sendMessage('VIDEO_ENDED', state ? { state } : undefined);
+          sendVideoEnded();
         } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {
@@ -122,13 +122,32 @@ export default defineContentScript({
       lastVideoPlayTime = now;
       flushDelta();
       accumulatedDeltaMs = 0;
+      const generation = ++playGeneration;
+      const requestedVideoId = state.videoId;
       sendMessage('VIDEO_PLAY', { state }).then(response => {
+        if (generation !== playGeneration) return;
         if (response && typeof response === 'object' && 'sessionId' in response) {
           currentSessionId = (response as { sessionId: string }).sessionId;
+          currentSessionVideoId = requestedVideoId;
         }
       });
       sendDiagnostic('video_play_sent');
       sendDiagnostic(state.title && state.title !== 'YouTube Video' ? 'metadata_found' : 'metadata_missing');
+    }
+
+    function sendVideoEnded(): void {
+      const sessionId = currentSessionId;
+      const videoId = currentSessionVideoId;
+      const state = getCurrentVideoState();
+      const payload: Record<string, unknown> = {};
+      if (state) payload.state = state;
+      if (sessionId) payload.sessionId = sessionId;
+      if (videoId) payload.videoId = videoId;
+      void sendMessage('VIDEO_ENDED', payload).then(() => {
+        if (currentSessionId !== sessionId) return;
+        currentSessionId = null;
+        currentSessionVideoId = null;
+      });
     }
 
     function sendVideoPause(): void {
@@ -778,8 +797,7 @@ export default defineContentScript({
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
         flushDelta();
-        const endState = getCurrentVideoState();
-        sendMessage('VIDEO_ENDED', endState ? { state: endState } : undefined);
+        sendVideoEnded();
         hideTrackingToast();
       });
 
@@ -930,8 +948,7 @@ export default defineContentScript({
         if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
           log('[JP343] URL change - ending previous session');
           flushDelta();
-          const urlChangeState = getCurrentVideoState();
-          sendMessage('VIDEO_ENDED', urlChangeState ? { state: urlChangeState } : undefined);
+          sendVideoEnded();
         }
 
         hideTrackingToast();
@@ -1104,8 +1121,7 @@ export default defineContentScript({
         const video = currentVideoElement;
         if (!video) return;
         if (video.ended) {
-          const state = getCurrentVideoState();
-          sendMessage('VIDEO_ENDED', state ? { state } : undefined);
+          sendVideoEnded();
         } else if (!video.paused && !video.ended) {
           const state = getCurrentVideoState();
           if (state && !state.isAd) {

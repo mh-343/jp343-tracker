@@ -108,7 +108,7 @@ export default defineContentScript({
       try { return JSON.parse(dataAttr).displayName || null; } catch { return null; }
     }
 
-    let extTokenCached = false;
+    let extTokenCachedFor: number | null = null;
 
     function isSameOrigin(url: string): boolean {
       try { return new URL(url).origin === location.origin; } catch { return false; }
@@ -145,8 +145,10 @@ export default defineContentScript({
 
     async function reportUserState(): Promise<void> {
       const userState = getUserState();
+      const identity = typeof userState.userId === 'number' ? userState.userId : null;
+      if (extTokenCachedFor !== null && extTokenCachedFor !== identity) extTokenCachedFor = null;
       if (
-        !extTokenCached &&
+        extTokenCachedFor === null &&
         userState.isLoggedIn &&
         userState.nonce &&
         userState.ajaxUrl &&
@@ -156,7 +158,7 @@ export default defineContentScript({
         const token = await fetchExtToken(userState.ajaxUrl, userState.nonce);
         if (token) {
           userState.extApiToken = token;
-          extTokenCached = true;
+          extTokenCachedFor = identity;
         }
       }
       try {

@@ -1,13 +1,11 @@
 import type { PendingEntry, Platform, ActivityType } from '../../types';
-import { STORAGE_KEYS } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { armDeleteButton } from './delete-confirm';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { subtractSessionFromServerStats } from '../../lib/server-stats';
-import { ajaxPost } from './api';
-import type { ServerSession, ServerStatsResponse } from './api';
+import type { ServerSession } from './api';
 import { getDayStartHour } from './stats';
-import { setText, renderHeroTime, CACHED_SERVER_STATS_KEY } from './stats';
+import { setText, renderHeroTime, readCachedServerStats } from './stats';
 
 let sessionDisplayCount = 20;
 let rawServerCache: ServerSession[] | null = null;
@@ -34,6 +32,20 @@ const platformIcons: Record<string, string> = {
 
 function requestRefresh(): void {
   document.dispatchEvent(new CustomEvent('jp343:refresh'));
+}
+
+async function requestServerEntryDelete(serverEntryId: number, snapshot: PendingEntry): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await browser.runtime.sendMessage({
+        type: 'DELETE_SERVER_ENTRY',
+        serverEntryId,
+        entrySnapshot: snapshot
+      }) as { success?: boolean; applied?: boolean } | undefined;
+      return response?.success === true && response.applied === true;
+    } catch { /* lost message response, retry is safe */ }
+  }
+  return false;
 }
 
 function isRenamableSeries(projectId?: string): boolean {
@@ -306,25 +318,9 @@ export function renderSessions(entries: PendingEntry[]): void {
     delBtn.title = 'Delete';
     armDeleteButton(delBtn, async () => {
       if (entry.synced && entry.serverEntryId) {
-        const result = await browser.storage.local.get([STORAGE_KEYS.USER]);
-        const userState = result[STORAGE_KEYS.USER];
-        if (userState?.extApiToken || userState?.nonce) {
-          try {
-            if (userState.extApiToken) {
-              const result = await ajaxPost('jp343_extension_delete_time_entry', {
-                ext_api_token: userState.extApiToken,
-                entry_id: String(entry.serverEntryId)
-              });
-              if (!result.success) return;
-            } else {
-              const result = await ajaxPost('jp343_delete_time_entry', {
-                nonce: userState.nonce!,
-                entry_id: String(entry.serverEntryId)
-              });
-              if (!result.success) return;
-            }
-          } catch { return; }
-        }
+        if (!await requestServerEntryDelete(entry.serverEntryId, entry)) return;
+        requestRefresh();
+        return;
       }
       await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id, entrySnapshot: entry });
       requestRefresh();
@@ -470,24 +466,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
       requestRefresh();
       return;
     }
-    const result = await browser.storage.local.get([STORAGE_KEYS.USER]);
-    const userState = result[STORAGE_KEYS.USER];
-    if (!userState?.extApiToken && !userState?.nonce) return;
-    try {
-      if (userState.extApiToken) {
-        const res = await ajaxPost('jp343_extension_delete_time_entry', {
-          ext_api_token: userState.extApiToken,
-          entry_id: idStr
-        });
-        if (!res.success) return;
-      } else {
-        const res = await ajaxPost('jp343_delete_time_entry', {
-          nonce: userState.nonce!,
-          entry_id: idStr
-        });
-        if (!res.success) return;
-      }
-    } catch { return; }
+    if (!await requestServerEntryDelete(Number(idStr), serverSessionToPendingEntry(session))) return;
 
     item.remove();
     if (rawServerCache) {
@@ -495,8 +474,7 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
     }
     const durationSec = session.duration_seconds || 0;
     if (durationSec > 0) {
-      const cached: ServerStatsResponse | undefined =
-        (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
+      const cached = await readCachedServerStats();
       if (cached) {
         const dsh = getDayStartHour();
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -516,17 +494,6 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
           if (weekSec !== undefined) setText('statWeek', formatStatDuration(weekSec / 60));
         }
       }
-    }
-    let notified = false;
-    for (let attempt = 0; attempt < 2 && !notified; attempt++) {
-      try {
-        await browser.runtime.sendMessage({
-          type: 'DELETE_PENDING_BY_SERVER_ID',
-          serverEntryId: Number(idStr),
-          entrySnapshot: serverSessionToPendingEntry(session)
-        });
-        notified = true;
-      } catch { /* retry once */ }
     }
     void renderRecentlyDeleted();
   });

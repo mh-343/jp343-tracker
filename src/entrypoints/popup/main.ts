@@ -1047,7 +1047,18 @@ updateInterval = setInterval(() => {
 const pendingInterval = setInterval(fetchPendingEntries, 5000);
 const statsInterval = setInterval(fetchAndRenderStats, 60000);
 
+function onCachedStatsChanged(
+  changes: Record<string, Browser.storage.StorageChange>,
+  areaName: string
+): void {
+  if (areaName !== 'local') return;
+  if (!(STORAGE_KEYS.CACHED_SERVER_STATS in changes)) return;
+  fetchAndRenderStats();
+}
+browser.storage.onChanged.addListener(onCachedStatsChanged);
+
 window.addEventListener('pagehide', () => {
+  browser.storage.onChanged.removeListener(onCachedStatsChanged);
   if (updateInterval) {
     clearInterval(updateInterval);
   }

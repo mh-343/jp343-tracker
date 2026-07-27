@@ -309,8 +309,9 @@ export class TimeTracker {
     return false;
   }
 
-  addDelta(deltaMs: number): void {
+  addDelta(deltaMs: number, expectedSessionId?: string): void {
     if (!this.session || !this.session.isActive || this.isInAd) return;
+    if (expectedSessionId !== undefined && this.session.id !== expectedSessionId) return;
     if (deltaMs > 0) {
       this.session.accumulatedMs += deltaMs;
       this.session.lastUpdate = Date.now();

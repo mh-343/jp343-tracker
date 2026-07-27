@@ -2,6 +2,8 @@ import type { ExtensionMessage } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
+import { stableUserId } from '../auth-helpers';
+import { loadUserState, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
 
 interface CachedServerStats {
@@ -73,8 +75,9 @@ export async function handleStatsSyncMessage(
       let totalMinutes = stats.totalMinutes;
       let rawDailyMinutes = stats.dailyMinutes;
 
-      const cachedResult = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_STATS);
-      const cached = cachedResult[STORAGE_KEYS.CACHED_SERVER_STATS] as CachedServerStats | undefined;
+      const owner = stableUserId(await loadUserState());
+      const envelope = await readOwnedServerStats(owner);
+      const cached = envelope?.value as CachedServerStats | undefined;
 
       if (cached) {
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;

@@ -15,19 +15,35 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+export interface PostOptions {
+  credentials: 'omit' | 'include';
+  retries?: number;
+  timeoutMs?: number;
+}
+
 export async function postJsonWithRetry(
   ajaxUrl: string,
   params: URLSearchParams,
   label: string,
-  retries = 2,
-  timeoutMs = 10000
+  options: PostOptions
 ): Promise<ServerResponse | null> {
+  const retries = options.retries ?? 2;
+  const timeoutMs = options.timeoutMs ?? 10000;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(ajaxUrl, { method: 'POST', signal: controller.signal, body: params });
+      const response = await fetch(ajaxUrl, {
+        method: 'POST',
+        credentials: options.credentials,
+        signal: controller.signal,
+        body: params
+      });
       if (response.ok) return await response.json() as ServerResponse;
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+        log(`[JP343] ${label}: HTTP ${response.status}, not retrying`);
+        return null;
+      }
       log(`[JP343] ${label}: HTTP ${response.status} (try ${attempt + 1}/${retries + 1})`);
     } catch (error) {
       log(`[JP343] ${label}: fetch failed (try ${attempt + 1}/${retries + 1})`, error);

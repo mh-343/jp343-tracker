@@ -17,6 +17,16 @@ function getMessageType(message: unknown): string {
   return typeof candidate.type === 'string' ? candidate.type : 'unknown';
 }
 
+const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY']);
+
+function isDashboardSender(messageSender: Browser.runtime.MessageSender): boolean {
+  if (messageSender?.id !== browser.runtime.id) return false;
+  const url = messageSender.url ?? '';
+  const dashboardUrl = browser.runtime.getURL('/dashboard.html');
+  if (url === dashboardUrl) return true;
+  return url.startsWith(`${dashboardUrl}?`) || url.startsWith(`${dashboardUrl}#`);
+}
+
 export function createBackgroundMessageHandler(
   context: BackgroundMessageContext,
   diagnosticsContext: DiagnosticsContext
@@ -27,6 +37,9 @@ export function createBackgroundMessageHandler(
   ): Promise<unknown> {
     if (!message || typeof message.type !== 'string') {
       return { success: false, error: 'Invalid message format' };
+    }
+    if (DASHBOARD_ONLY_MESSAGES.has(message.type) && !isDashboardSender(messageSender)) {
+      return { success: false, error: 'Unauthorized sender' };
     }
 
     try {
@@ -51,7 +64,7 @@ export function createBackgroundMessageHandler(
 
         case 'GET_PENDING_ENTRIES':
         case 'DELETE_PENDING_ENTRY':
-        case 'DELETE_PENDING_BY_SERVER_ID':
+        case 'DELETE_SERVER_ENTRY':
         case 'GET_DELETED_ENTRIES':
         case 'RESTORE_DELETED_ENTRY':
         case 'PURGE_DELETED_ENTRY':
@@ -60,6 +73,7 @@ export function createBackgroundMessageHandler(
           return handlePendingMessage(message, context);
 
         case 'JP343_SITE_LOADED':
+        case 'COMMIT_EXTENSION_AUTH_STATE':
         case 'GET_SETTINGS':
         case 'UPDATE_SETTINGS':
         case 'SET_ENABLED':

@@ -42,6 +42,31 @@ async function checkJapaneseVideo(state: VideoState): Promise<LangSignalSource |
   }
 }
 
+export function endTargetsSession(
+  message: ExtensionMessage,
+  sessionId: string,
+  sessionVideoId: string | null
+): boolean {
+  const messageSessionId = 'sessionId' in message ? message.sessionId : undefined;
+  if (messageSessionId !== undefined) return messageSessionId === sessionId;
+  const messageVideoId = 'videoId' in message ? message.videoId : undefined;
+  if (messageVideoId === undefined || sessionVideoId === null) return true;
+  return messageVideoId === sessionVideoId;
+}
+
+export function endStateBelongsToSession(
+  message: ExtensionMessage,
+  sessionId: string,
+  sessionVideoId: string | null
+): boolean {
+  if (!endTargetsSession(message, sessionId, sessionVideoId)) return false;
+  const messageVideoId = 'videoId' in message ? message.videoId : undefined;
+  if (messageVideoId !== undefined && messageVideoId !== sessionVideoId) return false;
+  const stateVideoId = 'state' in message ? message.state?.videoId : undefined;
+  if (stateVideoId != null && sessionVideoId !== null && stateVideoId !== sessionVideoId) return false;
+  return true;
+}
+
 async function collectUnflushedTime(
   session: TrackingSession,
   recordDiagnostic?: (code: string, platform?: string) => void
@@ -50,7 +75,7 @@ async function collectUnflushedTime(
   try {
     const response = await browser.tabs.sendMessage(session.tabId, { type: 'GET_CONTENT_TIME' });
     if (response && typeof response.unflushedMs === 'number' && response.sessionId === session.id && response.unflushedMs > 0) {
-      tracker.addDelta(response.unflushedMs);
+      tracker.addDelta(response.unflushedMs, session.id);
       recordDiagnostic?.('unflushed_collected', session.platform);
     }
   } catch {
@@ -222,22 +247,35 @@ export async function handleTrackingMessage(
 
     case 'VIDEO_ENDED': {
       if (isWrongTab) return { success: true };
-      if ('state' in message && message.state?.channelName) {
-        tracker.updateSessionChannelInfo(
-          message.state.channelId || null,
-          message.state.channelName,
-          message.state.channelUrl || null
-        );
-      }
       const preSession = tracker.getCurrentSession();
-      if (preSession) await collectUnflushedTime(preSession, recordDiagnostic);
+      if (!preSession) return { success: true, saved: false };
+      const expectedId = preSession.id;
+      const expectedVideoId = preSession.videoId;
+      const expectedPlatform = preSession.platform;
+      if (!endTargetsSession(message, expectedId, expectedVideoId)) return { success: true, saved: false };
+
+      await collectUnflushedTime(preSession, recordDiagnostic);
+      const stillActive = tracker.getCurrentSession();
+      if (!stillActive || stillActive.id !== expectedId) return { success: true, saved: false };
+
+      if (endStateBelongsToSession(message, expectedId, expectedVideoId)) {
+        const endState = 'state' in message ? message.state : undefined;
+        if (endState?.channelName) {
+          tracker.updateSessionChannelInfo(
+            endState.channelId || null,
+            endState.channelName,
+            endState.channelUrl || null
+          );
+        }
+      }
+
       const entry = tracker.finalizeSession();
       if (entry) {
         await context.savePendingEntry(entry);
-      } else if (preSession) {
-        recordDiagnostic?.('session_discarded', preSession.platform);
+      } else {
+        recordDiagnostic?.('session_discarded', expectedPlatform);
       }
-      await context.saveSessionState(null);
+      await context.saveSessionState(tracker.getCurrentSession());
       scheduleStatusBadgeUpdate();
       return { success: true, saved: !!entry };
     }
@@ -259,6 +297,11 @@ export async function handleTrackingMessage(
     case 'VIDEO_STATE_UPDATE': {
       if (isWrongTab) return { success: true };
       if ('state' in message && message.state && typeof message.state === 'object') {
+        const stateVideoId = message.state.videoId;
+        if (activeSession?.videoId && stateVideoId && activeSession.videoId !== stateVideoId) {
+          context.log('[JP343] State update for another video - ignoring');
+          return { success: true };
+        }
         if (message.state.isPlaying) {
           const session = tracker.getCurrentSession();
           if (session && session.isPaused) {

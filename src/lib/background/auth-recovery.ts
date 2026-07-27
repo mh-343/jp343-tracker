@@ -1,6 +1,8 @@
-import type { JP343UserState } from '../../types';
+import type { AuthTransition, ChannelSyncState, ExtensionSettings, JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
+import { mergeAuthState, normalizeAjaxUrl, stableUserId } from '../auth-helpers';
+import { buildCacheInvalidationPatch, readServerCacheEpoch } from '../server-cache';
 
 const DEFAULT_AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 const RECOVERY_COOLDOWN_MS = 60_000;
@@ -20,21 +22,62 @@ interface NonceRefreshData {
   avatarUrlSmall?: string | null;
 }
 
-function isJp343AjaxUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    if (u.protocol === 'https:') {
-      return u.hostname === 'jp343.com' || u.hostname.endsWith('.jp343.com');
-    }
-    return import.meta.env.DEV && (u.hostname === 'localhost' || u.hostname === '127.0.0.1');
-  } catch {
-    return false;
-  }
+function resolveAjaxUrl(userState: JP343UserState): string {
+  return normalizeAjaxUrl(userState.ajaxUrl) ?? DEFAULT_AJAX_URL;
 }
 
-function resolveAjaxUrl(userState: JP343UserState): string {
-  const url = userState.ajaxUrl;
-  return url && isJp343AjaxUrl(url) ? url : DEFAULT_AJAX_URL;
+function freshChannelSyncState(ownerUserId: number): ChannelSyncState {
+  return {
+    initialized: false,
+    ownerUserId,
+    serverVersion: 0,
+    serverSnapshot: { blocked: [], whitelisted: [] },
+    pendingOps: [],
+    lastPullAt: null
+  };
+}
+
+export interface AuthCommitResult {
+  state: JP343UserState;
+  identityChanged: boolean;
+  rejected: boolean;
+}
+
+export async function commitAuthState(
+  incoming: Partial<JP343UserState> | null | undefined,
+  transition: AuthTransition,
+  options: { displayName?: string } = {}
+): Promise<AuthCommitResult> {
+  return await withStorageLock(async () => {
+    const stored = await browser.storage.local.get(STORAGE_KEYS.USER);
+    const previous = (stored[STORAGE_KEYS.USER] as JP343UserState | undefined) ?? null;
+    const merged = mergeAuthState(previous, incoming, transition);
+    if (merged.rejected) {
+      return { state: merged.state, identityChanged: false, rejected: true };
+    }
+
+    const ownerChanged = merged.identityChanged || transition === 'explicit-logout';
+    const patch: Record<string, unknown> = { [STORAGE_KEYS.USER]: merged.state };
+
+    if (ownerChanged) {
+      Object.assign(patch, buildCacheInvalidationPatch(await readServerCacheEpoch() + 1));
+      const nextOwner = stableUserId(merged.state);
+      patch[STORAGE_KEYS.CHANNEL_SYNC] = nextOwner === null ? null : freshChannelSyncState(nextOwner);
+      patch[STORAGE_KEYS.AVATAR_DATA] = null;
+      patch[STORAGE_KEYS.AVATAR_USER_ID] = null;
+      patch[STORAGE_KEYS.DISPLAY_NAME] = null;
+      const settingsRes = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+      const settings = settingsRes[STORAGE_KEYS.SETTINGS] as ExtensionSettings | undefined;
+      if (settings) {
+        patch[STORAGE_KEYS.SETTINGS] = { ...settings, blockedChannels: [], whitelistedChannels: [] };
+      }
+    }
+
+    if (options.displayName) patch[STORAGE_KEYS.DISPLAY_NAME] = options.displayName;
+
+    await browser.storage.local.set(patch);
+    return { state: merged.state, identityChanged: merged.identityChanged, rejected: false };
+  });
 }
 
 async function recoverAuth(userState: JP343UserState): Promise<AuthRecoveryResult> {
@@ -74,18 +117,17 @@ async function recoverAuth(userState: JP343UserState): Promise<AuthRecoveryResul
 
   if (parsed.success && parsed.data?.nonce) {
     const d = parsed.data;
-    const merged: JP343UserState = {
+    const incoming: Partial<JP343UserState> = {
       isLoggedIn: true,
       userId: d.userId ?? userState.userId,
-      nonce: d.nonce!,
-      ajaxUrl: d.ajaxUrl && isJp343AjaxUrl(d.ajaxUrl) ? d.ajaxUrl : ajaxUrl,
-      extApiToken: d.extApiToken || userState.extApiToken || null,
-      avatarUrlSmall: d.avatarUrlSmall !== undefined ? (d.avatarUrlSmall || null) : (userState.avatarUrlSmall ?? null),
+      nonce: d.nonce,
+      ajaxUrl: normalizeAjaxUrl(d.ajaxUrl) ?? ajaxUrl,
+      extApiToken: d.extApiToken ?? null
     };
-    await withStorageLock(async () => {
-      await browser.storage.local.set({ [STORAGE_KEYS.USER]: merged });
-    });
-    return { status: 'healed', userState: merged };
+    if (d.avatarUrlSmall !== undefined) incoming.avatarUrlSmall = d.avatarUrlSmall || null;
+    const commit = await commitAuthState(incoming, 'authoritative');
+    if (commit.rejected) return { status: 'expired', userState: null };
+    return { status: 'healed', userState: commit.state };
   }
   return { status: 'expired', userState: null };
 }

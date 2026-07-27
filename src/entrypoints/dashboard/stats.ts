@@ -1,11 +1,11 @@
 import type { ExtensionStats } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
+import { stableUserId } from '../../lib/auth-helpers';
+import { loadUserState, readOwnedServerStats, readServerCacheEpoch } from '../../lib/server-cache';
 import type { ServerStatsResponse } from './api';
 import { mergeFirstSessions, renderTargetStartChart, setDayStartHourForTargetStart } from './target-start';
 import { renderStretchGoals } from './stretch-goals';
-
-export const CACHED_SERVER_STATS_KEY = STORAGE_KEYS.CACHED_SERVER_STATS;
 
 let _localDailyMinutes: Record<string, number> = {};
 let _localHourlyMinutes: Record<string, number> = {};
@@ -610,11 +610,54 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
   }
 }
 
-export async function applyCachedServerStats(): Promise<void> {
-  const cached = (await browser.storage.local.get(CACHED_SERVER_STATS_KEY))[CACHED_SERVER_STATS_KEY];
-  if (cached) {
-    applyServerStats(cached, true);
+let dashboardOwnerUserId: number | null = null;
+let dashboardGeneration = 0;
+let dashboardEpoch = -1;
+
+export interface DashboardScope {
+  owner: number | null;
+  generation: number;
+  epoch: number;
+}
+
+export function currentDashboardScope(): DashboardScope {
+  return { owner: dashboardOwnerUserId, generation: dashboardGeneration, epoch: dashboardEpoch };
+}
+
+export function resetAccountScopedState(): void {
+  _dayStartHourSynced = false;
+}
+
+export async function refreshDashboardScope(): Promise<{ scope: DashboardScope; changed: boolean }> {
+  const owner = stableUserId(await loadUserState());
+  const epoch = await readServerCacheEpoch();
+  const changed = owner !== dashboardOwnerUserId || epoch !== dashboardEpoch;
+  if (changed) {
+    dashboardOwnerUserId = owner;
+    dashboardEpoch = epoch;
+    dashboardGeneration += 1;
   }
+  return { scope: currentDashboardScope(), changed };
+}
+
+export async function isScopeStillCurrent(scope: DashboardScope): Promise<boolean> {
+  if (scope.generation !== dashboardGeneration || scope.owner !== dashboardOwnerUserId) return false;
+  const owner = stableUserId(await loadUserState());
+  if (owner !== scope.owner) return false;
+  return await readServerCacheEpoch() === scope.epoch;
+}
+
+export async function readCachedServerStats(): Promise<ServerStatsResponse | null> {
+  const envelope = await readOwnedServerStats(stableUserId(await loadUserState()));
+  return envelope ? envelope.value as ServerStatsResponse : null;
+}
+
+export async function applyCachedServerStats(): Promise<void> {
+  const scope = currentDashboardScope();
+  const cached = await readCachedServerStats();
+  if (!cached) return;
+  if (!await isScopeStillCurrent(scope)) return;
+  applyServerStats(cached, true);
 }
 
 export function renderHourlyBars(hourlyMinutes: Record<string, number>): void {

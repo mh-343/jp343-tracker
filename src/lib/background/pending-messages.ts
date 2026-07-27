@@ -6,20 +6,24 @@ import { fetchAndCacheServerSessions } from '../server-sessions';
 import { withStorageLock } from '../storage-lock';
 import { getLocalDateString, getWeekDates } from '../format-utils';
 import { subtractSessionFromServerStats, type DecrementableServerStats } from '../server-stats';
-import { loadDeletedSnapshots, stashDeletedEntry, hasDeletedSnapshot, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
+import { loadDeletedSnapshots, buildStashedSnapshots, hasDeletedSnapshot, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
+import { deleteServerEntry } from './server-delete';
+import { stableUserId } from '../auth-helpers';
+import { buildOwnedCache, loadUserState, readOwnedServerSessions, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
 
 // Caller must hold the storage lock
 async function applyDeleteToStatsCache(
   snapshot: PendingEntry | undefined,
   context: BackgroundMessageContext
-): Promise<void> {
-  if (snapshot?.serverEntryId == null) return;
+): Promise<unknown> {
+  if (snapshot?.serverEntryId == null) return undefined;
   const deltaSeconds = (snapshot.duration_min || 0) * 60;
-  if (deltaSeconds <= 0 || !snapshot.date) return;
-  const stored = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_STATS);
-  const cached = stored[STORAGE_KEYS.CACHED_SERVER_STATS] as DecrementableServerStats | undefined;
-  if (!cached) return;
+  if (deltaSeconds <= 0 || !snapshot.date) return undefined;
+  const owner = stableUserId(await loadUserState());
+  const envelope = await readOwnedServerStats(owner);
+  if (!envelope || owner === null) return undefined;
+  const cached = envelope.value as DecrementableServerStats;
   const settings = await context.loadSettings();
   const dsh = settings.dayStartHour || 0;
   const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -29,7 +33,7 @@ async function applyDeleteToStatsCache(
     getLocalDateString(new Date(snapshot.date), dsh), getLocalDateString(new Date(), dsh),
     weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz
   );
-  await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: cached });
+  return buildOwnedCache(owner, cached, envelope.cachedAt);
 }
 
 // Caller must hold the storage lock
@@ -39,8 +43,12 @@ async function stashAndSubtract(
 ): Promise<void> {
   if (!snapshot) return;
   const repeat = await hasDeletedSnapshot(snapshot.id, await currentUserId());
-  await stashDeletedEntry(snapshot);
-  if (!repeat) await applyDeleteToStatsCache(snapshot, context);
+  const snapshots = await buildStashedSnapshots(snapshot);
+  const cached = repeat ? undefined : await applyDeleteToStatsCache(snapshot, context);
+  await browser.storage.local.set({
+    [STORAGE_KEYS.DELETED_ENTRIES]: snapshots,
+    ...(cached ? { [STORAGE_KEYS.CACHED_SERVER_STATS]: cached } : {})
+  });
 }
 
 async function deletePendingById(
@@ -61,25 +69,6 @@ async function deletePendingById(
   return { success: true, data: { remaining } };
 }
 
-async function deleteByServerId(
-  serverEntryId: number,
-  entrySnapshot: PendingEntry | undefined,
-  context: BackgroundMessageContext
-): Promise<{ success: boolean; data: { found: boolean } }> {
-  const { match, found } = await withStorageLock(async () => {
-    const pending = await loadPendingEntries();
-    const match = pending.find(e => e.serverEntryId === serverEntryId);
-    await stashAndSubtract(match ?? entrySnapshot, context);
-    if (!match) return { match: undefined, found: false };
-    const filtered = pending.filter(e => e.serverEntryId !== serverEntryId);
-    await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
-    updateBadge();
-    return { match, found: true };
-  });
-  if (match) await context.subtractFromStats(match);
-  return { success: true, data: { found } };
-}
-
 export async function handlePendingMessage(
   message: ExtensionMessage,
   context: BackgroundMessageContext
@@ -88,8 +77,9 @@ export async function handlePendingMessage(
     case 'GET_PENDING_ENTRIES': {
       void fetchAndCacheServerSessions();
       const pending = await loadPendingEntries();
-      const cached = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
-      const serverSessions: CachedServerSession[] = cached[STORAGE_KEYS.CACHED_SERVER_SESSIONS] || [];
+      const owner = stableUserId(await loadUserState());
+      const cached = await readOwnedServerSessions(owner);
+      const serverSessions: CachedServerSession[] = cached?.value ?? [];
       if (serverSessions.length > 0) {
         const localServerIds = new Set(pending.filter(e => e.serverEntryId).map(e => String(e.serverEntryId)));
         const serverEntries: PendingEntry[] = serverSessions
@@ -126,11 +116,11 @@ export async function handlePendingMessage(
       return { success: false, error: 'No entryId provided' };
     }
 
-    case 'DELETE_PENDING_BY_SERVER_ID': {
-      if ('serverEntryId' in message && typeof message.serverEntryId === 'number') {
-        return await deleteByServerId(message.serverEntryId, message.entrySnapshot, context);
+    case 'DELETE_SERVER_ENTRY': {
+      if (typeof message.serverEntryId !== 'number' || !message.entrySnapshot) {
+        return { success: false, error: 'No serverEntryId provided' };
       }
-      return { success: false, error: 'No serverEntryId provided' };
+      return await deleteServerEntry(message.serverEntryId, message.entrySnapshot);
     }
 
     case 'GET_DELETED_ENTRIES': {

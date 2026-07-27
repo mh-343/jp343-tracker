@@ -42,14 +42,18 @@ export interface ServerSession {
   activity_type?: string;
 }
 
-export async function ajaxPost(action: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+export async function ajaxPost(
+  action: string,
+  params: Record<string, string> = {},
+  credentials: 'omit' | 'include' = 'include'
+): Promise<Record<string, unknown>> {
   const body = new URLSearchParams({ action, ...params });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetch(AJAX_URL, {
       method: 'POST',
-      credentials: 'include',
+      credentials,
       signal: controller.signal,
       body
     });
@@ -65,7 +69,7 @@ export async function fetchServerStats(userState: JP343UserState): Promise<Serve
     try {
       const result = await ajaxPost('jp343_extension_get_time_stats', {
         ext_api_token: userState.extApiToken
-      });
+      }, 'omit');
       if (result.success) return result.data as ServerStatsResponse;
     } catch {}
   }
@@ -102,7 +106,7 @@ export async function fetchServerSessions(userState: JP343UserState, limit = 20)
       const result = await ajaxPost('jp343_extension_get_recent_sessions', {
         ext_api_token: userState.extApiToken,
         limit: String(limit)
-      });
+      }, 'omit');
       if (result.success && result.data?.sessions) return normalizeServerSessions(result.data.sessions as ServerSession[]);
     } catch {}
   }

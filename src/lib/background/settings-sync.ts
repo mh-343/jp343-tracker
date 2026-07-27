@@ -6,7 +6,8 @@ import type {
   ColorTheme,
 } from '../../types';
 import { STORAGE_KEYS } from '../../types';
-import { isAuthFailure } from '../auth-helpers';
+import { isAuthFailure, normalizeAjaxUrl, stableUserId } from '../auth-helpers';
+import { loadUserState } from '../server-cache';
 import { VALID_COLOR_THEMES } from '../theme';
 
 interface SettingsSyncDeps {
@@ -37,6 +38,20 @@ let settingsPullComplete = false;
 let settingsLastUpdated = '';
 let settingsLastPullTime = 0;
 let settingsPullInFlight: Promise<boolean> | null = null;
+let settingsOwnerUserId: number | null = null;
+
+async function pullCredentialStillCurrent(owner: number, token: string): Promise<boolean> {
+  const live = await loadUserState();
+  return stableUserId(live) === owner && live?.extApiToken === token;
+}
+
+function resetOwnerScopedPullState(owner: number | null): void {
+  settingsOwnerUserId = owner;
+  settingsLastUpdated = '';
+  settingsLastPullTime = 0;
+  settingsPullComplete = false;
+  browser.storage.session.remove(STORAGE_KEYS.SETTINGS_PULL_ATTEMPT).catch(() => {});
+}
 
 export function initSettingsSyncCallbacks(callbacks: SettingsSyncDeps): void {
   deps = callbacks;
@@ -68,7 +83,11 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
   )[STORAGE_KEYS.USER] ?? null;
   if (!userState?.isLoggedIn || !userState?.extApiToken) return;
 
-  const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+  const pushOwner = stableUserId(userState);
+  if (pushOwner === null) return;
+  const pushToken = userState.extApiToken;
+
+  const ajaxUrl = normalizeAjaxUrl(userState.ajaxUrl) ?? 'https://jp343.com/wp-admin/admin-ajax.php';
   try {
     const pushParams: Record<string, string> = {
       action: 'jp343_extension_push_settings',
@@ -99,6 +118,7 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
       return;
     }
     const result: { success: boolean; data?: { message?: string; code?: string } } = await resp.json();
+    if (!await pullCredentialStillCurrent(pushOwner, pushToken)) return;
     if (result.success) {
       deps.log('[JP343] Settings pushed to server');
       await deps.onAuthSuccess();
@@ -135,7 +155,15 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     return false;
   }
 
-  const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+  const pullOwner = stableUserId(userState);
+  if (pullOwner === null) {
+    settingsPullComplete = true;
+    return false;
+  }
+  if (settingsOwnerUserId !== pullOwner) resetOwnerScopedPullState(pullOwner);
+  const pullToken = userState.extApiToken;
+
+  const ajaxUrl = normalizeAjaxUrl(userState.ajaxUrl) ?? 'https://jp343.com/wp-admin/admin-ajax.php';
   try {
     const params: Record<string, string> = {
       action: 'jp343_extension_pull_settings',
@@ -149,19 +177,21 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     try {
       resp = await fetch(ajaxUrl, {
         method: 'POST',
+        credentials: 'omit',
         signal: controller.signal,
         body: new URLSearchParams(params),
       });
     } finally {
       clearTimeout(pullTimeout);
     }
+    if (stableUserId(await loadUserState()) !== pullOwner) return false;
     if (!resp.ok) {
       deps.log('[JP343] Settings pull HTTP error:', resp.status);
       return false;
     }
     const result: SettingsPullResponse = await resp.json();
     if (!result.success) {
-      if (isAuthFailure(result)) {
+      if (isAuthFailure(result) && await pullCredentialStillCurrent(pullOwner, pullToken)) {
         await deps.onAuthFailure();
         return false;
       }
@@ -169,6 +199,7 @@ async function doPullAndMergeSettings(): Promise<boolean> {
       return false;
     }
 
+    if (!await pullCredentialStillCurrent(pullOwner, pullToken)) return false;
     await deps.onAuthSuccess();
 
     if (result.data?.changed === false) {
@@ -223,6 +254,7 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     }
 
     if (changed) {
+      if (!await pullCredentialStillCurrent(pullOwner, pullToken)) return false;
       await deps.saveSettings(settings);
       deps.log('[JP343] Settings merged from server');
     }

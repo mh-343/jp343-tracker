@@ -47,6 +47,8 @@ interface JapaneseVideoSignals {
 // mostly Japanese, not a few terms
 function isPredominantlyJapanese(text: string | null | undefined): boolean {
   if (!text) return false;
+  // Han alone is ambiguous vs Chinese
+  if (!KANA_PATTERN.test(text)) return false;
   const jp = (text.match(JP_SCRIPT_GLOBAL) || []).length;
   if (jp < 5) return false;
   const latin = (text.match(LATIN_GLOBAL) || []).length;

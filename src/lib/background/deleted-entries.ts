@@ -49,13 +49,13 @@ export async function hasDeletedSnapshot(entryId: string, userId: number | null)
 }
 
 // Caller must hold the storage lock
-export async function stashDeletedEntry(entry: PendingEntry): Promise<void> {
+export async function buildStashedSnapshots(entry: PendingEntry): Promise<DeletedEntrySnapshot[]> {
   const userId = entry.serverEntryId != null ? await currentUserId() : null;
   const snapshots = await loadRaw();
-  await saveRaw(prune([
+  return prune([
     { deletedAt: Date.now(), entry, userId },
     ...snapshots.filter(s => s.entry.id !== entry.id)
-  ]));
+  ]);
 }
 
 export async function takeDeletedSnapshot(entryId: string): Promise<DeletedEntrySnapshot | null> {

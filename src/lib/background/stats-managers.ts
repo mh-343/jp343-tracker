@@ -100,37 +100,52 @@ export function recalculateStreak(dailyMinutes: Record<string, number>, dayStart
   return streak;
 }
 
+export function applyStatsSubtraction(
+  stats: ExtensionStats,
+  entry: PendingEntry,
+  dayStartHour: number
+): ExtensionStats {
+  const entryDate = getLocalDateString(new Date(entry.date), dayStartHour);
+
+  stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
+  if (stats.dailyMinutes[entryDate]) {
+    stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
+    if (stats.dailyMinutes[entryDate] <= 0) {
+      delete stats.dailyMinutes[entryDate];
+    }
+  }
+  if (isReading(entry) && stats.readingDailyMinutes?.[entryDate]) {
+    stats.readingDailyMinutes[entryDate] = Math.max(0, stats.readingDailyMinutes[entryDate] - entry.duration_min);
+    if (stats.readingDailyMinutes[entryDate] <= 0) {
+      delete stats.readingDailyMinutes[entryDate];
+    }
+  }
+  subtractHourlyMinutes(stats, entry);
+
+  stats.currentStreak = recalculateStreak(stats.dailyMinutes, dayStartHour);
+
+  const dates = Object.keys(stats.dailyMinutes).sort();
+  stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
+  return stats;
+}
+
+// Caller must hold the storage lock
+export async function buildStatsAfterSubtraction(entry: PendingEntry): Promise<ExtensionStats | null> {
+  try {
+    const stats = await loadStats();
+    const settings = await deps.loadSettings();
+    return applyStatsSubtraction(stats, entry, settings.dayStartHour || 0);
+  } catch (error) {
+    deps.log('[JP343] Failed to build subtracted stats:', error);
+    return null;
+  }
+}
+
 export async function subtractFromStats(entry: PendingEntry): Promise<void> {
   await withStorageLock(async () => {
-    try {
-      const stats = await loadStats();
-      const settings = await deps.loadSettings();
-      const entryDate = getLocalDateString(new Date(entry.date), settings.dayStartHour || 0);
-
-      stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
-      if (stats.dailyMinutes[entryDate]) {
-        stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
-        if (stats.dailyMinutes[entryDate] <= 0) {
-          delete stats.dailyMinutes[entryDate];
-        }
-      }
-      if (isReading(entry) && stats.readingDailyMinutes?.[entryDate]) {
-        stats.readingDailyMinutes[entryDate] = Math.max(0, stats.readingDailyMinutes[entryDate] - entry.duration_min);
-        if (stats.readingDailyMinutes[entryDate] <= 0) {
-          delete stats.readingDailyMinutes[entryDate];
-        }
-      }
-      subtractHourlyMinutes(stats, entry);
-
-      stats.currentStreak = recalculateStreak(stats.dailyMinutes, settings.dayStartHour || 0);
-
-      const dates = Object.keys(stats.dailyMinutes).sort();
-      stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
-
-      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
-      deps.log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
-    } catch (error) {
-      deps.log('[JP343] Failed to subtract stats:', error);
-    }
+    const stats = await buildStatsAfterSubtraction(entry);
+    if (!stats) return;
+    await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+    deps.log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
   });
 }

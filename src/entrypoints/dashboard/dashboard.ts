@@ -4,7 +4,7 @@ import { getLocalDateString } from '../../lib/format-utils';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
-import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats } from './stats';
+import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats, refreshDashboardScope, isScopeStillCurrent, resetAccountScopedState } from './stats';
 import { setTargetStartTimes, setDayStartHourForTargetStart, computeLocalFirstSessions, renderTargetStartFromLocal, renderTargetStartChart } from './target-start';
 import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
 import { renderRecentlyDeleted } from './recently-deleted';
@@ -64,6 +64,11 @@ async function refresh(): Promise<void> {
 
   try {
     const data = await loadData();
+    const { scope, changed: scopeChanged } = await refreshDashboardScope();
+    if (scopeChanged) {
+      clearRawCache();
+      resetAccountScopedState();
+    }
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
     setLocalHourlyMinutes({ ...(data.stats.hourlyMinutes || {}) });
     setGoalMinutes(data.goalMinutes);
@@ -104,13 +109,14 @@ async function refresh(): Promise<void> {
           const unsynced = freshPending.filter(e => !e.synced);
           renderServerSessions(cached, unsynced);
           const serverStats = await fetchServerStats(activeState);
-          if (serverStats) applyServerStats(serverStats);
+          if (serverStats && await isScopeStillCurrent(scope)) applyServerStats(serverStats);
         } else {
           if (!initialLoadDone) showSessionsLoading();
           const [serverStats, serverSessions] = await Promise.all([
             fetchServerStats(activeState),
             fetchServerSessions(activeState)
           ]);
+          if (!await isScopeStillCurrent(scope)) return;
           if (serverStats) applyServerStats(serverStats);
           if (serverSessions) {
             cacheServerSessions(serverSessions);

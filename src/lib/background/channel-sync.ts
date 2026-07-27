@@ -10,6 +10,8 @@ import type {
 import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
 import { isChannelInList } from '../youtube-utils';
+import { stableUserId } from '../auth-helpers';
+import { loadUserState } from '../server-cache';
 
 const DEFAULT_SYNC_STATE: ChannelSyncState = {
   initialized: false,
@@ -38,11 +40,20 @@ export function initChannelSyncCallbacks(callbacks: {
 
 async function loadSyncState(): Promise<ChannelSyncState> {
   const result = await browser.storage.local.get(STORAGE_KEYS.CHANNEL_SYNC);
-  return { ...DEFAULT_SYNC_STATE, ...(result[STORAGE_KEYS.CHANNEL_SYNC] || {}) };
+  const stored = { ...DEFAULT_SYNC_STATE, ...(result[STORAGE_KEYS.CHANNEL_SYNC] || {}) };
+  const owner = stableUserId(await loadUserState());
+  if (owner === null) return { ...DEFAULT_SYNC_STATE, ownerUserId: null };
+  if (stored.ownerUserId !== owner) return { ...DEFAULT_SYNC_STATE, ownerUserId: owner };
+  return stored;
 }
 
 async function saveSyncState(state: ChannelSyncState): Promise<void> {
-  await browser.storage.local.set({ [STORAGE_KEYS.CHANNEL_SYNC]: state });
+  const owner = stableUserId(await loadUserState());
+  if (owner === null) return;
+  if (state.ownerUserId != null && state.ownerUserId !== owner) return;
+  await browser.storage.local.set({
+    [STORAGE_KEYS.CHANNEL_SYNC]: { ...state, ownerUserId: owner }
+  });
 }
 
 function findAliasKeys(
@@ -261,10 +272,15 @@ export async function pullFromServer(): Promise<void> {
     }
 
     const state = await loadSyncState();
+    const pullOwner = stableUserId(userState);
     try {
       const result = await callChannelOpsEndpoint(userState, state.serverVersion, []);
       if (!result.success || !result.data) {
         logFn('[JP343] Channel pull failed:', result.data?.message);
+        return;
+      }
+      if (stableUserId(await loadUserState()) !== pullOwner) {
+        logFn('[JP343] Channel pull discarded: owner changed');
         return;
       }
 
@@ -297,6 +313,7 @@ export async function flushOpsToServer(): Promise<void> {
     }
 
     const flushedOps = state.pendingOps;
+    const flushOwner = stableUserId(userState);
     try {
       const result = await callChannelOpsEndpoint(
         userState,
@@ -307,6 +324,10 @@ export async function flushOpsToServer(): Promise<void> {
       if (!result.success || !result.data) {
         logFn('[JP343] Channel flush failed:', result.data?.message);
         scheduleAlarmRetry();
+        return;
+      }
+      if (stableUserId(await loadUserState()) !== flushOwner) {
+        logFn('[JP343] Channel flush discarded: owner changed');
         return;
       }
 

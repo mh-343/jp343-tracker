@@ -5,6 +5,8 @@ import { loadPendingEntries } from '../pending-entries';
 import { tracker } from '../time-tracker';
 import { getCustomSitesState, saveCustomSitesState } from './custom-sites';
 import { attemptRecovery } from './auth-recovery';
+import { stableUserId } from '../auth-helpers';
+import { buildOwnedCache, readOwnedServerSessions, readServerCacheEpoch } from '../server-cache';
 
 const MAX_CUSTOM_NAMES = 300;
 const MAX_RENAME_SYNC_ATTEMPTS = 10;
@@ -24,6 +26,8 @@ export interface RenameDeps {
 interface ServerSyncOutcome {
   status: 'anonymous' | 'skipped' | 'success' | 'failed';
   canonicalTitle?: string;
+  ownerUserId?: number;
+  epoch?: number;
 }
 
 const syncChains = new Map<string, Promise<ServerSyncOutcome>>();
@@ -45,8 +49,9 @@ function hostnameFromUrl(url: string | undefined): string {
 }
 
 async function loadCachedServerSessions(): Promise<CachedServerSession[]> {
-  const res = await browser.storage.local.get(STORAGE_KEYS.CACHED_SERVER_SESSIONS);
-  return (res[STORAGE_KEYS.CACHED_SERVER_SESSIONS] as CachedServerSession[] | undefined) ?? [];
+  const owner = stableUserId(await loadUserState());
+  const cached = await readOwnedServerSessions(owner);
+  return cached?.value ?? [];
 }
 
 export async function applyLocalRenamesToSessions(sessions: CachedServerSession[]): Promise<CachedServerSession[]> {
@@ -64,10 +69,13 @@ async function patchLocalTitles(projectId: string, title: string): Promise<void>
   const pending = await loadPendingEntries();
   const patched = pending.map((e: PendingEntry) => e.project_id === projectId ? { ...e, project: title } : e);
   await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: patched });
-  const cached = await loadCachedServerSessions();
-  if (cached.length > 0) {
-    const patchedCache = cached.map(s => s.project_id === projectId ? { ...s, title } : s);
-    await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: patchedCache });
+  const owner = stableUserId(await loadUserState());
+  const cached = await readOwnedServerSessions(owner);
+  if (cached && owner !== null && cached.value.length > 0) {
+    const patchedCache = cached.value.map(s => s.project_id === projectId ? { ...s, title } : s);
+    await browser.storage.local.set({
+      [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: buildOwnedCache(owner, patchedCache, cached.cachedAt)
+    });
   }
 }
 
@@ -187,6 +195,10 @@ function queueServerSync(videoId: string, title: string): Promise<ServerSyncOutc
 async function syncRenameToServer(videoId: string, title: string): Promise<ServerSyncOutcome> {
   let userState = await loadUserState();
   if (!userState?.isLoggedIn) return { status: 'anonymous' };
+  const ownerUserId = stableUserId(userState);
+  if (ownerUserId === null) return { status: 'skipped' };
+  const epoch = await readServerCacheEpoch();
+  const scope = { ownerUserId, epoch };
   if (!userState.extApiToken) {
     const rec = await attemptRecovery(userState);
     if (rec.status === 'healed' && rec.userState?.extApiToken) {
@@ -196,11 +208,11 @@ async function syncRenameToServer(videoId: string, title: string): Promise<Serve
     }
   }
   const first = await postRename(userState, videoId, title);
-  if (first.status !== 'authfail') return first;
+  if (first.status !== 'authfail') return { ...first, ...scope };
   const rec = await attemptRecovery(userState);
   if (rec.status === 'healed' && rec.userState?.extApiToken) {
     const retry = await postRename(rec.userState, videoId, title);
-    return retry.status === 'authfail' ? { status: 'failed' } : retry;
+    return retry.status === 'authfail' ? { status: 'failed', ...scope } : { ...retry, ...scope };
   }
   return { status: 'failed' };
 }
@@ -240,6 +252,13 @@ async function postRename(
   }
 }
 
+// Caller must hold the storage lock
+async function isRenameScopeCurrent(outcome: ServerSyncOutcome): Promise<boolean> {
+  if (outcome.ownerUserId === undefined || outcome.epoch === undefined) return false;
+  if (stableUserId(await loadUserState()) !== outcome.ownerUserId) return false;
+  return await readServerCacheEpoch() === outcome.epoch;
+}
+
 async function writeSyncOutcome(
   videoId: string,
   capturedRevision: string,
@@ -249,6 +268,7 @@ async function writeSyncOutcome(
   if (outcome.status === 'anonymous' || outcome.status === 'skipped') return null;
   const projectId = 'ext_generic_' + videoId;
   const canonical = await withStorageLock(async () => {
+    if (!await isRenameScopeCurrent(outcome)) return null;
     const state = await getCustomSitesState();
     const record = state.names[videoId];
     if (!record || record.revision !== capturedRevision) return null;

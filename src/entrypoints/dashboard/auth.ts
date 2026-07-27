@@ -1,8 +1,28 @@
-import type { JP343UserState, PendingEntry } from '../../types';
+import type { AuthTransition, JP343UserState, PendingEntry } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { isValidImageUrl } from '../../lib/format-utils';
+import { normalizeAjaxUrl } from '../../lib/auth-helpers';
 import { ajaxPost, AJAX_URL } from './api';
 import { invalidateSessionCache } from './sessions';
+
+async function commitAuthToBackground(
+  transition: AuthTransition,
+  userState: JP343UserState | null,
+  displayName?: string
+): Promise<JP343UserState | null> {
+  try {
+    const response = await browser.runtime.sendMessage({
+      type: 'COMMIT_EXTENSION_AUTH_STATE',
+      transition,
+      userState,
+      displayName
+    }) as { success?: boolean; data?: { userState?: JP343UserState } } | undefined;
+    if (!response?.success) return null;
+    return response.data?.userState ?? null;
+  } catch {
+    return null;
+  }
+}
 
 interface AuthResponseData {
   nonce: string;
@@ -15,8 +35,7 @@ interface AuthResponseData {
 }
 
 function validateAjaxUrl(url: unknown): string {
-  if (typeof url === 'string' && /^https:\/\/(.*\.)?jp343\.com\//i.test(url)) return url;
-  return AJAX_URL;
+  return normalizeAjaxUrl(url) ?? AJAX_URL;
 }
 
 function buildUserState(data: AuthResponseData, fallback?: Partial<JP343UserState>): JP343UserState {
@@ -34,10 +53,7 @@ export async function tryRefreshNonce(userState: JP343UserState): Promise<JP343U
   try {
     const result = await ajaxPost('jp343_extension_nonce_refresh') as { success: boolean; data?: AuthResponseData };
     if (result.success && result.data?.nonce) {
-      const updated = buildUserState(result.data, userState);
-      await browser.storage.local.set({ [STORAGE_KEYS.USER]: updated });
-      if (updated.extApiToken) await browser.storage.local.remove(STORAGE_KEYS.RELOGIN_REQUIRED);
-      return updated;
+      return await commitAuthToBackground('authoritative', buildUserState(result.data, userState));
     }
   } catch {}
   return null;
@@ -66,17 +82,17 @@ export async function doLogin(email: string, password: string): Promise<{ succes
 
     if (result.success && typeof result.data === 'object' && result.data?.nonce) {
       const data = result.data;
-      const userState = buildUserState(data);
-      await browser.storage.local.set({
-        [STORAGE_KEYS.USER]: userState,
-        [STORAGE_KEYS.DISPLAY_NAME]: data.displayName || email
-      });
+      const committed = await commitAuthToBackground(
+        'authoritative',
+        buildUserState(data),
+        data.displayName || email
+      );
+      if (!committed) return { success: false, error: 'Login failed. Please try again.' };
       invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
-      browser.runtime.sendMessage({ type: 'JP343_SITE_LOADED', userState }).catch(() => {});
 
-      return { success: true, userState };
+      return { success: true, userState: committed };
     }
 
     const errorData = result.data;
@@ -110,15 +126,15 @@ export async function doRegister(email: string, password: string): Promise<{ suc
 
     if (result.success && typeof result.data === 'object' && result.data?.nonce) {
       const data = result.data;
-      const userState = buildUserState(data);
-      await browser.storage.local.set({
-        [STORAGE_KEYS.USER]: userState,
-        [STORAGE_KEYS.DISPLAY_NAME]: data.displayName || email
-      });
+      const committed = await commitAuthToBackground(
+        'authoritative',
+        buildUserState(data),
+        data.displayName || email
+      );
+      if (!committed) return { success: false, error: 'Registration failed' };
       invalidateSessionCache();
 
       browser.runtime.sendMessage({ type: 'SYNC_ENTRIES_DIRECT' }).catch(() => {});
-      browser.runtime.sendMessage({ type: 'JP343_SITE_LOADED', userState }).catch(() => {});
 
       return { success: true };
     }
@@ -149,7 +165,7 @@ export async function doLogout(): Promise<void> {
     });
     await r.text();
   } catch { /* server unreachable is fine, clear local state anyway */ }
-  await browser.storage.local.remove([STORAGE_KEYS.USER, STORAGE_KEYS.DISPLAY_NAME, STORAGE_KEYS.CACHED_SERVER_SESSIONS, STORAGE_KEYS.CACHED_SERVER_STATS]);
+  await commitAuthToBackground('explicit-logout', null);
   invalidateSessionCache();
   const msgBtn = document.getElementById('headerMessageBtn');
   if (msgBtn) msgBtn.style.display = 'none';

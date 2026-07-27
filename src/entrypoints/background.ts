@@ -21,7 +21,9 @@ import { handleShortcutCommand } from '../lib/background/shortcut-commands';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
-import { postJsonWithRetry, coalesceRefresh, type RefreshState } from '../lib/server-fetch';
+import { fetchAndCacheServerStats, initServerStatsCache } from '../lib/server-stats-cache';
+import { setServerCacheStartupBarrier } from '../lib/server-cache';
+import { initServerDelete, reconcileConfirmedDeletes } from '../lib/background/server-delete';
 import { flushCustomSiteRenames } from '../lib/background/custom-site-names';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
 import { clearVoteStateCache, retryQueuedVotes } from '../lib/background/difficulty-messages';
@@ -368,14 +370,13 @@ export default defineBackground(() => {
 
   async function onAuthSuccess(): Promise<void> {
     await clearReloginHint();
-    const result = await browser.storage.local.get(STORAGE_KEYS.AUTH_FAILURE_COUNT);
-    if (result[STORAGE_KEYS.AUTH_FAILURE_COUNT]) {
-      await browser.storage.local.remove(STORAGE_KEYS.AUTH_FAILURE_COUNT);
-    }
   }
 
   initSettingsSyncCallbacks({ log, loadSettings, saveSettings, pullChannelsFromServer, onAuthFailure, onAuthSuccess });
   initStatsCallbacks({ log, loadSettings });
+  initServerStatsCache({ onAuthFailure, onAuthSuccess });
+  initServerDelete({ log, loadSettings });
+  setServerCacheStartupBarrier(reconcileConfirmedDeletes());
 
   (async () => {
     if (await isDiagnosticsAllowed()) {
@@ -779,48 +780,6 @@ export default defineBackground(() => {
       log('[JP343] Failed to save session state:', error);
     }
     updateTrackingMenu();
-  }
-
-  const statsRefreshState: RefreshState = { inFlight: null, lastAttempt: 0 };
-
-  function fetchAndCacheServerStats(force = false): Promise<void> {
-    return coalesceRefresh(statsRefreshState, 30000, force, runStatsFetch);
-  }
-
-  async function runStatsFetch(): Promise<void> {
-    const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
-    const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
-    if (!userState?.isLoggedIn) return;
-
-    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
-    const params = new URLSearchParams();
-    if (userState.extApiToken) {
-      params.set('action', 'jp343_extension_get_time_stats');
-      params.set('ext_api_token', userState.extApiToken);
-    } else if (userState.nonce) {
-      params.set('action', 'jp343_get_time_stats');
-      params.set('nonce', userState.nonce);
-    } else {
-      return;
-    }
-
-    const result = await postJsonWithRetry(ajaxUrl, params, 'get_time_stats');
-    if (!result) return;
-    if (result.success && result.data) {
-      const data = result.data;
-      const written = await withStorageLock(async () => {
-        const stored = await browser.storage.local.get(STORAGE_KEYS.USER);
-        const fresh = stored[STORAGE_KEYS.USER] as JP343UserState | undefined;
-        if (!fresh?.isLoggedIn) return false;
-        if (userState.extApiToken && fresh.extApiToken !== userState.extApiToken) return false;
-        if (userState.userId != null && fresh.userId != null && fresh.userId !== userState.userId) return false;
-        await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_STATS]: { ...data, cachedAt: Date.now() } });
-        return true;
-      });
-      if (written) await onAuthSuccess();
-    } else if (isAuthFailure(result as { success: boolean; data?: { code?: string } }, !!userState.extApiToken)) {
-      await onAuthFailure();
-    }
   }
 
   async function ensureFreshSettings(): Promise<void> {

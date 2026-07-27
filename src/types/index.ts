@@ -119,6 +119,28 @@ export interface JP343UserState {
   avatarUrlSmall: string | null;
 }
 
+export type AuthTransition = 'website-signal' | 'authoritative' | 'explicit-logout';
+
+export interface OwnedServerCache<T> {
+  schemaVersion: 1;
+  ownerUserId: number;
+  cachedAt: number;
+  value: T;
+}
+
+export interface ServerDeleteRecord {
+  schemaVersion: 1;
+  intentId: string;
+  ownerUserId: number;
+  serverEntryId: string;
+  createdAt: number;
+  confirmedAt: number | null;
+  appliedAt: number | null;
+  snapshot: PendingEntry;
+}
+
+export type ServerDeleteRecordMap = Record<string, ServerDeleteRecord>;
+
 export interface ExtensionStorage {
   jp343_extension_pending: PendingEntry[];
   jp343_extension_session: TrackingSession | null;
@@ -181,6 +203,7 @@ export interface ChannelOp {
 
 export interface ChannelSyncState {
   initialized: boolean;
+  ownerUserId?: number | null;
   serverVersion: number;
   serverSnapshot: {
     blocked: BlockedChannel[];
@@ -232,7 +255,7 @@ export interface SettingsPullResponse {
 export type ExtensionMessage =
   | { type: 'VIDEO_PLAY'; platform: Platform; state: VideoState; tabId?: number }
   | { type: 'VIDEO_PAUSE'; platform: Platform }
-  | { type: 'VIDEO_ENDED'; platform: Platform; state?: VideoState }
+  | { type: 'VIDEO_ENDED'; platform: Platform; state?: VideoState; sessionId?: string; videoId?: string }
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
@@ -242,7 +265,8 @@ export type ExtensionMessage =
   | { type: 'GET_CURRENT_SESSION' }
   | { type: 'GET_PENDING_ENTRIES' }
   | { type: 'DELETE_PENDING_ENTRY'; entryId: string; entrySnapshot?: PendingEntry }
-  | { type: 'DELETE_PENDING_BY_SERVER_ID'; serverEntryId: number; entrySnapshot?: PendingEntry }
+  | { type: 'DELETE_SERVER_ENTRY'; serverEntryId: number; entrySnapshot: PendingEntry }
+  | { type: 'COMMIT_EXTENSION_AUTH_STATE'; transition: AuthTransition; userState?: JP343UserState | null; displayName?: string }
   | { type: 'GET_DELETED_ENTRIES' }
   | { type: 'RESTORE_DELETED_ENTRY'; entryId: string }
   | { type: 'PURGE_DELETED_ENTRY'; entryId: string }
@@ -474,7 +498,6 @@ export const STORAGE_KEYS = {
   AVATAR_USER_ID: 'jp343_avatar_user_id',
   CHANNEL_SYNC: 'jp343_channel_sync',
   COLLAPSED_CARDS: 'jp343_collapsed_cards',
-  AUTH_FAILURE_COUNT: 'jp343_auth_failure_count',
   CACHED_SERVER_SESSIONS: 'jp343_cached_server_sessions',
   POPUP_HEIGHT: 'jp343_popup_height',
   RELOGIN_REQUIRED: 'jp343_relogin_required',
@@ -490,7 +513,9 @@ export const STORAGE_KEYS = {
   INSTALL_ID: 'jp343_install_id',
   DIFFICULTY_CONTRIB_QUEUE: 'jp343_difficulty_contrib_queue',
   SETTINGS_PULL_ATTEMPT: 'jp343_settings_pull_attempt',
-  CUSTOM_SITES: 'jp343_extension_custom_sites'
+  CUSTOM_SITES: 'jp343_extension_custom_sites',
+  SERVER_CACHE_EPOCH: 'jp343_server_cache_epoch',
+  SERVER_DELETE_RECORDS: 'jp343_server_delete_records'
 } as const;
 
 export interface CustomSite {
