@@ -263,45 +263,51 @@ export async function applyChannelOp(
 }
 
 export async function pullFromServer(): Promise<void> {
-  await withStorageLock(async () => {
-    const userState = await getUserState();
-    if (!userState) {
+  const userState = await getUserState();
+  if (!userState) {
+    await withStorageLock(async () => {
       const state = await loadSyncState();
       if (!state.initialized) {
         state.initialized = true;
         await saveSyncState(state);
       }
-      logFn('[JP343] Channel pull skipped: not logged in');
+    });
+    logFn('[JP343] Channel pull skipped: not logged in');
+    return;
+  }
+
+  const pullOwner = stableUserId(userState);
+  const baseVersion = (await loadSyncState()).serverVersion;
+  let result: ChannelOpsResponse;
+  try {
+    result = await callChannelOpsEndpoint(userState, baseVersion, []);
+  } catch (error) {
+    logFn('[JP343] Channel pull error:', error);
+    return;
+  }
+  const data = result.data;
+  if (!result.success || !data) {
+    logFn('[JP343] Channel pull failed:', data?.message);
+    return;
+  }
+
+  await withStorageLock(async () => {
+    if (stableUserId(await loadUserState()) !== pullOwner) {
+      logFn('[JP343] Channel pull discarded: owner changed');
       return;
     }
-
     const state = await loadSyncState();
-    const pullOwner = stableUserId(userState);
-    try {
-      const result = await callChannelOpsEndpoint(userState, state.serverVersion, []);
-      if (!result.success || !result.data) {
-        logFn('[JP343] Channel pull failed:', result.data?.message);
-        return;
-      }
-      if (stableUserId(await loadUserState()) !== pullOwner) {
-        logFn('[JP343] Channel pull discarded: owner changed');
-        return;
-      }
+    state.serverSnapshot = deduplicateSnapshot({
+      blocked: data.blocked || [],
+      whitelisted: data.whitelisted || [],
+    });
+    state.serverVersion = data.version || 0;
+    state.initialized = true;
+    state.lastPullAt = new Date().toISOString();
 
-      state.serverSnapshot = deduplicateSnapshot({
-        blocked: result.data.blocked || [],
-        whitelisted: result.data.whitelisted || [],
-      });
-      state.serverVersion = result.data.version || 0;
-      state.initialized = true;
-      state.lastPullAt = new Date().toISOString();
-
-      await saveSyncState(state);
-      await updateSettingsFromView(state, pullOwner);
-      logFn('[JP343] Channel pull complete, version:', state.serverVersion);
-    } catch (error) {
-      logFn('[JP343] Channel pull error:', error);
-    }
+    await saveSyncState(state);
+    await updateSettingsFromView(state, pullOwner);
+    logFn('[JP343] Channel pull complete, version:', state.serverVersion);
   });
 }
 
