@@ -1,6 +1,6 @@
 import type { ExtensionMessage } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
-import { getCustomSitesState, addCustomSite, removeCustomSite, customSiteOrigin } from './custom-sites';
+import { getCustomSitesState, addCustomSite, removeCustomSite, customSiteOrigin, customSiteLegacyOrigin } from './custom-sites';
 import { applyCustomSiteRename, resetCustomSiteName } from './custom-site-names';
 import { reinjectCustomSitesTabs } from './reinject';
 
@@ -20,7 +20,10 @@ export async function handleCustomSitesMessage(
     case 'CUSTOM_SITE_REMOVE': {
       const removedHost = await removeCustomSite(message.id);
       if (removedHost) {
-        await ctx.finalizeRevokedCustomOrigins([customSiteOrigin(removedHost)]);
+        await ctx.finalizeRevokedCustomOrigins([
+          customSiteOrigin(removedHost),
+          customSiteLegacyOrigin(removedHost)
+        ]);
       }
       return { success: true, data: { customSites: await getCustomSitesState() } };
     }

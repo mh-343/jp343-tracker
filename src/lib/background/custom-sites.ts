@@ -51,7 +51,7 @@ export async function isAllowedCustomSiteUrl(url: string): Promise<boolean> {
   try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
   if (host.startsWith('www.')) host = host.slice(4);
   const state = await loadState();
-  return state.sites.some(s => s.host === host);
+  return state.sites.some(s => hostMatchesSite(host, s.host));
 }
 
 export async function saveCustomSitesState(state: CustomSitesState): Promise<void> {
@@ -59,7 +59,25 @@ export async function saveCustomSitesState(state: CustomSitesState): Promise<voi
 }
 
 export function customSiteOrigin(host: string): string {
+  return 'https://*.' + host + '/*';
+}
+
+// pre-wildcard grant pattern
+export function customSiteLegacyOrigin(host: string): string {
   return 'https://' + host + '/*';
+}
+
+function hostMatchesSite(host: string, siteHost: string): boolean {
+  return host === siteHost || host.endsWith('.' + siteHost);
+}
+
+export async function grantedPatternForHost(host: string): Promise<string | null> {
+  for (const pattern of [customSiteOrigin(host), customSiteLegacyOrigin(host)]) {
+    try {
+      if (await browser.permissions.contains({ origins: [pattern] })) return pattern;
+    } catch { /* skipped */ }
+  }
+  return null;
 }
 
 function isBuiltinHost(host: string): boolean {
@@ -95,16 +113,14 @@ export function normalizeHost(input: string): NormalizedHost {
   return { ok: true, host };
 }
 
-async function grantedHosts(): Promise<string[]> {
+async function grantedMatches(): Promise<string[]> {
   const state = await loadState();
-  const hosts: string[] = [];
+  const matches: string[] = [];
   for (const site of state.sites) {
-    try {
-      const has = await browser.permissions.contains({ origins: [customSiteOrigin(site.host)] });
-      if (has) hosts.push(site.host);
-    } catch { /* skipped */ }
+    const pattern = await grantedPatternForHost(site.host);
+    if (pattern) matches.push(pattern);
   }
-  return hosts;
+  return matches;
 }
 
 let mv2Handle: { unregister: () => void } | null = null;
@@ -118,7 +134,7 @@ export function syncCustomSitesRegistration(): Promise<void> {
 }
 
 async function runSyncRegistration(): Promise<void> {
-  const matches = (await grantedHosts()).map(customSiteOrigin);
+  const matches = await grantedMatches();
   try {
     if (import.meta.env.MANIFEST_VERSION === 3) {
       try { await browser.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] }); } catch { /* not registered */ }
@@ -150,7 +166,7 @@ async function runSyncRegistration(): Promise<void> {
 }
 
 export async function getCustomSitesReinjectTargets(): Promise<ReinjectTargetShape[]> {
-  const matches = (await grantedHosts()).map(customSiteOrigin);
+  const matches = await grantedMatches();
   if (matches.length === 0) return [];
   return [{ matches, file: CUSTOM_SITES_SCRIPT_JS, allFrames: false }];
 }
@@ -188,13 +204,18 @@ export async function removeCustomSite(id: string): Promise<string | null> {
   });
   await syncCustomSitesRegistration();
   if (removedHost) {
-    try {
-      await browser.permissions.remove({ origins: [customSiteOrigin(removedHost)] });
-    } catch { /* skipped */ }
+    for (const origin of [customSiteOrigin(removedHost), customSiteLegacyOrigin(removedHost)]) {
+      try {
+        await browser.permissions.remove({ origins: [origin] });
+      } catch { /* skipped */ }
+    }
   }
   return removedHost;
 }
 
 export function originsIncludeHost(origins: string[], host: string): boolean {
-  return origins.some(o => o === customSiteOrigin(host));
+  return origins.some(origin => {
+    const patternHost = origin.replace(/^https:\/\/(\*\.)?/, '').replace(/\/\*$/, '');
+    return patternHost !== '' && hostMatchesSite(host, patternHost);
+  });
 }

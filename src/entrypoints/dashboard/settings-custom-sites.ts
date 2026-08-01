@@ -1,5 +1,5 @@
 import type { CustomSitesState, CustomSite } from '../../types';
-import { normalizeHost, customSiteOrigin } from '../../lib/background/custom-sites';
+import { normalizeHost, customSiteOrigin, grantedPatternForHost } from '../../lib/background/custom-sites';
 
 async function loadCustomState(): Promise<CustomSitesState | null> {
   const res = await browser.runtime.sendMessage({ type: 'CUSTOM_SITES_GET' });
@@ -12,7 +12,7 @@ async function loadSites(): Promise<CustomSite[]> {
 
 async function siteIsActive(host: string): Promise<boolean> {
   try {
-    return await browser.permissions.contains({ origins: [customSiteOrigin(host)] });
+    return (await grantedPatternForHost(host)) !== null;
   } catch {
     return false;
   }
