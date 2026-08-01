@@ -124,7 +124,10 @@ export default defineContentScript({
     function endSession(): void {
       if (!currentSessionId && !pendingPlay) return;
       flushDelta();
-      sendMessage('VIDEO_ENDED');
+      const data: Record<string, unknown> = {};
+      if (currentSessionId) data.sessionId = currentSessionId;
+      if (currentVideoId) data.videoId = currentVideoId;
+      sendMessage('VIDEO_ENDED', data);
       currentSessionId = null;
       pendingPlay = false;
       playToken++;
@@ -151,7 +154,13 @@ export default defineContentScript({
         if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
         pauseDebounceTimer = setTimeout(() => {
           pauseDebounceTimer = null;
-          if (video.paused && !video.ended) { log('[JP343] custom-sites: pause'); sendMessage('VIDEO_PAUSE'); }
+          if (!currentSessionId && !pendingPlay) return;
+          if (video.paused && !video.ended) {
+            log('[JP343] custom-sites: pause');
+            const data: Record<string, unknown> = {};
+            if (currentSessionId) data.sessionId = currentSessionId;
+            sendMessage('VIDEO_PAUSE', data);
+          }
         }, 300);
       });
       video.addEventListener('ended', () => {
@@ -227,8 +236,9 @@ export default defineContentScript({
         if (!currentSessionId) return undefined;
         return Promise.resolve({ unflushedMs: Math.round(accumulatedDeltaMs), sessionId: currentSessionId });
       }
-      if (message?.type === 'PAUSE_VIDEO' && boundVideo) boundVideo.pause();
-      if (message?.type === 'RESUME_VIDEO' && boundVideo) boundVideo.play();
+      const ownsSession = Boolean(currentSessionId || pendingPlay);
+      if (message?.type === 'PAUSE_VIDEO' && boundVideo && ownsSession) boundVideo.pause();
+      if (message?.type === 'RESUME_VIDEO' && boundVideo && ownsSession) boundVideo.play();
       if (message?.type === 'TAB_ACTIVATED') syncVideo();
       return undefined;
     });

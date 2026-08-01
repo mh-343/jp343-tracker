@@ -238,6 +238,10 @@ export async function handleTrackingMessage(
 
     case 'VIDEO_PAUSE': {
       if (isWrongTab) return { success: true };
+      const pauseSessionId = 'sessionId' in message ? message.sessionId : undefined;
+      if (pauseSessionId !== undefined && pauseSessionId !== tracker.getSessionId()) {
+        return { success: true };
+      }
       tracker.pauseSession();
       const session = tracker.getCurrentSession();
       await context.saveSessionState(session);

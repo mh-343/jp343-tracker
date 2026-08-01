@@ -254,7 +254,7 @@ export interface SettingsPullResponse {
 
 export type ExtensionMessage =
   | { type: 'VIDEO_PLAY'; platform: Platform; state: VideoState; tabId?: number }
-  | { type: 'VIDEO_PAUSE'; platform: Platform }
+  | { type: 'VIDEO_PAUSE'; platform: Platform; sessionId?: string }
   | { type: 'VIDEO_ENDED'; platform: Platform; state?: VideoState; sessionId?: string; videoId?: string }
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
