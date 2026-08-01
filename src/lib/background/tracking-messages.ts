@@ -42,6 +42,27 @@ async function checkJapaneseVideo(state: VideoState): Promise<LangSignalSource |
   }
 }
 
+// generic sessions belong to one frame
+function isForeignGenericFrame(
+  session: TrackingSession | null,
+  messageSender: Browser.runtime.MessageSender
+): boolean {
+  if (!session || session.platform !== 'generic') return false;
+  if (session.customSiteFrameId === undefined || messageSender.frameId === undefined) return false;
+  return session.customSiteFrameId !== messageSender.frameId;
+}
+
+// subframes must match a granted site themselves
+function customSiteCandidateUrls(
+  stateUrl: string,
+  messageSender: Browser.runtime.MessageSender
+): Array<string | undefined> {
+  const inSubframe = typeof messageSender.frameId === 'number' && messageSender.frameId > 0;
+  if (!inSubframe) return [stateUrl, messageSender.url];
+  const senderIsHttp = !!messageSender.url && /^https?:\/\//.test(messageSender.url);
+  return senderIsHttp ? [messageSender.url] : [stateUrl];
+}
+
 export function endTargetsSession(
   message: ExtensionMessage,
   sessionId: string,
@@ -139,7 +160,9 @@ export async function handleTrackingMessage(
       if ('state' in message && message.state && typeof message.state === 'object') {
         let customSiteGrantHost: string | null = null;
         if (message.state.platform === 'generic' && message.state.videoId?.startsWith('cs_')) {
-          customSiteGrantHost = await allowedCustomSiteHost([message.state.url, messageSender.url]);
+          customSiteGrantHost = await allowedCustomSiteHost(
+            customSiteCandidateUrls(message.state.url, messageSender)
+          );
           if (!customSiteGrantHost) {
             context.log('[JP343] Custom site removed - ignoring VIDEO_PLAY');
             return { success: true, skipped: true };
@@ -226,6 +249,7 @@ export async function handleTrackingMessage(
         if (message.state.platform === 'generic') {
           try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
           if (customSiteGrantHost) session.customSiteGrantHost = customSiteGrantHost;
+          if (typeof messageSender.frameId === 'number') session.customSiteFrameId = messageSender.frameId;
         }
         if (customSiteName) {
           tracker.updateSessionTitle(customSiteName);
@@ -243,6 +267,7 @@ export async function handleTrackingMessage(
       if (pauseSessionId !== undefined && pauseSessionId !== tracker.getSessionId()) {
         return { success: true };
       }
+      if (isForeignGenericFrame(tracker.getCurrentSession(), messageSender)) return { success: true };
       tracker.pauseSession();
       const session = tracker.getCurrentSession();
       await context.saveSessionState(session);
@@ -254,6 +279,7 @@ export async function handleTrackingMessage(
       if (isWrongTab) return { success: true };
       const preSession = tracker.getCurrentSession();
       if (!preSession) return { success: true, saved: false };
+      if (isForeignGenericFrame(preSession, messageSender)) return { success: true, saved: false };
       const expectedId = preSession.id;
       const expectedVideoId = preSession.videoId;
       const expectedPlatform = preSession.platform;
@@ -424,6 +450,7 @@ export async function handleTrackingMessage(
         const session = tracker.getCurrentSession();
         if (!session) return { success: true };
         if ('sessionId' in message && message.sessionId !== session.id) return { success: true };
+        if (isForeignGenericFrame(session, messageSender)) return { success: true };
         if (session.isPaused) {
           tracker.resumeSession();
           recordDiagnostic?.('heartbeat_resume', message.platform);

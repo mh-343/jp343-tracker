@@ -62,6 +62,7 @@ export interface TrackingSession {
   accumulatedMs: number;
   customSiteHost?: string;
   customSiteGrantHost?: string;
+  customSiteFrameId?: number;
   lastUpdate: number;
   isActive: boolean;
   isPaused: boolean;
