@@ -68,14 +68,16 @@ export default defineContentScript({
       const out: HTMLVideoElement[] = [];
       const scan = (root: Document | ShadowRoot): void => {
         try { root.querySelectorAll('video').forEach(v => out.push(v)); } catch { /* ignore */ }
+        try {
+          root.querySelectorAll('iframe').forEach(frame => {
+            try {
+              if (frame.contentDocument) scan(frame.contentDocument);
+            } catch { /* cross-origin */ }
+          });
+        } catch { /* ignore */ }
         try { root.querySelectorAll('*').forEach(el => { if (el.shadowRoot) scan(el.shadowRoot); }); } catch { /* ignore */ }
       };
       scan(document);
-      for (const frame of Array.from(document.querySelectorAll('iframe'))) {
-        try {
-          if (frame.contentDocument) scan(frame.contentDocument);
-        } catch { /* cross-origin */ }
-      }
       return out;
     }
 
