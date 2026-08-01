@@ -21,13 +21,9 @@ export default defineContentScript({
     const PLATFORM: Platform = 'generic';
 
     const isTopFrame = window.self === window.top;
-    const frameAncestors = location.ancestorOrigins;
-    const topAncestorOrigin = frameAncestors && frameAncestors.length > 0
-      ? frameAncestors[frameAncestors.length - 1]
-      : '';
     function currentMeta(): CustomSiteMeta {
       return resolveCustomSiteMeta(
-        resolveMetaSource(location, isTopFrame, document.referrer, topAncestorOrigin)
+        resolveMetaSource(location, isTopFrame, document.referrer)
       );
     }
 
@@ -54,6 +50,8 @@ export default defineContentScript({
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    // rejected plays back off for 60s
+    let nextPlayAttemptAt = 0;
 
     window.addEventListener('pagehide', () => {
       endSession();
@@ -138,6 +136,8 @@ export default defineContentScript({
         pendingPlay = false;
         if (response && typeof response === 'object' && 'sessionId' in response) {
           currentSessionId = (response as { sessionId: string }).sessionId;
+        } else if (response && typeof response === 'object' && 'skipped' in response) {
+          nextPlayAttemptAt = Date.now() + 60_000;
         }
       });
       log('[JP343] custom-sites: play', currentTitle);
@@ -163,6 +163,7 @@ export default defineContentScript({
         if (video !== boundVideo) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         if (!isWatchableVideo(video)) return;
+        nextPlayAttemptAt = 0;
         startTracking(video);
       });
       video.addEventListener('playing', () => {
@@ -235,7 +236,7 @@ export default defineContentScript({
       currentVideoId = meta.videoId;
       currentUrl = meta.url;
       bindVideo(video);
-      if (!video.paused && !video.ended) startTracking(video);
+      if (!video.paused && !video.ended && Date.now() >= nextPlayAttemptAt) startTracking(video);
     }
 
     if (document.body) {
@@ -261,7 +262,7 @@ export default defineContentScript({
       const ownsSession = Boolean(currentSessionId || pendingPlay);
       if (message?.type === 'PAUSE_VIDEO' && boundVideo && ownsSession) boundVideo.pause();
       if (message?.type === 'RESUME_VIDEO' && boundVideo && ownsSession) boundVideo.play();
-      if (message?.type === 'TAB_ACTIVATED') syncVideo();
+      if (message?.type === 'TAB_ACTIVATED') { nextPlayAttemptAt = 0; syncVideo(); }
       return undefined;
     });
   }

@@ -14,19 +14,15 @@ export interface MetaSource {
 export function resolveMetaSource(
   loc: MetaSource,
   isTopFrame: boolean,
-  referrer: string,
-  topAncestorOrigin: string
+  referrer: string
 ): MetaSource {
-  if (isTopFrame) return loc;
-  for (const candidate of [referrer, topAncestorOrigin]) {
-    if (!candidate) continue;
-    try {
-      const url = new URL(candidate);
-      if (url.protocol === 'https:' || url.protocol === 'http:') {
-        return { hostname: url.hostname, pathname: url.pathname, origin: url.origin };
-      }
-    } catch { /* invalid */ }
-  }
+  if (isTopFrame || !referrer) return loc;
+  try {
+    const url = new URL(referrer);
+    if (url.protocol === 'https:' || url.protocol === 'http:') {
+      return { hostname: url.hostname, pathname: url.pathname, origin: url.origin };
+    }
+  } catch { /* invalid */ }
   return loc;
 }
 
