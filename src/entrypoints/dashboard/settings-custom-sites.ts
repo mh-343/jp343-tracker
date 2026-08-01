@@ -76,7 +76,7 @@ export function buildCustomSitesPanel(container: HTMLElement): void {
 
   const help = document.createElement('div');
   help.className = 'settings-row-desc';
-  help.textContent = 'Add a website and jp343 tracks how long its videos play. It works on many video sites, but not all: some use players it cannot read. Your browser asks permission per site, and only video play time is counted.';
+  help.textContent = 'Add a website and jp343 tracks how long its videos play. It works on many video sites, but not all: some use players it cannot read. If a site loads its player from another domain, add that domain as well. Your browser asks permission per site, and only video play time is counted.';
   section.appendChild(help);
 
   const addRow = document.createElement('div');
