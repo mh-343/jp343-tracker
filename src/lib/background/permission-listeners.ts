@@ -18,9 +18,10 @@ export async function finalizeRevokedCustomSession(
 ): Promise<void> {
   const session = tracker.getCurrentSession();
   if (!session || session.platform !== 'generic') return;
-  let host: string;
-  try { host = new URL(session.url).hostname; } catch { return; }
-  if (!originsIncludeHost(origins, host)) return;
+  const hosts: string[] = [];
+  try { hosts.push(new URL(session.url).hostname); } catch { /* grant host below */ }
+  if (session.customSiteGrantHost) hosts.push(session.customSiteGrantHost);
+  if (!hosts.some(host => originsIncludeHost(origins, host))) return;
   const entry = tracker.finalizeSession();
   if (entry) await deps.savePendingEntry(entry);
   await deps.saveSessionState(null);

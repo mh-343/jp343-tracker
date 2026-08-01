@@ -1,15 +1,35 @@
 import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
-import { resolveCustomSiteMeta, isWatchableVideo } from './custom-sites-meta';
+import { resolveCustomSiteMeta, resolveMetaSource, isWatchableVideo } from './custom-sites-meta';
+import type { CustomSiteMeta } from './custom-sites-meta';
 
 export default defineContentScript({
   matches: ['https://*/*'],
   registration: 'runtime',
   runAt: 'document_idle',
   main() {
+    // same-origin parents cover this frame
+    if (window.self !== window.top) {
+      let parentSameOrigin = false;
+      try {
+        parentSameOrigin = Boolean(window.parent.document);
+      } catch { /* cross-origin parent */ }
+      if (parentSameOrigin) return;
+    }
     if (!claimContentScript('custom-sites')) return;
     const PLATFORM: Platform = 'generic';
+
+    const isTopFrame = window.self === window.top;
+    const frameAncestors = location.ancestorOrigins;
+    const topAncestorOrigin = frameAncestors && frameAncestors.length > 0
+      ? frameAncestors[frameAncestors.length - 1]
+      : '';
+    function currentMeta(): CustomSiteMeta {
+      return resolveCustomSiteMeta(
+        resolveMetaSource(location, isTopFrame, document.referrer, topAncestorOrigin)
+      );
+    }
 
     const observers: MutationObserver[] = [];
     const intervalIds: ReturnType<typeof setInterval>[] = [];
@@ -190,7 +210,7 @@ export default defineContentScript({
 
       // early return only shields a live session; strong signals still end it
       if (boundVideo && vids.includes(boundVideo) && (currentSessionId || pendingPlay)) {
-        const meta = resolveCustomSiteMeta(location);
+        const meta = currentMeta();
         const srcChanged = boundSrc !== '' && boundVideo.currentSrc !== '' && boundVideo.currentSrc !== boundSrc;
         if (meta.videoId !== currentVideoId || boundVideo.loop || srcChanged) {
           endSession();
@@ -208,7 +228,7 @@ export default defineContentScript({
 
       const video = pickVideo(vids.filter(isWatchableVideo));
       if (!video) return;
-      const meta = resolveCustomSiteMeta(location);
+      const meta = currentMeta();
       boundVideo = video;
       boundSrc = video.currentSrc;
       currentTitle = meta.title;

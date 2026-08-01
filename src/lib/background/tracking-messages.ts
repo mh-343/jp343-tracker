@@ -7,7 +7,7 @@ import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
 import { getReaderState } from './reader-sync';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../reader-sources';
-import { getCustomSitesState, isAllowedCustomSiteUrl } from './custom-sites';
+import { getCustomSitesState, allowedCustomSiteHost } from './custom-sites';
 import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -137,13 +137,13 @@ export async function handleTrackingMessage(
       }
 
       if ('state' in message && message.state && typeof message.state === 'object') {
-        if (
-          message.state.platform === 'generic' &&
-          message.state.videoId?.startsWith('cs_') &&
-          !(await isAllowedCustomSiteUrl(message.state.url))
-        ) {
-          context.log('[JP343] Custom site removed - ignoring VIDEO_PLAY');
-          return { success: true, skipped: true };
+        let customSiteGrantHost: string | null = null;
+        if (message.state.platform === 'generic' && message.state.videoId?.startsWith('cs_')) {
+          customSiteGrantHost = await allowedCustomSiteHost([message.state.url, messageSender.url]);
+          if (!customSiteGrantHost) {
+            context.log('[JP343] Custom site removed - ignoring VIDEO_PLAY');
+            return { success: true, skipped: true };
+          }
         }
         const channelId = message.state.channelId;
         if (channelId && isChannelInList(settings.blockedChannels, channelId, message.state.channelUrl)) {
@@ -225,6 +225,7 @@ export async function handleTrackingMessage(
         if (langEvidence) tracker.updateSessionLangSignal(langEvidence);
         if (message.state.platform === 'generic') {
           try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
+          if (customSiteGrantHost) session.customSiteGrantHost = customSiteGrantHost;
         }
         if (customSiteName) {
           tracker.updateSessionTitle(customSiteName);

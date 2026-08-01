@@ -27,8 +27,19 @@ interface Mv2ContentScripts {
     matches: string[];
     js: { file: string }[];
     allFrames?: boolean;
+    matchAboutBlank?: boolean;
     runAt?: string;
   }) => Promise<{ unregister: () => void }>;
+}
+
+interface Mv3ScriptRegistration {
+  id: string;
+  matches: string[];
+  js: string[];
+  allFrames: boolean;
+  runAt: 'document_idle';
+  persistAcrossSessions: boolean;
+  matchOriginAsFallback?: boolean;
 }
 
 async function loadState(): Promise<CustomSitesState> {
@@ -46,12 +57,18 @@ export async function getCustomSitesState(): Promise<CustomSitesState> {
   return loadState();
 }
 
-export async function isAllowedCustomSiteUrl(url: string): Promise<boolean> {
-  let host = '';
-  try { host = new URL(url).hostname.toLowerCase(); } catch { return false; }
-  if (host.startsWith('www.')) host = host.slice(4);
+// first stored site host matching any url
+export async function allowedCustomSiteHost(urls: Array<string | undefined>): Promise<string | null> {
   const state = await loadState();
-  return state.sites.some(s => hostMatchesSite(host, s.host));
+  for (const url of urls) {
+    if (!url) continue;
+    let host = '';
+    try { host = new URL(url).hostname.toLowerCase(); } catch { continue; }
+    if (host.startsWith('www.')) host = host.slice(4);
+    const site = state.sites.find(s => hostMatchesSite(host, s.host));
+    if (site) return site.host;
+  }
+  return null;
 }
 
 export async function saveCustomSitesState(state: CustomSitesState): Promise<void> {
@@ -139,14 +156,20 @@ async function runSyncRegistration(): Promise<void> {
     if (import.meta.env.MANIFEST_VERSION === 3) {
       try { await browser.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] }); } catch { /* not registered */ }
       if (matches.length > 0) {
-        await browser.scripting.registerContentScripts([{
+        const script: Mv3ScriptRegistration = {
           id: SCRIPT_ID,
           matches,
           js: [CUSTOM_SITES_SCRIPT_JS],
-          allFrames: false,
+          allFrames: true,
           runAt: 'document_idle',
           persistAcrossSessions: true
-        }]);
+        };
+        try {
+          await browser.scripting.registerContentScripts([{ ...script, matchOriginAsFallback: true }]);
+        } catch {
+          // older Chrome rejects the property
+          await browser.scripting.registerContentScripts([script]);
+        }
       }
     } else {
       if (mv2Handle) { mv2Handle.unregister(); mv2Handle = null; }
@@ -155,7 +178,8 @@ async function runSyncRegistration(): Promise<void> {
         mv2Handle = await mv2Api.register({
           matches,
           js: [{ file: CUSTOM_SITES_SCRIPT_JS }],
-          allFrames: false,
+          allFrames: true,
+          matchAboutBlank: true,
           runAt: 'document_idle'
         });
       }
@@ -168,7 +192,7 @@ async function runSyncRegistration(): Promise<void> {
 export async function getCustomSitesReinjectTargets(): Promise<ReinjectTargetShape[]> {
   const matches = await grantedMatches();
   if (matches.length === 0) return [];
-  return [{ matches, file: CUSTOM_SITES_SCRIPT_JS, allFrames: false }];
+  return [{ matches, file: CUSTOM_SITES_SCRIPT_JS, allFrames: true }];
 }
 
 export async function addCustomSite(host: string): Promise<{ ok: boolean; error?: string; site?: CustomSite }> {
