@@ -226,7 +226,10 @@ export class TimeTracker {
     if (!this.session) return 0;
     let totalMs = this.session.accumulatedMs;
     if (this.session.isActive && !this.isInAd) {
-      totalMs += Date.now() - this.session.lastUpdate;
+      let liveMs = Date.now() - this.session.lastUpdate;
+      // deltas refresh lastUpdate every <=10s
+      if (this.session.customSiteHost) liveMs = Math.min(liveMs, 11_000);
+      totalMs += liveMs;
     }
     return totalMs;
   }

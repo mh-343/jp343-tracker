@@ -1086,7 +1086,7 @@ export default defineBackground(() => {
         const sessionDomain = new URL(session.url).hostname;
         const newDomain = new URL(changeInfo.url).hostname;
         if (sessionDomain !== newDomain) {
-          log('[JP343] Domain changed - saving manual session');
+          log('[JP343] Domain changed - saving custom site session');
           const entry = tracker.finalizeSession();
           if (entry) {
             await savePendingEntry(entry);
