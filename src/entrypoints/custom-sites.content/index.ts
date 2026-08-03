@@ -164,7 +164,7 @@ export default defineContentScript({
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         if (!isWatchableVideo(video)) return;
         nextPlayAttemptAt = 0;
-        startTracking(video);
+        if (video.readyState >= 3) startTracking(video);
       });
       video.addEventListener('playing', () => {
         if (video !== boundVideo) return;
@@ -198,6 +198,12 @@ export default defineContentScript({
         const ct = video.currentTime;
         const delta = ct - lastVideoTime;
         lastVideoTime = ct;
+        if (!currentSessionId && !pendingPlay) {
+          if (delta > 0 && delta <= 10 && isWatchableVideo(video) && Date.now() >= nextPlayAttemptAt) {
+            startTracking(video);
+          }
+          return;
+        }
         if (delta < 0 && video.loop) { endSession(); return; }
         if (delta > 0 && delta <= 10) {
           accumulatedDeltaMs += (delta / (video.playbackRate || 1)) * 1000;
@@ -219,7 +225,7 @@ export default defineContentScript({
           currentVideoId = meta.videoId;
           currentUrl = meta.url;
           boundSrc = boundVideo.currentSrc;
-          if (!boundVideo.paused && !boundVideo.ended && isWatchableVideo(boundVideo)) startTracking(boundVideo);
+          if (!boundVideo.paused && !boundVideo.ended && isWatchableVideo(boundVideo) && boundVideo.readyState >= 3) startTracking(boundVideo);
         }
         return;
       }
@@ -236,7 +242,9 @@ export default defineContentScript({
       currentVideoId = meta.videoId;
       currentUrl = meta.url;
       bindVideo(video);
-      if (!video.paused && !video.ended && Date.now() >= nextPlayAttemptAt) startTracking(video);
+      if (!video.paused && !video.ended && video.readyState >= 3 && Date.now() >= nextPlayAttemptAt) {
+        startTracking(video);
+      }
     }
 
     if (document.body) {
