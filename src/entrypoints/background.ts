@@ -445,12 +445,20 @@ export default defineBackground(() => {
     }
   }
 
-  browser.alarms.create('jp343-auto-sync-retry', { periodInMinutes: 5 });
-  browser.alarms.create('jp343-cleanup-synced', { periodInMinutes: 360 });
-  browser.alarms.create('jp343-diagnostics-send', { periodInMinutes: 360 });
-  browser.alarms.create('jp343-error-flush', { periodInMinutes: 1 });
-  browser.alarms.create('jp343-streak-risk-check', { periodInMinutes: 60 });
-  browser.alarms.create('jp343-difficulty-contrib-flush', { periodInMinutes: 720 });
+  function createAlarmSafe(name: string, options: { periodInMinutes: number }): void {
+    try {
+      browser.alarms.create(name, options);
+    } catch (error) {
+      log('[JP343] Alarm create failed:', name, error);
+    }
+  }
+
+  createAlarmSafe('jp343-auto-sync-retry', { periodInMinutes: 5 });
+  createAlarmSafe('jp343-cleanup-synced', { periodInMinutes: 360 });
+  createAlarmSafe('jp343-diagnostics-send', { periodInMinutes: 360 });
+  createAlarmSafe('jp343-error-flush', { periodInMinutes: 1 });
+  createAlarmSafe('jp343-streak-risk-check', { periodInMinutes: 60 });
+  createAlarmSafe('jp343-difficulty-contrib-flush', { periodInMinutes: 720 });
 
   void syncAnki();
 
@@ -1058,7 +1066,7 @@ export default defineBackground(() => {
     log('[JP343] Hub BG flag migrated to server');
   })().catch(() => {});
 
-  browser.alarms.create('jp343-check', { periodInMinutes: 5 });
+  createAlarmSafe('jp343-check', { periodInMinutes: 5 });
 
   browser.tabs.onRemoved.addListener(async (tabId) => {
     await recoveryReady;
