@@ -8,6 +8,7 @@
   var audioLang = null;
   var desc = null;
   var author = null;
+  var channelId = null;
 
   try {
     var path = window.location.pathname;
@@ -29,6 +30,10 @@
     }
     if (!author) {
       author = (response.videoDetails && response.videoDetails.author) || null;
+    }
+    if (!channelId) {
+      var cid = response.videoDetails && response.videoDetails.channelId;
+      channelId = (typeof cid === 'string' && cid.indexOf('UC') === 0) ? cid : null;
     }
     if (!audioLang) {
       var tl = response.captions && response.captions.playerCaptionsTracklistRenderer;
@@ -69,7 +74,8 @@
       videoId: videoId,
       audioLang: audioLang,
       desc: desc ? String(desc).slice(0, 800) : null,
-      author: author
+      author: author,
+      channelId: channelId
     }
   }));
 

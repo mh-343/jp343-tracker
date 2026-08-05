@@ -31,6 +31,7 @@ export default defineContentScript({
     let videoAudioLanguage: string | null = null;
     let videoDescription: string | null = null;
     let videoAuthor: string | null = null;
+    let videoChannelId: string | null = null;
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let originalTitleResponsePending = false;
@@ -501,6 +502,11 @@ export default defineContentScript({
         channelId = metaChannelId || urlChannelId;
       }
 
+      // injected uploader id for collab owners
+      if (!channelId && videoChannelId && originalTitleVideoId === getVideoId()) {
+        channelId = videoChannelId;
+      }
+
       if (!channelId && channelUrl) {
         const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
         if (handleMatch) {
@@ -528,6 +534,7 @@ export default defineContentScript({
       audioLang?: string | null;
       desc?: string | null;
       author?: string | null;
+      channelId?: string | null;
     }
 
     function handleOriginalTitleResponse(e: Event): void {
@@ -545,6 +552,9 @@ export default defineContentScript({
       if (typeof detail.author === 'string' && detail.author) {
         videoAuthor = detail.author;
         gotSignal = true;
+      }
+      if (typeof detail.channelId === 'string' && detail.channelId.startsWith('UC')) {
+        videoChannelId = detail.channelId;
       }
       if (detail.title && typeof detail.title === 'string') {
         originalTitle = detail.title;
@@ -571,6 +581,7 @@ export default defineContentScript({
         videoAudioLanguage = null;
         videoDescription = null;
         videoAuthor = null;
+        videoChannelId = null;
         originalTitleVideoId = null;
         originalTitleResponsePending = false;
         return;
@@ -579,6 +590,7 @@ export default defineContentScript({
       videoAudioLanguage = null;
       videoDescription = null;
       videoAuthor = null;
+      videoChannelId = null;
       originalTitleVideoId = videoId;
       originalTitleResponsePending = true;
       if (originalTitleRetryTimer) {
@@ -969,6 +981,7 @@ export default defineContentScript({
         videoAudioLanguage = null;
         videoDescription = null;
         videoAuthor = null;
+        videoChannelId = null;
         originalTitleResponsePending = false;
 
         if (currentVideoElement) {
