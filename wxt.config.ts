@@ -5,7 +5,7 @@ export default defineConfig({
   outDir: 'dist',
 
   zip: {
-    excludeSources: ['AGENTS.md', 'docs', 'docs/**', '.agents/**', '.codex/**'],
+    excludeSources: ['AGENTS.md', 'docs', 'docs/**', '.agents/**', '.codex/**', 'web-ext-artifacts', 'web-ext-artifacts/**'],
   },
 
   // readers + custom-sites wildcard stay optional-only
@@ -42,7 +42,7 @@ export default defineConfig({
 
   manifest: ({ manifestVersion }) => ({
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.11.2',
+    version: '2.11.3',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
