@@ -1,4 +1,4 @@
-import { tracker, generateProjectId } from '../lib/time-tracker';
+import { tracker, generateProjectId, isReading } from '../lib/time-tracker';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure, stableUserId } from '../lib/auth-helpers';
@@ -45,7 +45,7 @@ import {
   handleChannelFlushAlarm,
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
-import { syncReaderRegistration } from '../lib/background/reader-sync';
+import { syncReaderRegistration, getReaderState, drainCompletionPushes, adoptReaderOwner } from '../lib/background/reader-sync';
 import { READER_SOURCE_LIST } from '../lib/reader-sources';
 import { findMergeTarget, applyMergeUpdate } from '../lib/background/pending-merge';
 import { syncCustomSitesRegistration } from '../lib/background/custom-sites';
@@ -237,6 +237,9 @@ export default defineBackground(() => {
       const newUserId = stableUserId(newUser);
       if (oldUrl !== newUrl && newUrl && newUserId) {
         fetchAndStoreAvatar(newUrl, newUserId);
+      }
+      if (newUserId !== null) {
+        void adoptReaderOwner(newUserId);
       }
     }
   });
@@ -521,7 +524,9 @@ export default defineBackground(() => {
     }
   });
 
-  function buildEntryParams(entry: PendingEntry): Record<string, string> {
+  function buildEntryParams(entry: PendingEntry, completedPids: Set<string>): Record<string, string> {
+    // send-time override: completed volumes always report 1
+    const completed = completedPids.has(entry.project_id) ? true : entry.readingCompleted;
     return {
       project_id: entry.project_id,
       duration_seconds: String(Math.round(entry.duration_min * 60)),
@@ -543,7 +548,7 @@ export default defineBackground(() => {
       date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
       ...(entry.mergeResync ? { merge_resync: '1' } : {}),
       ...(entry.readingCurrentPage != null ? { reading_current_page: String(entry.readingCurrentPage) } : {}),
-      ...(entry.readingCompleted != null ? { reading_completed: entry.readingCompleted ? '1' : '0' } : {}),
+      ...(completed != null ? { reading_completed: completed ? '1' : '0' } : {}),
       // exact values: imported backups are not field-validated
       ...(entry.langSignal === 'ja'
         ? {
@@ -579,6 +584,8 @@ export default defineBackground(() => {
     const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
     const extVersion = browser.runtime.getManifest().version;
 
+    void drainCompletionPushes();
+
     const MAX_BATCH_SIZE = 50;
     const MAX_SYNC_ATTEMPTS = 10;
 
@@ -610,13 +617,24 @@ export default defineBackground(() => {
       return { attempted: batch.length, succeeded, failed: batch.length - succeeded, noAuth: true, nonceMissing: false };
     };
 
+    // reading entries report current finished-state
+    const completedPids = new Set<string>();
+    if (batch.some(isReading)) {
+      for (const source of READER_SOURCE_LIST) {
+        const rs = await getReaderState(source);
+        for (const id of Object.keys(rs.completedVolumes ?? {})) {
+          if (rs.completedVolumes[id]) completedPids.add(`ext_${source.platform}_${id}`);
+        }
+      }
+    }
+
     // Batch sync: send all entries in one request (token auth)
     try {
       const batchParams = new URLSearchParams({
         action: 'jp343_extension_log_time_batch',
         ext_api_token: userState.extApiToken!,
         ext_version: extVersion,
-        entries: JSON.stringify(batch.map(buildEntryParams))
+        entries: JSON.stringify(batch.map(e => buildEntryParams(e, completedPids)))
       });
       const controller = new AbortController();
       const batchTimeout = setTimeout(() => controller.abort(), 20000);
@@ -699,7 +717,7 @@ export default defineBackground(() => {
           user_id: String(userState.userId || 0),
           ext_api_token: userState.extApiToken!,
           ext_version: extVersion,
-          ...buildEntryParams(entry)
+          ...buildEntryParams(entry, completedPids)
         };
 
         const controller = new AbortController();

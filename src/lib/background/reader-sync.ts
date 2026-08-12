@@ -2,6 +2,8 @@ import type { ReaderState, ReaderVolumeSnapshot, PendingEntry } from '../../type
 import { DEFAULT_READER_STATE } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { ReaderSource } from '../reader-sources';
+import { READER_SOURCE_LIST } from '../reader-sources';
+import { loadUserState } from '../server-cache';
 import { generateProjectId } from '../time-tracker';
 import { getLocalDateString } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
@@ -16,8 +18,13 @@ const log = DEBUG ? console.log.bind(console) : (..._args: unknown[]) => {};
 async function loadReaderState(source: ReaderSource): Promise<ReaderState> {
   const result = await browser.storage.local.get(source.stateKey);
   const stored = result[source.stateKey] as ReaderState | undefined;
-  if (!stored) return { ...DEFAULT_READER_STATE, baselines: {}, creditedByDay: {} };
-  return { ...DEFAULT_READER_STATE, ...stored };
+  if (!stored) return { ...DEFAULT_READER_STATE, baselines: {}, creditedByDay: {}, completedVolumes: {}, pendingCompletionPushes: [] };
+  return {
+    ...DEFAULT_READER_STATE,
+    ...stored,
+    completedVolumes: { ...(stored.completedVolumes ?? {}) },
+    pendingCompletionPushes: [...(stored.pendingCompletionPushes ?? [])]
+  };
 }
 
 async function saveReaderState(source: ReaderSource, state: ReaderState): Promise<void> {
@@ -26,6 +33,59 @@ async function saveReaderState(source: ReaderSource, state: ReaderState): Promis
 
 export async function getReaderState(source: ReaderSource): Promise<ReaderState> {
   return loadReaderState(source);
+}
+
+async function pushReadingCompletion(projectId: string): Promise<boolean> {
+  const userState = await loadUserState();
+  if (!userState?.isLoggedIn || !userState.extApiToken) return false;
+  const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
+  const body = new URLSearchParams({
+    action: 'jp343_extension_reading_mark_completed',
+    ext_api_token: userState.extApiToken,
+    project_id: projectId,
+    completed: '1'
+  });
+  try {
+    const r = await fetch(ajaxUrl, { method: 'POST', credentials: 'include', body, signal: AbortSignal.timeout(15000) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// retry unconfirmed pushes; drop accepted ones
+export async function drainCompletionPushes(): Promise<void> {
+  for (const source of READER_SOURCE_LIST) {
+    const state = await loadReaderState(source);
+    if (!state.pendingCompletionPushes.length) continue;
+    const done: string[] = [];
+    for (const pid of state.pendingCompletionPushes) {
+      if (await pushReadingCompletion(pid)) done.push(pid);
+    }
+    if (done.length) {
+      await withStorageLock(async () => {
+        const s = await loadReaderState(source);
+        s.pendingCompletionPushes = s.pendingCompletionPushes.filter(p => !done.includes(p));
+        await saveReaderState(source, s);
+      });
+    }
+  }
+}
+
+// clear tracking when a different account takes over
+export async function adoptReaderOwner(userId: number): Promise<void> {
+  for (const source of READER_SOURCE_LIST) {
+    await withStorageLock(async () => {
+      const state = await loadReaderState(source);
+      if (state.ownerId != null && state.ownerId !== userId) {
+        state.baselines = {};
+        state.completedVolumes = {};
+        state.pendingCompletionPushes = [];
+      }
+      state.ownerId = userId;
+      await saveReaderState(source, state);
+    });
+  }
 }
 
 const mv2Handles = new Map<string, { unregister: () => void }>();
@@ -142,6 +202,14 @@ export async function ingestReaderSnapshot(
       if (vol.deleted || !id) continue;
 
       const baseline = state.baselines[id];
+      if (vol.completed && !state.completedVolumes[id]) {
+        state.completedVolumes[id] = true;
+        // only tracked volumes; first-sight has no time
+        if (baseline) {
+          const pid = generateProjectId(source.platform, '', id);
+          if (!state.pendingCompletionPushes.includes(pid)) state.pendingCompletionPushes.push(pid);
+        }
+      }
       // First sight or reset: rebase only
       if (!baseline || vol.effectiveMin < baseline.lastEffectiveMin || vol.chars < baseline.lastChars) {
         state.baselines[id] = { lastEffectiveMin: vol.effectiveMin, lastChars: vol.chars, lastObservedAt: now };
@@ -199,5 +267,6 @@ export async function ingestReaderSnapshot(
   for (const entry of entries) {
     await ctx.savePendingEntry(entry);
   }
+  void drainCompletionPushes();
   if (entries.length > 0) log('[JP343][reader]', source.id, 'booked', entries.length, 'entries');
 }

@@ -442,6 +442,12 @@ export interface ReaderState {
   lastSyncAt: number | null;
   totalMinutes: number;
   totalChars: number;
+  // finished volume ids; drives send override
+  completedVolumes: Record<string, boolean>;
+  // pids with an unconfirmed completion push
+  pendingCompletionPushes: string[];
+  // account this tracking belongs to; switch clears it
+  ownerId: number | null;
 }
 
 export const DEFAULT_READER_STATE: ReaderState = {
@@ -450,7 +456,10 @@ export const DEFAULT_READER_STATE: ReaderState = {
   creditedByDay: {},
   lastSyncAt: null,
   totalMinutes: 0,
-  totalChars: 0
+  totalChars: 0,
+  completedVolumes: {},
+  pendingCompletionPushes: [],
+  ownerId: null
 };
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
