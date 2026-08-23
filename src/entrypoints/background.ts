@@ -262,6 +262,14 @@ export default defineBackground(() => {
       }
       raw.dayStartHour = Math.max(0, Math.min(6, raw.dayStartHour || 0));
 
+      // music opt-in applies to new installs only
+      const storedSettings = result[STORAGE_KEYS.SETTINGS] as Partial<ExtensionSettings> | undefined;
+      if (storedSettings && storedSettings.spotifyContentTypes === undefined) {
+        raw.spotifyContentTypes = ['podcast', 'music', 'audiobook'];
+        await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: raw });
+        log('[JP343] Kept music tracking for existing install');
+      }
+
       if (!raw.platformDefaultsMigrated) {
         for (const p of ['twitch', 'nihongojikan', 'asbplayer'] as Platform[]) {
           if (!raw.enabledPlatforms.includes(p)) raw.enabledPlatforms.push(p);

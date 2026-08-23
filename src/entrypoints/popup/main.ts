@@ -298,7 +298,7 @@ function updateSpotifyFilterUI(settings: ExtensionSettings): void {
   const onSpotify = currentSession?.platform === 'spotify' || /open\.spotify\.com/.test(activeTabInfo?.url || '');
   section.style.display = onSpotify ? 'flex' : 'none';
   if (!onSpotify) return;
-  const types = settings.spotifyContentTypes || ['podcast', 'music', 'audiobook'];
+  const types = settings.spotifyContentTypes || ['podcast', 'audiobook'];
   section.querySelectorAll('.spotify-chip').forEach(chip => {
     const type = chip.getAttribute('data-type') as SpotifyContentType;
     chip.classList.toggle('active', types.includes(type));
@@ -315,7 +315,7 @@ function initSpotifyFilterChips(): void {
       const response = await browser.runtime.sendMessage({ type: 'GET_SETTINGS' });
       if (!response.success) return;
       const settings = response.data.settings as ExtensionSettings;
-      let types = settings.spotifyContentTypes || ['podcast', 'music', 'audiobook'];
+      let types = settings.spotifyContentTypes || ['podcast', 'audiobook'];
       if (isActive) {
         types = types.filter(t => t !== type);
       } else {

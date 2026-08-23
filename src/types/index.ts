@@ -494,7 +494,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   minDurationMinutes: 1,
   enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'asbplayer'],
   blockedChannels: [],
-  spotifyContentTypes: ['podcast', 'music', 'audiobook'],
+  spotifyContentTypes: ['podcast', 'audiobook'],
   dailyGoalMinutes: 60,
   dayStartHour: 0,
   hideNonJapanese: false,
