@@ -6,6 +6,8 @@ export interface TwitchMetaEvent {
   language: string;
   title: string;
   isLive: boolean;
+  isVod: boolean;
+  vodId: string;
   thumbnail: string;
 }
 
@@ -25,6 +27,11 @@ export function parseChannelLogin(pathname: string): string | null {
   return login;
 }
 
+export function parseVodId(pathname: string): string | null {
+  const match = pathname.match(/^\/videos\/(\d{3,})\/?$/);
+  return match ? match[1] : null;
+}
+
 export function parseTwitchMetaEvent(detail: unknown): TwitchMetaEvent | null {
   if (!detail || typeof detail !== 'object') return null;
   const d = detail as Record<string, unknown>;
@@ -39,6 +46,8 @@ export function parseTwitchMetaEvent(detail: unknown): TwitchMetaEvent | null {
     language: cap(d.language, 16).toLowerCase(),
     title: cap(d.title, 300),
     isLive: d.isLive === true,
+    isVod: d.isVod === true,
+    vodId: cap(d.vodId, 20),
     thumbnail: isValidImageUrl(rawThumb) ? rawThumb : ''
   };
 }

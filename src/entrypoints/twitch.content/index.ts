@@ -2,7 +2,7 @@ import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
-import { parseChannelLogin, parseTwitchMetaEvent, type TwitchMetaEvent } from './twitch-parsers';
+import { parseChannelLogin, parseVodId, parseTwitchMetaEvent, type TwitchMetaEvent } from './twitch-parsers';
 
 export default defineContentScript({
   matches: ['*://*.twitch.tv/*'],
@@ -12,9 +12,9 @@ export default defineContentScript({
     if (!claimContentScript('twitch')) return;
     let currentVideoElement: HTMLVideoElement | null = null;
     let currentLogin: string | null = null;
+    let currentVodId: string | null = null;
     let twitchMeta: TwitchMetaEvent | null = null;
     let metaPending = false;
-    let wantTrack = false;
     let lastVideoTime = 0;
     let accumulatedDeltaMs = 0;
     let currentSessionId: string | null = null;
@@ -121,7 +121,7 @@ export default defineContentScript({
     }
 
     function requestMetaIfNeeded(): void {
-      if (!currentLogin || twitchMeta || metaPending) return;
+      if ((!currentLogin && !currentVodId) || twitchMeta || metaPending) return;
       metaPending = true;
       lastMetaFetchAt = Date.now();
       try {
@@ -138,26 +138,45 @@ export default defineContentScript({
     function handleTwitchMeta(e: Event): void {
       const meta = parseTwitchMetaEvent((e as CustomEvent<unknown>).detail);
       if (!meta) { metaPending = false; return; }
-      if (meta.login !== currentLogin) return;
+      if (meta.isVod) {
+        if (meta.vodId !== currentVodId || !meta.login) return;
+        currentLogin = meta.login;
+      } else if (meta.login !== currentLogin) {
+        return;
+      }
       metaPending = false;
       twitchMeta = meta;
-      log('[JP343] Twitch meta:', meta.channelName, meta.language, meta.isLive ? 'live' : 'offline');
-      if (wantTrack) attemptTrack();
+      log('[JP343] Twitch meta:', meta.channelName, meta.language, meta.isVod ? 'vod' : (meta.isLive ? 'live' : 'offline'));
+      pickUpVideo();
     }
     window.addEventListener('jp343-twitch-meta', handleTwitchMeta);
 
     function setChannel(login: string | null): void {
-      if (login === currentLogin) return;
+      if (login === currentLogin && currentVodId === null) return;
       if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
       endAdIfActive();
       if (tracking) { flushDelta(); sendMessage('VIDEO_ENDED'); }
       tracking = false;
       currentSessionId = null;
+      currentVodId = null;
       currentLogin = login;
       twitchMeta = null;
       metaPending = false;
-      wantTrack = false;
       if (login) requestMetaIfNeeded();
+    }
+
+    function setVod(vodId: string): void {
+      if (vodId === currentVodId) return;
+      if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
+      endAdIfActive();
+      if (tracking) { flushDelta(); sendMessage('VIDEO_ENDED'); }
+      tracking = false;
+      currentSessionId = null;
+      currentVodId = vodId;
+      currentLogin = null;
+      twitchMeta = null;
+      metaPending = false;
+      requestMetaIfNeeded();
     }
 
     function getCurrentVideoState(): VideoState | null {
@@ -172,7 +191,7 @@ export default defineContentScript({
         platform: 'twitch',
         isAd: isAdPlaying(),
         thumbnailUrl: twitchMeta?.thumbnail || null,
-        videoId: currentLogin,
+        videoId: currentVodId ?? currentLogin,
         channelId: currentLogin,
         channelName: twitchMeta?.channelName || currentLogin,
         channelUrl: `https://www.twitch.tv/${currentLogin}`,
@@ -181,14 +200,13 @@ export default defineContentScript({
     }
 
     function attemptTrack(): void {
-      if (currentLogin === null) return;
+      if (currentLogin === null && currentVodId === null) return;
       const video = findVideoElement();
       if (!video || video.paused || video.ended) return;
-      if (!twitchMeta) { wantTrack = true; requestMetaIfNeeded(); return; }
-      if (!twitchMeta.isLive) {
+      if (!twitchMeta) { requestMetaIfNeeded(); return; }
+      if (!twitchMeta.isVod && !twitchMeta.isLive) {
         if (Date.now() - lastMetaFetchAt > 30000) {
           twitchMeta = null;
-          wantTrack = true;
           requestMetaIfNeeded();
         }
         return;
@@ -196,7 +214,6 @@ export default defineContentScript({
       const state = getCurrentVideoState();
       if (!state) return;
       lastVideoTime = video.currentTime;
-      wantTrack = false;
       log('[JP343] Twitch play:', state.channelName);
       sendVideoPlay(state);
     }
@@ -267,8 +284,11 @@ export default defineContentScript({
       sendDiagnostic('player_found');
     }
 
-    function syncChannelFromUrl(): void {
-      setChannel(parseChannelLogin(window.location.pathname));
+    function syncContextFromUrl(): void {
+      const path = window.location.pathname;
+      const vodId = parseVodId(path);
+      if (vodId) { setVod(vodId); return; }
+      setChannel(parseChannelLogin(path));
     }
 
     function pickUpVideo(): void {
@@ -291,7 +311,7 @@ export default defineContentScript({
     observer.observe(document.body, { childList: true, subtree: true });
     observers.push(observer);
 
-    syncChannelFromUrl();
+    syncContextFromUrl();
     pickUpVideo();
 
     let lastUrl = window.location.href;
@@ -300,10 +320,10 @@ export default defineContentScript({
         const oldUrl = lastUrl;
         lastUrl = window.location.href;
         debugLog('URL_CHANGE', 'URL changed', { oldUrl, newUrl: lastUrl });
-        syncChannelFromUrl();
+        syncContextFromUrl();
         currentVideoElement = null;
         setTimeout(pickUpVideo, 500);
-      } else if (currentLogin && !tracking) {
+      } else if ((currentLogin || currentVodId) && !tracking) {
         pickUpVideo();
       }
     }, 1000));
