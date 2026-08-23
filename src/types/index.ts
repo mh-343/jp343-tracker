@@ -32,6 +32,11 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
 
 export type LangSignalSource = 'script' | 'declared';
 
+export type AsrState = 'ja' | 'other' | 'no_asr_track';
+export type SensorEstimateState = 'ok' | 'music_title' | 'low_speech' | 'no_transcript';
+export type TrackingMode = 'jp_only' | 'all';
+export const SENSOR_VERSION = 1;
+
 export interface VideoState {
   isPlaying: boolean;
   currentTime: number;
@@ -48,6 +53,11 @@ export interface VideoState {
   originalTitle?: string | null;
   audioLanguage?: string | null;
   description?: string | null;
+  asrState?: AsrState | null;
+  ytCategory?: 'music' | 'other' | null;
+  isLive?: boolean | null;
+  estimateState?: SensorEstimateState | null;
+  speechRatio?: number | null;
   contentType?: SpotifyContentType;
 }
 
@@ -72,6 +82,13 @@ export interface TrackingSession {
   channelName: string | null;
   channelUrl: string | null;
   audioLanguage?: string | null;
+  asrState?: AsrState | null;
+  ytCategory?: 'music' | 'other' | null;
+  isLive?: boolean | null;
+  videoDurationSec?: number | null;
+  estimateState?: SensorEstimateState | null;
+  speechRatio?: number | null;
+  trackingMode?: TrackingMode;
   langSignal?: 'ja';
   langSignalSrc?: LangSignalSource;
   activityType?: ActivityType;
@@ -102,6 +119,14 @@ export interface PendingEntry {
   readingCompleted?: boolean;
   langSignal?: 'ja';
   langSignalSrc?: LangSignalSource;
+  asrState?: AsrState;
+  ytCategory?: 'music' | 'other';
+  isLive?: boolean;
+  videoDurationSec?: number;
+  estimateState?: SensorEstimateState;
+  speechRatio?: number;
+  trackingMode?: TrackingMode;
+  sensorVersion?: number;
 }
 
 export interface DeletedEntrySnapshot {
@@ -307,7 +332,7 @@ export type ExtensionMessage =
   | { type: 'READER_SET_ENABLED'; source: Platform; enabled: boolean }
   | { type: 'READER_GET_STATE'; source: Platform }
   | { type: 'GET_DIFFICULTY_MAP' }
-  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null }
+  | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null; estimateState?: SensorEstimateState; speechRatio?: number | null }
   | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null }
   | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number }
   | { type: 'CUSTOM_SITES_GET' }

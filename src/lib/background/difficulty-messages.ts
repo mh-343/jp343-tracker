@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '../../types';
-import type { JP343UserState } from '../../types';
+import type { JP343UserState, SensorEstimateState } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import { clampLevel } from '../difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../difficulty-seeds';
@@ -147,6 +147,8 @@ interface LocalBandEntry {
   seed: DifficultySeed | null;
   source: string | null;
   at: number;
+  estimateState?: SensorEstimateState;
+  speechRatio?: number;
 }
 
 interface LocalBandCache {
@@ -162,6 +164,8 @@ export async function handleSaveLocalDifficultyBand(message: {
   source: string | null;
   methodVersion: string;
   channelKey: string | null;
+  estimateState?: SensorEstimateState;
+  speechRatio?: number | null;
 }, context: BackgroundMessageContext): Promise<{ success: boolean }> {
   await withStorageLock(async () => {
     const result = await browser.storage.local.get(STORAGE_KEYS.DIFFICULTY_LOCAL);
@@ -169,7 +173,13 @@ export async function handleSaveLocalDifficultyBand(message: {
     const cache: LocalBandCache = stored && stored.methodVersion === message.methodVersion
       ? stored
       : { methodVersion: message.methodVersion, entries: {} };
-    cache.entries[message.videoId] = { seed: message.seed, source: message.source, at: Date.now() };
+    cache.entries[message.videoId] = {
+      seed: message.seed,
+      source: message.source,
+      at: Date.now(),
+      ...(message.estimateState ? { estimateState: message.estimateState } : {}),
+      ...(message.speechRatio != null ? { speechRatio: message.speechRatio } : {})
+    };
     const keys = Object.keys(cache.entries);
     if (keys.length > LOCAL_CACHE_CAP) {
       const oldest = keys.sort((a, b) => cache.entries[a].at - cache.entries[b].at);

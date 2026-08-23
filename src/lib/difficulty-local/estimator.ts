@@ -24,16 +24,20 @@ export interface LocalEstimateInput {
   channelBounds?: ChannelBounds | null;
 }
 
-export interface LocalEstimate {
-  seed: DifficultySeed;
-  clamped: boolean;
-}
+export type LocalEstimateOutcome =
+  | { state: 'ok'; seed: DifficultySeed; clamped: boolean; speechRatio: number | null }
+  | { state: 'music_title' }
+  | { state: 'low_speech'; speechRatio: number }
+  | { state: 'no_transcript' };
 
-export function estimateLocalBand(input: LocalEstimateInput): LocalEstimate | null {
-  if (isMusicTitle(input.title)) return null;
+export function estimateLocalBand(input: LocalEstimateInput): LocalEstimateOutcome {
+  if (isMusicTitle(input.title)) return { state: 'music_title' };
   const parsed = parseJson3(input.json3);
-  if (!parsed) return null;
-  if (transcriptGuard(parsed.activeMin, input.durationSec)) return null;
+  if (!parsed) return { state: 'no_transcript' };
+  const speechRatio = input.durationSec ? parsed.activeMin / (input.durationSec / 60) : null;
+  if (speechRatio !== null && transcriptGuard(parsed.activeMin, input.durationSec)) {
+    return { state: 'low_speech', speechRatio };
+  }
 
   const feats = extractFeatures(INDEX, parsed, { kanjiMora: BUNDLE.kanji_mora });
   const raw = classify(feats);
@@ -41,5 +45,10 @@ export function estimateLocalBand(input: LocalEstimateInput): LocalEstimate | nu
   const band = applyChannelCorrective({ min: raw.min, max: raw.max, center: raw.center }, bounds);
   const hint = tildeHint(band.min, band.max);
 
-  return { seed: { level: clampLevel(band.center), jlptHint: hint }, clamped: bounds !== null };
+  return {
+    state: 'ok',
+    seed: { level: clampLevel(band.center), jlptHint: hint },
+    clamped: bounds !== null,
+    speechRatio
+  };
 }

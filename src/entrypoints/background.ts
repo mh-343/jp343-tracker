@@ -1,4 +1,5 @@
-import { tracker, generateProjectId, isReading } from '../lib/time-tracker';
+import { tracker, generateProjectId, isReading, sensorEntryFields } from '../lib/time-tracker';
+import { buildSensorParams } from '../lib/background/sensor-params';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
 import { isAuthFailure, stableUserId } from '../lib/auth-helpers';
@@ -557,7 +558,8 @@ export default defineBackground(() => {
               ? { lang_signal_src: entry.langSignalSrc }
               : {})
           }
-        : {})
+        : {}),
+      ...buildSensorParams(entry)
     };
   }
 
@@ -964,7 +966,8 @@ export default defineBackground(() => {
               activityType: savedSession.activityType,
               langSignal: savedSession.langSignal,
               langSignalSrc: savedSession.langSignalSrc,
-              serverEntryId: null
+              serverEntryId: null,
+              ...sensorEntryFields(savedSession)
             };
             await savePendingEntry(entry);
           }
@@ -1015,7 +1018,8 @@ export default defineBackground(() => {
       activityType: savedSession.activityType,
       langSignal: savedSession.langSignal,
       langSignalSrc: savedSession.langSignalSrc,
-      serverEntryId: null
+      serverEntryId: null,
+      ...sensorEntryFields(savedSession)
     };
 
     await savePendingEntry(entry);

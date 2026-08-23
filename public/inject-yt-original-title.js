@@ -9,6 +9,9 @@
   var desc = null;
   var author = null;
   var channelId = null;
+  var category = null;
+  var isLive = null;
+  var responseRead = false;
 
   try {
     var path = window.location.pathname;
@@ -43,6 +46,14 @@
         audioLang = (asr && asr.languageCode) || null;
       }
     }
+    if (!category) {
+      var mf = response.microformat && response.microformat.playerMicroformatRenderer;
+      category = (mf && mf.category) || null;
+    }
+    if (isLive === null) {
+      var live = response.videoDetails && response.videoDetails.isLiveContent;
+      if (typeof live === 'boolean') isLive = live;
+    }
   }
 
   // A response left from the previous video carries its old videoDetails.videoId,
@@ -51,18 +62,22 @@
     try {
       var resp = player.getPlayerResponse();
       var respId = resp && resp.videoDetails && resp.videoDetails.videoId;
-      if (resp && videoId && respId === videoId) readResponse(resp);
+      if (resp && videoId && respId === videoId) {
+        responseRead = true;
+        readResponse(resp);
+      }
     } catch(e) {}
   }
 
   // Some mobile builds lack the #movie_player API. The page still exposes the
   // player data as a global. Use it only when it matches the current video, so
   // a stale response left from a previous in-app navigation cannot leak in.
-  if (!title || !audioLang) {
+  if (!title || !audioLang || !category) {
     try {
       var global = window.ytInitialPlayerResponse;
       var globalId = global && global.videoDetails && global.videoDetails.videoId;
       if (global && videoId && globalId === videoId) {
+        responseRead = true;
         readResponse(global);
       }
     } catch(e) {}
@@ -75,7 +90,10 @@
       audioLang: audioLang,
       desc: desc ? String(desc).slice(0, 800) : null,
       author: author,
-      channelId: channelId
+      channelId: channelId,
+      category: category,
+      isLive: isLive,
+      responseRead: responseRead
     }
   }));
 

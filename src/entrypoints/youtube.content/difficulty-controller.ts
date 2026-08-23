@@ -1,6 +1,7 @@
 // Difficulty chip + map state
 
 import { STORAGE_KEYS } from '../../types';
+import type { SensorEstimateState } from '../../types';
 import { showDifficultyChip, hideDifficultyChip } from '../../lib/difficulty-chip';
 import type { ChipVoteContext, ChipOwnVote } from '../../lib/difficulty-chip';
 import { parseTitleLevel } from '../../lib/difficulty-seeds';
@@ -8,6 +9,7 @@ import type { DifficultySeed, ChannelBounds } from '../../lib/difficulty-seeds';
 import { estimateLocalBand, LOCAL_METHOD_VERSION } from '../../lib/difficulty-local/estimator';
 import { acquireYoutubeTranscript } from './transcript';
 import { readLocalBandCache } from './difficulty-cache';
+import type { LocalBandState } from './difficulty-cache';
 import {
   startFeedBadges,
   stopFeedBadges,
@@ -22,6 +24,7 @@ export interface DifficultyDeps {
   getChannelInfo(): { id: string | null; name: string | null; url: string | null };
   // null = language signals still loading
   getJapaneseSignal(): boolean | null;
+  getVideoDurationSec(): number | null;
   sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -34,7 +37,7 @@ let settingsApplied = false;
 let difficultyMap: Record<string, DifficultySeed> | null = null;
 let difficultyVideoMap: Record<string, DifficultySeed> | null = null;
 let difficultyChannelBounds: Record<string, ChannelBounds> | null = null;
-const localBandCache = new Map<string, { seed: DifficultySeed; source: string } | null>();
+const localBandCache = new Map<string, LocalBandState>();
 const localComputing = new Set<string>();
 let voteState: { eligible: boolean; vote: ChipOwnVote | null } | null = null;
 let voteStateKey: string | null = null;
@@ -96,22 +99,39 @@ async function computeAndApplyLocalEstimate(videoId: string, channelId: string |
     if (deps.getVideoId() !== videoId) return;
     // re-check, DOM may have lagged at kickoff
     if (deps.getJapaneseSignal() !== true) return;
-    let result: { seed: DifficultySeed; source: string } | null = null;
-    if (transcript) {
+    let result: LocalBandState = { band: null };
+    if (transcript.status === 'ok') {
       const bounds = lookupByChannel(difficultyChannelBounds, channelId, channelName);
       const estimate = estimateLocalBand({
         json3: transcript.json3,
         title: deps.getVideoTitle(),
-        durationSec: transcript.lengthSeconds,
+        durationSec: transcript.lengthSeconds ?? deps.getVideoDurationSec(),
         channelBounds: bounds
       });
-      if (estimate) {
-        result = { seed: estimate.seed, source: estimate.clamped ? 'local estimate (in band)' : 'local estimate' };
+      if (estimate.state === 'ok') {
+        result = {
+          band: { seed: estimate.seed, source: estimate.clamped ? 'local estimate (in band)' : 'local estimate' },
+          estimateState: 'ok'
+        };
+        if (estimate.speechRatio != null) result.speechRatio = estimate.speechRatio;
+      } else {
+        result = { band: null, estimateState: estimate.state };
+        if (estimate.state === 'low_speech') result.speechRatio = estimate.speechRatio;
       }
+    } else if (transcript.status === 'no_track') {
+      result = { band: null, estimateState: 'no_transcript' };
     }
     localBandCache.set(videoId, result);
     const channelKey = (channelId || channelName)?.trim().toLowerCase() || null;
-    void deps.sendMessage('SAVE_LOCAL_DIFFICULTY_BAND', { videoId, seed: result?.seed ?? null, source: result?.source ?? null, methodVersion: LOCAL_METHOD_VERSION, channelKey });
+    void deps.sendMessage('SAVE_LOCAL_DIFFICULTY_BAND', {
+      videoId,
+      seed: result.band?.seed ?? null,
+      source: result.band?.source ?? null,
+      methodVersion: LOCAL_METHOD_VERSION,
+      channelKey,
+      ...(result.estimateState ? { estimateState: result.estimateState } : {}),
+      ...(result.speechRatio != null ? { speechRatio: result.speechRatio } : {})
+    });
     if (deps.getVideoId() === videoId) updateDifficultyChip();
   } finally {
     localComputing.delete(videoId);
@@ -222,13 +242,22 @@ export function updateDifficultyChip(): void {
   // local estimate only for Japanese videos
   const jpSignal = deps.getJapaneseSignal();
   const cachedLocal = videoId && jpSignal === true ? localBandCache.get(videoId) : undefined;
-  if (cachedLocal) { show(cachedLocal.seed, cachedLocal.source); return; }
+  if (cachedLocal?.band) { show(cachedLocal.band.seed, cachedLocal.band.source); return; }
   const serverSeed = lookupSeedInMap(difficultyMap, channelInfo.id, channelInfo.name);
   if (serverSeed) show(serverSeed, 'channel estimate');
   else hideDifficultyChip();
   if (videoId && jpSignal === true && cachedLocal === undefined) {
     void computeAndApplyLocalEstimate(videoId, channelInfo.id, channelInfo.name);
   }
+}
+
+export function getLocalSensorEstimate(videoId: string | null): { estimateState: SensorEstimateState; speechRatio?: number } | null {
+  if (!videoId) return null;
+  const cached = localBandCache.get(videoId);
+  if (!cached?.estimateState) return null;
+  const out: { estimateState: SensorEstimateState; speechRatio?: number } = { estimateState: cached.estimateState };
+  if (cached.speechRatio != null) out.speechRatio = cached.speechRatio;
+  return out;
 }
 
 export function applyDifficultySettings(enabled: boolean, localOnly: boolean, votingEnabled: boolean): void {

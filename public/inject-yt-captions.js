@@ -19,7 +19,7 @@
     window.dispatchEvent(new CustomEvent(eventName, { detail: detail }));
   }
 
-  if (!videoId) { fire({ baseUrl: null }); return; }
+  if (!videoId) { fire({ baseUrl: null, status: 'error' }); return; }
 
   var apiKey, hl, gl;
   try {
@@ -28,7 +28,7 @@
     hl = (cfg && cfg.HL) || 'en';
     gl = (cfg && cfg.GL) || 'US';
   } catch(e) {}
-  if (!apiKey) { fire({ baseUrl: null }); return; }
+  if (!apiKey) { fire({ baseUrl: null, status: 'error' }); return; }
 
   // iOS client: its caption URLs are not PoToken-gated (WEB ones are).
   var iosContext = {
@@ -45,7 +45,10 @@
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ context: iosContext, videoId: videoId, contentCheckOk: true, racyCheckOk: true })
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (!r.ok) { throw new Error('http'); }
+    return r.json();
+  })
   .then(function(d) {
     var baseUrl = null, lang = null, kind = null, lengthSeconds = null;
     if (d && d.videoDetails && d.videoDetails.lengthSeconds) {
@@ -59,7 +62,14 @@
               || tracks.filter(function(t){ return t && t.languageCode === 'ja'; })[0];
       if (pick) { baseUrl = pick.baseUrl || null; lang = pick.languageCode || null; kind = pick.kind || null; }
     }
-    fire({ baseUrl: baseUrl, languageCode: lang, kind: kind, lengthSeconds: lengthSeconds });
+    var playable = !!(d && d.playabilityStatus && d.playabilityStatus.status === 'OK');
+    fire({
+      baseUrl: baseUrl,
+      languageCode: lang,
+      kind: kind,
+      lengthSeconds: lengthSeconds,
+      status: baseUrl ? 'ok' : (playable ? 'no_track' : 'error')
+    });
   })
-  .catch(function() { fire({ baseUrl: null }); });
+  .catch(function() { fire({ baseUrl: null, status: 'error' }); });
 })();

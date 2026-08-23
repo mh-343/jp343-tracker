@@ -1,5 +1,5 @@
 import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, LangSignalSource } from '../types';
-import { PLATFORM_ACTIVITY_TYPE } from '../types';
+import { PLATFORM_ACTIVITY_TYPE, SENSOR_VERSION } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -27,6 +27,21 @@ export function isReading(entry: { activityType?: ActivityType; platform: Platfo
 
 function stripToOrigin(url: string): string {
   try { return new URL(url).origin + '/'; } catch { return url; }
+}
+
+export function sensorEntryFields(session: TrackingSession): Partial<PendingEntry> {
+  const fields: Partial<PendingEntry> = {};
+  if (session.asrState) fields.asrState = session.asrState;
+  if (session.ytCategory) fields.ytCategory = session.ytCategory;
+  if (session.isLive != null) fields.isLive = session.isLive;
+  if (session.videoDurationSec) fields.videoDurationSec = session.videoDurationSec;
+  if (session.estimateState) {
+    fields.estimateState = session.estimateState;
+    if (session.speechRatio != null) fields.speechRatio = session.speechRatio;
+  }
+  if (session.trackingMode) fields.trackingMode = session.trackingMode;
+  if (Object.keys(fields).length > 0) fields.sensorVersion = SENSOR_VERSION;
+  return fields;
 }
 
 export class TimeTracker {
@@ -68,6 +83,7 @@ export class TimeTracker {
       if (this.session.audioLanguage == null && videoState.audioLanguage) {
         this.session.audioLanguage = videoState.audioLanguage;
       }
+      this.updateSessionSensorData(videoState);
 
       log('[JP343] Session resumed:', this.session.title);
       return this.session;
@@ -96,6 +112,7 @@ export class TimeTracker {
       audioLanguage: videoState.audioLanguage ?? null,
       activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
+    this.updateSessionSensorData(videoState);
 
     log('[JP343] New session started:', this.session.title);
     return this.session;
@@ -123,6 +140,26 @@ export class TimeTracker {
     const now = Date.now();
     this.session = { ...saved, lastUpdate: now };
     log('[JP343] Session restored:', saved.title, Math.round(saved.accumulatedMs / 1000), 's');
+  }
+
+  // fill-only merge, never overwrites present values
+  updateSessionSensorData(videoState: VideoState): void {
+    const session = this.session;
+    if (!session || session.platform !== 'youtube') return;
+    if (session.asrState == null && videoState.asrState) session.asrState = videoState.asrState;
+    if (session.ytCategory == null && videoState.ytCategory) session.ytCategory = videoState.ytCategory;
+    if (session.isLive == null && videoState.isLive != null) session.isLive = videoState.isLive;
+    if (
+      session.videoDurationSec == null &&
+      Number.isFinite(videoState.duration) &&
+      videoState.duration > 0
+    ) {
+      session.videoDurationSec = Math.round(videoState.duration);
+    }
+    if (session.estimateState == null && videoState.estimateState) {
+      session.estimateState = videoState.estimateState;
+      if (videoState.speechRatio != null) session.speechRatio = videoState.speechRatio;
+    }
   }
 
   // never clears, never downgrades
@@ -205,7 +242,8 @@ export class TimeTracker {
       activityType: this.session.activityType,
       langSignal: this.session.langSignal,
       langSignalSrc: this.session.langSignalSrc,
-      serverEntryId: null
+      serverEntryId: null,
+      ...sensorEntryFields(this.session)
     };
 
     log('[JP343] Session finalized:', durationMinutes, 'minutes');

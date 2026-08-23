@@ -1,5 +1,5 @@
 import type { ReaderState, ReaderVolumeSnapshot, PendingEntry } from '../../types';
-import { DEFAULT_READER_STATE } from '../../types';
+import { DEFAULT_READER_STATE, SENSOR_VERSION } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST } from '../reader-sources';
@@ -251,7 +251,9 @@ export async function ingestReaderSnapshot(
           activityType: 'reading',
           chars: charsDelta,
           readingCurrentPage: vol.currentPage,
-          readingCompleted: vol.completed
+          readingCompleted: vol.completed,
+          trackingMode: settings.trackJapaneseOnly ? 'jp_only' : 'all',
+          sensorVersion: SENSOR_VERSION
         });
       }
 

@@ -32,6 +32,18 @@ export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry)
       mergeTarget.langSignalSrc = entry.langSignalSrc;
     }
   }
+  if (!mergeTarget.asrState && entry.asrState) mergeTarget.asrState = entry.asrState;
+  if (!mergeTarget.ytCategory && entry.ytCategory) mergeTarget.ytCategory = entry.ytCategory;
+  if (mergeTarget.isLive == null && entry.isLive != null) mergeTarget.isLive = entry.isLive;
+  if (!mergeTarget.videoDurationSec && entry.videoDurationSec) {
+    mergeTarget.videoDurationSec = entry.videoDurationSec;
+  }
+  if (!mergeTarget.estimateState && entry.estimateState) {
+    mergeTarget.estimateState = entry.estimateState;
+    if (entry.speechRatio != null) mergeTarget.speechRatio = entry.speechRatio;
+  }
+  if (!mergeTarget.trackingMode && entry.trackingMode) mergeTarget.trackingMode = entry.trackingMode;
+  if (!mergeTarget.sensorVersion && entry.sensorVersion) mergeTarget.sensorVersion = entry.sensorVersion;
   if (mergeTarget.synced) {
     mergeTarget.synced = false;
     mergeTarget.syncedAt = null;

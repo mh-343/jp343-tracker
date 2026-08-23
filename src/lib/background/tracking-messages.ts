@@ -245,6 +245,9 @@ export async function handleTrackingMessage(
         }
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
         const session = tracker.startSession(message.state, tabId);
+        if (!session.trackingMode) {
+          session.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
+        }
         if (langEvidence) tracker.updateSessionLangSignal(langEvidence);
         if (message.state.platform === 'generic') {
           try { session.customSiteHost = new URL(message.state.url).hostname; } catch { session.customSiteHost = message.state.url; }
@@ -298,6 +301,7 @@ export async function handleTrackingMessage(
             endState.channelUrl || null
           );
         }
+        if (endState) tracker.updateSessionSensorData(endState);
       }
 
       const entry = tracker.finalizeSession();
@@ -357,6 +361,8 @@ export async function handleTrackingMessage(
         if (message.state.thumbnailUrl) {
           tracker.updateSessionThumbnail(message.state.thumbnailUrl);
         }
+
+        tracker.updateSessionSensorData(message.state);
 
         // late metadata can turn a session Japanese
         const lateEvidence = detectJapaneseEvidence(message.state);
@@ -429,7 +435,10 @@ export async function handleTrackingMessage(
                   context.log('[JP343] Re-evaluation: original title is JP, starting session');
                   context.setLastSkippedChannel(null);
                   const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
-                  tracker.startSession(message.state as VideoState, tabId);
+                  const reEvalSession = tracker.startSession(message.state as VideoState, tabId);
+                  if (!reEvalSession.trackingMode) {
+                    reEvalSession.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
+                  }
                   // no session existed before startSession above
                   tracker.updateSessionLangSignal(reEvalEvidence);
                   scheduleStatusBadgeUpdate();
@@ -698,6 +707,9 @@ export async function handleTrackingMessage(
       };
 
       const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType);
+      if (!session.trackingMode) {
+        session.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
+      }
       const manualEvidence = detectJapaneseEvidence(manualState);
       if (manualEvidence) tracker.updateSessionLangSignal(manualEvidence);
       await context.saveSessionState(session);

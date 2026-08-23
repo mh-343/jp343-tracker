@@ -8,7 +8,9 @@ import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
 import { stopFeedBadges, scheduleFeedBadgeSweep } from './feed-badges';
-import { initDifficulty, applyDifficultySettings, handleDifficultyStorageChange, updateDifficultyChip, pollLocalVoteGate } from './difficulty-controller';
+import { initDifficulty, applyDifficultySettings, handleDifficultyStorageChange, updateDifficultyChip, pollLocalVoteGate, getLocalSensorEstimate } from './difficulty-controller';
+import { deriveAsrState, mapYtCategory } from './sensor-signals';
+import type { OriginalTitleDetail } from './sensor-signals';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 
@@ -32,6 +34,9 @@ export default defineContentScript({
     let videoDescription: string | null = null;
     let videoAuthor: string | null = null;
     let videoChannelId: string | null = null;
+    let videoCategoryRaw: string | null = null;
+    let videoIsLive: boolean | null = null;
+    let videoResponseRead = false;
     let originalTitleVideoId: string | null = null;
     let originalTitleRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let originalTitleResponsePending = false;
@@ -168,7 +173,14 @@ export default defineContentScript({
       }
     }
 
-    initDifficulty({ getVideoId, getVideoTitle, getChannelInfo, getJapaneseSignal, sendMessage });
+    function getVideoDurationSec(): number | null {
+      const duration = findVideoElement()?.duration;
+      return typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+        ? Math.round(duration)
+        : null;
+    }
+
+    initDifficulty({ getVideoId, getVideoTitle, getChannelInfo, getJapaneseSignal, getVideoDurationSec, sendMessage });
 
     browser.runtime.sendMessage({ type: 'GET_SETTINGS' }).then((response) => {
       if (response?.success && response.data?.settings) {
@@ -528,15 +540,6 @@ export default defineContentScript({
       return !!document.querySelector('.ytp-ad-player-overlay-layout, .ytp-ad-player-overlay, .ytp-skip-ad, .ytp-ad-skip-button-container, .ytp-ad-persistent-progress-bar-container');
     }
 
-    interface OriginalTitleDetail {
-      title: string | null;
-      videoId: string | null;
-      audioLang?: string | null;
-      desc?: string | null;
-      author?: string | null;
-      channelId?: string | null;
-    }
-
     function handleOriginalTitleResponse(e: Event): void {
       const detail = (e as CustomEvent<OriginalTitleDetail>).detail;
       if (!detail) return;
@@ -556,6 +559,13 @@ export default defineContentScript({
       if (typeof detail.channelId === 'string' && detail.channelId.startsWith('UC')) {
         videoChannelId = detail.channelId;
       }
+      if (!videoCategoryRaw && typeof detail.category === 'string' && detail.category) {
+        videoCategoryRaw = detail.category;
+      }
+      if (videoIsLive === null && typeof detail.isLive === 'boolean') {
+        videoIsLive = detail.isLive;
+      }
+      if (detail.responseRead === true) videoResponseRead = true;
       if (detail.title && typeof detail.title === 'string') {
         originalTitle = detail.title;
         log('[JP343] Original title:', originalTitle);
@@ -582,6 +592,9 @@ export default defineContentScript({
         videoDescription = null;
         videoAuthor = null;
         videoChannelId = null;
+        videoCategoryRaw = null;
+        videoIsLive = null;
+        videoResponseRead = false;
         originalTitleVideoId = null;
         originalTitleResponsePending = false;
         return;
@@ -591,6 +604,9 @@ export default defineContentScript({
       videoDescription = null;
       videoAuthor = null;
       videoChannelId = null;
+      videoCategoryRaw = null;
+      videoIsLive = null;
+      videoResponseRead = false;
       originalTitleVideoId = videoId;
       originalTitleResponsePending = true;
       if (originalTitleRetryTimer) {
@@ -692,6 +708,7 @@ export default defineContentScript({
       }
 
       const channelInfo = getChannelInfo();
+      const localEstimate = getLocalSensorEstimate(videoId);
 
       return {
         isPlaying: !video.paused && !video.ended,
@@ -708,7 +725,12 @@ export default defineContentScript({
         channelUrl: channelInfo.url,
         originalTitle: originalTitle || null,
         audioLanguage: videoAudioLanguage,
-        description: videoDescription
+        description: videoDescription,
+        asrState: deriveAsrState(videoAudioLanguage, videoResponseRead),
+        ytCategory: mapYtCategory(videoCategoryRaw),
+        isLive: videoIsLive,
+        estimateState: localEstimate?.estimateState ?? null,
+        speechRatio: localEstimate?.speechRatio ?? null
       };
     }
 
@@ -982,6 +1004,9 @@ export default defineContentScript({
         videoDescription = null;
         videoAuthor = null;
         videoChannelId = null;
+        videoCategoryRaw = null;
+        videoIsLive = null;
+        videoResponseRead = false;
         originalTitleResponsePending = false;
 
         if (currentVideoElement) {

@@ -7,12 +7,13 @@ interface CaptionDetail {
   languageCode: string | null;
   kind: string | null;
   lengthSeconds: number | null;
+  status?: 'ok' | 'no_track' | 'error';
 }
 
-export interface TranscriptResult {
-  json3: Json3Transcript;
-  lengthSeconds: number | null;
-}
+export type TranscriptAcquisition =
+  | { status: 'ok'; json3: Json3Transcript; lengthSeconds: number | null }
+  | { status: 'no_track' }
+  | { status: 'error' };
 
 function injectCaptionScript(): void {
   try {
@@ -39,17 +40,18 @@ function awaitCaptionEvent(videoId: string, timeoutMs: number): Promise<CaptionD
   });
 }
 
-export async function acquireYoutubeTranscript(videoId: string): Promise<TranscriptResult | null> {
+export async function acquireYoutubeTranscript(videoId: string): Promise<TranscriptAcquisition> {
   const pending = awaitCaptionEvent(videoId, 4000);
   injectCaptionScript();
   const meta = await pending;
-  if (!meta || !meta.baseUrl) return null;
+  if (!meta) return { status: 'error' };
+  if (!meta.baseUrl) return { status: meta.status === 'no_track' ? 'no_track' : 'error' };
   try {
     const res = await fetch(meta.baseUrl + '&fmt=json3');
-    if (!res.ok) return null;
+    if (!res.ok) return { status: 'error' };
     const json3 = await res.json() as Json3Transcript;
-    return { json3, lengthSeconds: meta.lengthSeconds };
+    return { status: 'ok', json3, lengthSeconds: meta.lengthSeconds };
   } catch {
-    return null;
+    return { status: 'error' };
   }
 }
