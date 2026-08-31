@@ -8,6 +8,7 @@ import { getLocalDateString, getWeekDates } from '../format-utils';
 import { subtractSessionFromServerStats, type DecrementableServerStats } from '../server-stats';
 import { loadDeletedSnapshots, buildStashedSnapshots, hasDeletedSnapshot, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
 import { deleteServerEntry } from './server-delete';
+import { bulkRetagUntagged, retagPendingEntry, retagServerEntry } from './attention-retag';
 import { stableUserId } from '../auth-helpers';
 import { buildOwnedCache, loadUserState, readOwnedServerSessions, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
@@ -31,7 +32,8 @@ async function applyDeleteToStatsCache(
   subtractSessionFromServerStats(
     cached, deltaSeconds,
     getLocalDateString(new Date(snapshot.date), dsh), getLocalDateString(new Date(), dsh),
-    weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz
+    weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz,
+    snapshot.isPassive
   );
   return buildOwnedCache(owner, cached, envelope.cachedAt);
 }
@@ -203,6 +205,26 @@ export async function handlePendingMessage(
         });
       }
       return { success: false, error: 'No entryId or title provided' };
+    }
+
+    case 'RETAG_ENTRY': {
+      if (!('isPassive' in message) || typeof message.isPassive !== 'boolean') {
+        return { success: false, error: 'Invalid isPassive value' };
+      }
+      if ('serverEntryId' in message && message.serverEntryId != null) {
+        return retagServerEntry(message.serverEntryId, message.isPassive);
+      }
+      if ('entryId' in message && typeof message.entryId === 'string' && message.entryId) {
+        return retagPendingEntry(message.entryId, message.isPassive);
+      }
+      return { success: false, error: 'No entry reference provided' };
+    }
+
+    case 'BULK_RETAG_UNTAGGED': {
+      if (!('isPassive' in message) || typeof message.isPassive !== 'boolean') {
+        return { success: false, error: 'Invalid isPassive value' };
+      }
+      return bulkRetagUntagged(message.isPassive);
     }
 
     default:

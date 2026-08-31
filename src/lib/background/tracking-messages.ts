@@ -1,6 +1,8 @@
 import type { ActivityType, ExtensionMessage, LangSignalSource, Platform, TrackingSession, VideoState } from '../../types';
+import { activityAllowsPassive } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
-import { tracker } from '../time-tracker';
+import { sessionOwnsId, tracker } from '../time-tracker';
+import { applyAttentionSample } from './attention-machine';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { detectJapaneseEvidence, isJapaneseContent } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
@@ -66,10 +68,13 @@ function customSiteCandidateUrls(
 export function endTargetsSession(
   message: ExtensionMessage,
   sessionId: string,
-  sessionVideoId: string | null
+  sessionVideoId: string | null,
+  previousIds?: string[]
 ): boolean {
   const messageSessionId = 'sessionId' in message ? message.sessionId : undefined;
-  if (messageSessionId !== undefined) return messageSessionId === sessionId;
+  if (messageSessionId !== undefined) {
+    return messageSessionId === sessionId || (previousIds?.includes(messageSessionId) ?? false);
+  }
   const messageVideoId = 'videoId' in message ? message.videoId : undefined;
   if (messageVideoId === undefined || sessionVideoId === null) return true;
   return messageVideoId === sessionVideoId;
@@ -78,9 +83,10 @@ export function endTargetsSession(
 export function endStateBelongsToSession(
   message: ExtensionMessage,
   sessionId: string,
-  sessionVideoId: string | null
+  sessionVideoId: string | null,
+  previousIds?: string[]
 ): boolean {
-  if (!endTargetsSession(message, sessionId, sessionVideoId)) return false;
+  if (!endTargetsSession(message, sessionId, sessionVideoId, previousIds)) return false;
   const messageVideoId = 'videoId' in message ? message.videoId : undefined;
   if (messageVideoId !== undefined && messageVideoId !== sessionVideoId) return false;
   const stateVideoId = 'state' in message ? message.state?.videoId : undefined;
@@ -95,7 +101,7 @@ async function collectUnflushedTime(
   if (!session.tabId || session.platform === 'generic') return;
   try {
     const response = await browser.tabs.sendMessage(session.tabId, { type: 'GET_CONTENT_TIME' });
-    if (response && typeof response.unflushedMs === 'number' && response.sessionId === session.id && response.unflushedMs > 0) {
+    if (response && typeof response.unflushedMs === 'number' && sessionOwnsId(session, response.sessionId) && response.unflushedMs > 0) {
       tracker.addDelta(response.unflushedMs, session.id);
       recordDiagnostic?.('unflushed_collected', session.platform);
     }
@@ -267,7 +273,8 @@ export async function handleTrackingMessage(
     case 'VIDEO_PAUSE': {
       if (isWrongTab) return { success: true };
       const pauseSessionId = 'sessionId' in message ? message.sessionId : undefined;
-      if (pauseSessionId !== undefined && pauseSessionId !== tracker.getSessionId()) {
+      const pauseTarget = tracker.getCurrentSession();
+      if (pauseSessionId !== undefined && (!pauseTarget || !sessionOwnsId(pauseTarget, pauseSessionId))) {
         return { success: true };
       }
       if (isForeignGenericFrame(tracker.getCurrentSession(), messageSender)) return { success: true };
@@ -286,13 +293,14 @@ export async function handleTrackingMessage(
       const expectedId = preSession.id;
       const expectedVideoId = preSession.videoId;
       const expectedPlatform = preSession.platform;
-      if (!endTargetsSession(message, expectedId, expectedVideoId)) return { success: true, saved: false };
+      const expectedPreviousIds = preSession.previousIds;
+      if (!endTargetsSession(message, expectedId, expectedVideoId, expectedPreviousIds)) return { success: true, saved: false };
 
       await collectUnflushedTime(preSession, recordDiagnostic);
       const stillActive = tracker.getCurrentSession();
       if (!stillActive || stillActive.id !== expectedId) return { success: true, saved: false };
 
-      if (endStateBelongsToSession(message, expectedId, expectedVideoId)) {
+      if (endStateBelongsToSession(message, expectedId, expectedVideoId, expectedPreviousIds)) {
         const endState = 'state' in message ? message.state : undefined;
         if (endState?.channelName) {
           tracker.updateSessionChannelInfo(
@@ -458,13 +466,16 @@ export async function handleTrackingMessage(
       if ('deltaMs' in message && typeof message.deltaMs === 'number' && message.deltaMs > 0) {
         const session = tracker.getCurrentSession();
         if (!session) return { success: true };
-        if ('sessionId' in message && message.sessionId !== session.id) return { success: true };
+        if ('sessionId' in message && !sessionOwnsId(session, message.sessionId)) return { success: true };
         if (isForeignGenericFrame(session, messageSender)) return { success: true };
         if (session.isPaused) {
           tracker.resumeSession();
           recordDiagnostic?.('heartbeat_resume', message.platform);
         }
         tracker.addDelta(message.deltaMs);
+        if ('attention' in message) {
+          await applyAttentionSample(message.attention, context, recordDiagnostic);
+        }
         await context.saveSessionState(tracker.getCurrentSession());
         scheduleStatusBadgeUpdate();
       }
@@ -480,7 +491,7 @@ export async function handleTrackingMessage(
       if (session && session.tabId && session.platform !== 'generic') {
         try {
           const response = await browser.tabs.sendMessage(session.tabId, { type: 'GET_CONTENT_TIME' });
-          if (response && typeof response.unflushedMs === 'number' && response.sessionId === session.id) {
+          if (response && typeof response.unflushedMs === 'number' && sessionOwnsId(session, response.sessionId)) {
             durationMs = session.accumulatedMs + response.unflushedMs;
             if (response.unflushedMs > 0 && session.isPaused) {
               tracker.resumeSession();
@@ -604,6 +615,24 @@ export async function handleTrackingMessage(
         return { success: false, error: 'No active session' };
       }
       return { success: false, error: 'No title provided' };
+    }
+
+    case 'SET_SESSION_ATTENTION': {
+      const session = tracker.getCurrentSession();
+      if (!session) return { success: false, error: 'No active session' };
+      const attention = 'attention' in message ? message.attention : undefined;
+      if (attention !== 'active' && attention !== 'passive') {
+        return { success: false, error: 'Invalid attention value' };
+      }
+      if (attention === 'passive' && !activityAllowsPassive(session.activityType)) {
+        return { success: false, error: 'Reading and speaking sessions count as active' };
+      }
+      session.attentionOverride = attention;
+      session.attention = attention;
+      session.attentionCandidate = undefined;
+      session.attentionCandidateSince = undefined;
+      await context.saveSessionState(session);
+      return { success: true };
     }
 
     case 'GET_ACTIVE_TAB_INFO': {

@@ -1,4 +1,4 @@
-import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, LangSignalSource } from '../types';
+import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, AttentionMode, LangSignalSource } from '../types';
 import { PLATFORM_ACTIVITY_TYPE, SENSOR_VERSION } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
@@ -42,6 +42,18 @@ export function sensorEntryFields(session: TrackingSession): Partial<PendingEntr
   if (session.trackingMode) fields.trackingMode = session.trackingMode;
   if (Object.keys(fields).length > 0) fields.sensorVersion = SENSOR_VERSION;
   return fields;
+}
+
+export function attentionEntryFields(session: TrackingSession): Partial<PendingEntry> {
+  const mode = session.attentionOverride ?? session.attention;
+  if (!mode) return {};
+  return { isPassive: mode === 'passive' };
+}
+
+// split successors keep answering to predecessor ids
+export function sessionOwnsId(session: TrackingSession, id: unknown): boolean {
+  if (id === session.id) return true;
+  return typeof id === 'string' && Array.isArray(session.previousIds) && session.previousIds.includes(id);
 }
 
 export class TimeTracker {
@@ -243,7 +255,8 @@ export class TimeTracker {
       langSignal: this.session.langSignal,
       langSignalSrc: this.session.langSignalSrc,
       serverEntryId: null,
-      ...sensorEntryFields(this.session)
+      ...sensorEntryFields(this.session),
+      ...attentionEntryFields(this.session)
     };
 
     log('[JP343] Session finalized:', durationMinutes, 'minutes');
@@ -254,6 +267,28 @@ export class TimeTracker {
 
   stopSession(): PendingEntry | null {
     return this.finalizeSession();
+  }
+
+  splitSession(newAttention: AttentionMode): PendingEntry | null {
+    if (!this.session) return null;
+    const predecessor = this.session;
+    const entry = this.finalizeSession();
+    const now = Date.now();
+    this.session = {
+      ...predecessor,
+      id: generateId(),
+      startTime: now,
+      accumulatedMs: 0,
+      lastUpdate: now,
+      isActive: true,
+      isPaused: false,
+      attention: newAttention,
+      attentionCandidate: undefined,
+      attentionCandidateSince: undefined,
+      previousIds: [...(predecessor.previousIds ?? []), predecessor.id].slice(-50)
+    };
+    log('[JP343] Session split on attention change:', newAttention);
+    return entry;
   }
 
   getCurrentSession(): TrackingSession | null {

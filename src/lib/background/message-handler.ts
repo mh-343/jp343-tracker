@@ -17,7 +17,7 @@ function getMessageType(message: unknown): string {
   return typeof candidate.type === 'string' ? candidate.type : 'unknown';
 }
 
-const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY']);
+const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY', 'RETAG_ENTRY', 'BULK_RETAG_UNTAGGED']);
 
 function isDashboardSender(messageSender: Browser.runtime.MessageSender): boolean {
   if (messageSender?.id !== browser.runtime.id) return false;
@@ -57,6 +57,7 @@ export function createBackgroundMessageHandler(
         case 'RESUME_SESSION':
         case 'GET_CURRENT_CHANNEL':
         case 'UPDATE_SESSION_TITLE':
+        case 'SET_SESSION_ATTENTION':
         case 'GET_ACTIVE_TAB_INFO':
         case 'MANUAL_TRACK_START':
           return handleTrackingMessage(message, messageSender, context,
@@ -70,6 +71,8 @@ export function createBackgroundMessageHandler(
         case 'PURGE_DELETED_ENTRY':
         case 'CLEAR_SYNCED_ENTRIES':
         case 'UPDATE_PENDING_ENTRY_TITLE':
+        case 'RETAG_ENTRY':
+        case 'BULK_RETAG_UNTAGGED':
           return handlePendingMessage(message, context);
 
         case 'JP343_SITE_LOADED':

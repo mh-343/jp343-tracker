@@ -45,6 +45,13 @@ export async function updateStats(entry: PendingEntry): Promise<void> {
         stats.readingDailyMinutes[entryDate] = (stats.readingDailyMinutes[entryDate] || 0) + entry.duration_min;
       }
 
+      if (typeof entry.isPassive === 'boolean') {
+        const attentionMap = entry.isPassive
+          ? (stats.dailyPassiveMinutes ??= {})
+          : (stats.dailyActiveMinutes ??= {});
+        attentionMap[entryDate] = (attentionMap[entryDate] || 0) + entry.duration_min;
+      }
+
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = getLocalDateString(cutoff);
@@ -53,10 +60,11 @@ export async function updateStats(entry: PendingEntry): Promise<void> {
           delete stats.dailyMinutes[dateKey];
         }
       }
-      if (stats.readingDailyMinutes) {
-        for (const dateKey of Object.keys(stats.readingDailyMinutes)) {
+      for (const map of [stats.readingDailyMinutes, stats.dailyActiveMinutes, stats.dailyPassiveMinutes]) {
+        if (!map) continue;
+        for (const dateKey of Object.keys(map)) {
           if (dateKey < cutoffStr) {
-            delete stats.readingDailyMinutes[dateKey];
+            delete map[dateKey];
           }
         }
       }
@@ -120,6 +128,15 @@ export function applyStatsSubtraction(
       delete stats.readingDailyMinutes[entryDate];
     }
   }
+  if (typeof entry.isPassive === 'boolean') {
+    const attentionMap = entry.isPassive ? stats.dailyPassiveMinutes : stats.dailyActiveMinutes;
+    if (attentionMap?.[entryDate]) {
+      attentionMap[entryDate] = Math.max(0, attentionMap[entryDate] - entry.duration_min);
+      if (attentionMap[entryDate] <= 0) {
+        delete attentionMap[entryDate];
+      }
+    }
+  }
   subtractHourlyMinutes(stats, entry);
 
   stats.currentStreak = recalculateStreak(stats.dailyMinutes, dayStartHour);
@@ -127,6 +144,42 @@ export function applyStatsSubtraction(
   const dates = Object.keys(stats.dailyMinutes).sort();
   stats.lastActiveDate = dates.length > 0 ? dates[dates.length - 1] : '';
   return stats;
+}
+
+export interface AttentionRetagMove {
+  entry: PendingEntry;
+  oldIsPassive: boolean | undefined;
+}
+
+// Caller must hold the storage lock
+export async function applyAttentionRetagToStats(moves: AttentionRetagMove[]): Promise<void> {
+  if (moves.length === 0) return;
+  try {
+    const stats = await loadStats();
+    const settings = await deps.loadSettings();
+    const dsh = settings.dayStartHour || 0;
+    for (const { entry, oldIsPassive } of moves) {
+      const entryDate = getLocalDateString(new Date(entry.date), dsh);
+      if (typeof oldIsPassive === 'boolean') {
+        const oldMap = oldIsPassive ? stats.dailyPassiveMinutes : stats.dailyActiveMinutes;
+        if (oldMap?.[entryDate]) {
+          oldMap[entryDate] = Math.max(0, oldMap[entryDate] - entry.duration_min);
+          if (oldMap[entryDate] <= 0) {
+            delete oldMap[entryDate];
+          }
+        }
+      }
+      if (typeof entry.isPassive === 'boolean') {
+        const newMap = entry.isPassive
+          ? (stats.dailyPassiveMinutes ??= {})
+          : (stats.dailyActiveMinutes ??= {});
+        newMap[entryDate] = (newMap[entryDate] || 0) + entry.duration_min;
+      }
+    }
+    await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+  } catch (error) {
+    deps.log('[JP343] Failed to apply retag to stats:', error);
+  }
 }
 
 // Caller must hold the storage lock

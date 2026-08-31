@@ -4,6 +4,15 @@ export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'd
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
+export type AttentionMode = 'active' | 'passive';
+
+export const PASSIVE_CAPABLE_ACTIVITIES: ReadonlyArray<ActivityType> = ['watching', 'listening', 'other'];
+
+export function activityAllowsPassive(activityType: ActivityType | undefined): boolean {
+  if (activityType === undefined) return true;
+  return PASSIVE_CAPABLE_ACTIVITIES.includes(activityType);
+}
+
 export type SpotifyContentType = 'music' | 'podcast' | 'audiobook';
 
 export type ColorTheme = 'magenta' | 'matcha' | 'ocean';
@@ -92,6 +101,11 @@ export interface TrackingSession {
   langSignal?: 'ja';
   langSignalSrc?: LangSignalSource;
   activityType?: ActivityType;
+  attention?: AttentionMode;
+  attentionOverride?: AttentionMode;
+  attentionCandidate?: AttentionMode;
+  attentionCandidateSince?: number;
+  previousIds?: string[];
 }
 
 export interface PendingEntry {
@@ -127,6 +141,7 @@ export interface PendingEntry {
   speechRatio?: number;
   trackingMode?: TrackingMode;
   sensorVersion?: number;
+  isPassive?: boolean;
 }
 
 export interface DeletedEntrySnapshot {
@@ -202,6 +217,7 @@ export interface ExtensionSettings {
   difficultyLocalOnly?: boolean;
   difficultyVotingEnabled?: boolean;
   difficultyContribEnabled?: boolean;
+  showAttentionUi?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -272,6 +288,7 @@ export interface SettingsPullResponse {
     hub_background_enabled?: boolean;
     hide_non_japanese?: boolean;
     track_japanese_only?: boolean;
+    attention_ui_enabled?: boolean;
     daily_goal?: number;
     target_start_times?: (string | null)[] | null;
     message?: string;
@@ -286,7 +303,7 @@ export type ExtensionMessage =
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
-  | { type: 'TIME_DELTA'; platform: Platform; deltaMs: number; sessionId: string }
+  | { type: 'TIME_DELTA'; platform: Platform; deltaMs: number; sessionId: string; attention?: AttentionMode }
   | { type: 'JP343_SITE_LOADED'; userState: JP343UserState; displayName?: string }
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
@@ -310,6 +327,9 @@ export type ExtensionMessage =
   | { type: 'UNWHITELIST_CHANNEL'; channelId: string }
   | { type: 'GET_CURRENT_CHANNEL' }
   | { type: 'UPDATE_SESSION_TITLE'; title: string }
+  | { type: 'SET_SESSION_ATTENTION'; attention: AttentionMode }
+  | { type: 'RETAG_ENTRY'; entryId?: string; serverEntryId?: number | string; isPassive: boolean }
+  | { type: 'BULK_RETAG_UNTAGGED'; isPassive: boolean }
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
   | { type: 'MANUAL_TRACK_START'; title: string; url: string; tabId: number; activityType: ActivityType }
   | { type: 'GET_ACTIVE_TAB_INFO' }
@@ -380,6 +400,8 @@ export interface ExtensionStats {
   currentStreak: number;
   hourlyMinutes?: Record<string, number>;
   readingDailyMinutes?: Record<string, number>;
+  dailyActiveMinutes?: Record<string, number>;
+  dailyPassiveMinutes?: Record<string, number>;
 }
 
 export const DEFAULT_STATS: ExtensionStats = {
@@ -511,7 +533,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   showDifficultyLevels: true,
   difficultyLocalOnly: false,
   difficultyVotingEnabled: true,
-  difficultyContribEnabled: false
+  difficultyContribEnabled: false,
+  showAttentionUi: true
 };
 
 export const STORAGE_KEYS = {
@@ -594,6 +617,7 @@ export interface CachedServerSession {
   url?: string;
   thumbnail?: string;
   activityType?: string;
+  isPassive?: boolean;
 }
 
 export interface PlatformHealth {

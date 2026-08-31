@@ -2,6 +2,7 @@ import type { VideoState } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
+import { sampleAttention } from '../../lib/attention';
 
 // nihongo-jikan.com embeds each lesson via a www.youtube.com/embed iframe.
 // This tracker runs inside that iframe (allFrames) and only acts when the
@@ -127,7 +128,7 @@ export default defineContentScript({
       if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
       const ms = accumulatedDeltaMs;
       accumulatedDeltaMs = 0;
-      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId, attention: sampleAttention() });
     }
 
     function sendVideoPlay(video: HTMLVideoElement): void {

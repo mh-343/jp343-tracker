@@ -5,6 +5,7 @@ export interface PendingListDeps {
   listEl: HTMLElement;
   platformIcons: Record<Platform, string>;
   getDayStartHour: () => number;
+  showAttention: boolean;
   onEntriesChanged: (entries: PendingEntry[]) => void;
 }
 
@@ -158,6 +159,14 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
   const ids = group.entryIds.join(',');
   const hasMultiple = group.sessionCount > 1;
 
+  let activeMin = 0;
+  let passiveMin = 0;
+  for (const e of group.entries) {
+    if (e.isPassive === true) passiveMin += e.duration_min;
+    else if (e.isPassive === false) activeMin += e.duration_min;
+  }
+  const hasSplitData = activeMin > 0 || passiveMin > 0;
+
   const container = document.createElement('div');
   container.className = 'pending-entry-group';
   container.dataset.groupKey = groupKey;
@@ -215,6 +224,30 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
   strong.textContent = formatDuration(group.totalMinutes);
   meta.appendChild(strong);
 
+  let splitLine: HTMLDivElement | null = null;
+  if (deps.showAttention && hasSplitData) {
+    splitLine = document.createElement('div');
+    splitLine.className = 'entry-split-line';
+    if (activeMin > 0) {
+      const activeLabel = document.createElement('span');
+      activeLabel.className = 'entry-split-label active';
+      activeLabel.textContent = `${formatDuration(activeMin)} active`;
+      splitLine.appendChild(activeLabel);
+    }
+    if (activeMin > 0 && passiveMin > 0) {
+      const dot = document.createElement('span');
+      dot.className = 'entry-split-dot';
+      dot.textContent = '·';
+      splitLine.appendChild(dot);
+    }
+    if (passiveMin > 0) {
+      const passiveLabel = document.createElement('span');
+      passiveLabel.className = 'entry-split-label passive';
+      passiveLabel.textContent = `${formatDuration(passiveMin)} passive`;
+      splitLine.appendChild(passiveLabel);
+    }
+  }
+
   if (hasMultiple) {
     const expandBtn = document.createElement('button');
     expandBtn.className = 'pending-entry-expand';
@@ -233,7 +266,28 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
   }
 
   info.append(titleRow, meta);
+  if (splitLine) info.appendChild(splitLine);
   entryDiv.append(thumbWrap, info);
+
+  if (deps.showAttention && hasSplitData) {
+    entryDiv.classList.add('has-split-bar');
+    const splitBar = document.createElement('div');
+    splitBar.className = 'entry-split-bar';
+    if (activeMin > 0) {
+      const activeSegment = document.createElement('div');
+      activeSegment.className = 'entry-split-segment active';
+      activeSegment.style.flexGrow = String(activeMin);
+      splitBar.appendChild(activeSegment);
+    }
+    if (passiveMin > 0) {
+      const passiveSegment = document.createElement('div');
+      passiveSegment.className = 'entry-split-segment passive';
+      passiveSegment.style.flexGrow = String(passiveMin);
+      splitBar.appendChild(passiveSegment);
+    }
+    entryDiv.appendChild(splitBar);
+  }
+
   container.appendChild(entryDiv);
 
   if (hasMultiple) {
@@ -256,6 +310,14 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
       durSpan.className = 'session-detail-duration';
       durSpan.textContent = formatDuration(e.duration_min);
       detail.appendChild(durSpan);
+
+      if (deps.showAttention && e.isPassive) {
+        const passiveChip = document.createElement('span');
+        passiveChip.className = 'entry-passive-chip';
+        passiveChip.textContent = 'passive';
+        detail.appendChild(passiveChip);
+      }
+
       detailsList.appendChild(detail);
     }
     container.appendChild(detailsList);

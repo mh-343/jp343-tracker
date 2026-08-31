@@ -1,7 +1,7 @@
 // JP343 Extension - Popup UI
 
-import { STORAGE_KEYS } from '../../types';
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType } from '../../types';
+import { STORAGE_KEYS, activityAllowsPassive } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionMode } from '../../types';
 import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
@@ -31,6 +31,9 @@ const elements = {
   adLabel: document.getElementById('adLabel') as HTMLElement,
   btnPause: document.getElementById('btnPause') as HTMLButtonElement,
   btnStop: document.getElementById('btnStop') as HTMLButtonElement,
+  attentionRow: document.getElementById('attentionRow') as HTMLElement,
+  btnAttentionActive: document.getElementById('btnAttentionActive') as HTMLButtonElement,
+  btnAttentionPassive: document.getElementById('btnAttentionPassive') as HTMLButtonElement,
   pendingSection: document.getElementById('pendingSection') as HTMLElement,
   pendingHeader: document.getElementById('pendingHeader') as HTMLElement,
   pendingCollapseArrow: document.getElementById('pendingCollapseArrow') as HTMLElement,
@@ -117,6 +120,7 @@ function updateToggleDisplay(enabled: boolean): void {
 let _popupGoalMinutes = 60;
 let _popupDayStartHour = 0;
 let _popupStretchEnabled = true;
+let _popupShowAttention = true;
 
 function createGoalTooltipText<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -279,6 +283,9 @@ async function loadAndApplySettings(): Promise<void> {
       trackJapaneseOnly = settings.trackJapaneseOnly ?? true;
       updateJpFilterDisplay(hideNonJapanese);
       applyColorTheme(settings.colorTheme ?? 'magenta');
+      const attnChanged = _popupShowAttention !== (settings.showAttentionUi ?? true);
+      _popupShowAttention = settings.showAttentionUi ?? true;
+      if (attnChanged) void fetchPendingEntries();
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);
@@ -774,6 +781,18 @@ function updateSessionDisplay(
   elements.adLabel.style.display = isAd ? 'block' : 'none';
 
   elements.btnPause.textContent = session.isPaused ? 'Resume' : 'Pause';
+  updateAttentionRow(session);
+}
+
+function updateAttentionRow(session: TrackingSession): void {
+  if (!_popupShowAttention || !activityAllowsPassive(session.activityType)) {
+    elements.attentionRow.style.display = 'none';
+    return;
+  }
+  elements.attentionRow.style.display = 'flex';
+  const effective = session.attentionOverride ?? session.attention;
+  elements.btnAttentionActive.classList.toggle('active', effective === 'active');
+  elements.btnAttentionPassive.classList.toggle('active', effective === 'passive');
 }
 
 function updatePendingDisplay(entries: PendingEntry[]): void {
@@ -790,6 +809,7 @@ async function fetchPendingEntries(): Promise<void> {
         listEl: elements.pendingList,
         platformIcons,
         getDayStartHour: () => _popupDayStartHour,
+        showAttention: _popupShowAttention,
         onEntriesChanged: updatePendingDisplay
       });
     }
@@ -870,6 +890,24 @@ elements.btnStop.addEventListener('click', async () => {
     log('[JP343 Popup] Error:', error);
   }
 });
+
+async function setSessionAttention(attention: AttentionMode): Promise<void> {
+  if (!currentSession) return;
+
+  try {
+    const response = await browser.runtime.sendMessage({ type: 'SET_SESSION_ATTENTION', attention });
+    if (response.success) {
+      await fetchCurrentState();
+    } else {
+      log('[JP343 Popup] Failed to set attention:', response.error);
+    }
+  } catch (error) {
+    log('[JP343 Popup] Error:', error);
+  }
+}
+
+elements.btnAttentionActive.addEventListener('click', () => setSessionAttention('active'));
+elements.btnAttentionPassive.addEventListener('click', () => setSessionAttention('passive'));
 
 async function openOrFocusDashboard(path: string): Promise<void> {
   const baseUrl = browser.runtime.getURL('/dashboard.html');

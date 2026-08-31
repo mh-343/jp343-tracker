@@ -23,6 +23,8 @@ function injectStyles(doc: Document): void {
       gap: 8px;
       margin: 6px 0 2px 0;
       padding: 4px 10px;
+      max-width: 100%;
+      contain: layout style;
       border-radius: 8px;
       background: rgba(12, 12, 20, 0.85);
       border: 1px solid rgba(255, 0, 128, 0.25);

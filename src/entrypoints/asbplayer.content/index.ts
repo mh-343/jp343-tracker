@@ -1,6 +1,7 @@
 import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
+import { sampleAttention } from '../../lib/attention';
 
 export default defineContentScript({
   matches: ['*://app.asbplayer.dev/*'],
@@ -109,7 +110,7 @@ export default defineContentScript({
       if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
       const ms = accumulatedDeltaMs;
       accumulatedDeltaMs = 0;
-      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId, attention: sampleAttention() });
     }
 
     function locateVideoElement(): HTMLVideoElement | null {

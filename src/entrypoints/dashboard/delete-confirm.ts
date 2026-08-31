@@ -1,14 +1,14 @@
-interface DeleteConfirmOptions {
+interface ConfirmButtonOptions {
   idleLabel?: string;
   idleTitle?: string;
   armedLabel?: string;
   armedTitle?: string;
 }
 
-export function armDeleteButton(
+export function armConfirmButton(
   btn: HTMLButtonElement,
   onConfirm: () => Promise<void>,
-  opts: DeleteConfirmOptions = {}
+  opts: ConfirmButtonOptions = {}
 ): void {
   const idleLabel = opts.idleLabel ?? '×';
   const idleTitle = opts.idleTitle ?? 'Delete';

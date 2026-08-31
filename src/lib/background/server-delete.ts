@@ -221,7 +221,8 @@ function serverStatsAfterDelete(
     getLocalDateString(new Date(), dayStartHour),
     weekDays[0]?.date ?? '',
     weekDays[weekDays.length - 1]?.date ?? '',
-    Intl.DateTimeFormat().resolvedOptions().timeZone
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    snapshot.isPassive
   );
   return cached;
 }

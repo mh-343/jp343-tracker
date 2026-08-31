@@ -1,4 +1,4 @@
-import { tracker, generateProjectId, isReading, sensorEntryFields } from '../lib/time-tracker';
+import { tracker, generateProjectId, isReading, sensorEntryFields, attentionEntryFields } from '../lib/time-tracker';
 import { buildSensorParams } from '../lib/background/sensor-params';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
@@ -567,6 +567,7 @@ export default defineBackground(() => {
               : {})
           }
         : {}),
+      ...(typeof entry.isPassive === 'boolean' ? { is_passive: entry.isPassive ? '1' : '0' } : {}),
       ...buildSensorParams(entry)
     };
   }
@@ -975,7 +976,8 @@ export default defineBackground(() => {
               langSignal: savedSession.langSignal,
               langSignalSrc: savedSession.langSignalSrc,
               serverEntryId: null,
-              ...sensorEntryFields(savedSession)
+              ...sensorEntryFields(savedSession),
+              ...attentionEntryFields(savedSession)
             };
             await savePendingEntry(entry);
           }
@@ -1027,7 +1029,8 @@ export default defineBackground(() => {
       langSignal: savedSession.langSignal,
       langSignalSrc: savedSession.langSignalSrc,
       serverEntryId: null,
-      ...sensorEntryFields(savedSession)
+      ...sensorEntryFields(savedSession),
+      ...attentionEntryFields(savedSession)
     };
 
     await savePendingEntry(entry);

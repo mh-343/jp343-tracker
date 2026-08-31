@@ -3,6 +3,7 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { parseSeasonOnly } from '../../lib/title-parsing';
+import { sampleAttention } from '../../lib/attention';
 
 interface DisneyPlusMetadata {
   title: string;
@@ -108,7 +109,7 @@ export default defineContentScript({
       if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
       const ms = accumulatedDeltaMs;
       accumulatedDeltaMs = 0;
-      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId, attention: sampleAttention() });
     }
 
     sendDiagnostic('content_script_loaded');

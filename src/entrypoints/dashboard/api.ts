@@ -1,4 +1,5 @@
 import type { JP343UserState } from '../../types';
+import { normalizeIsPassive } from '../../lib/attention';
 
 export const AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 
@@ -9,8 +10,12 @@ export interface ServerStatsResponse {
   streak?: number;
   daily_avg_seconds?: number;
   daily_minutes?: Record<string, number>;
+  daily_active_minutes?: Record<string, number>;
+  daily_passive_minutes?: Record<string, number>;
   timezone?: string;
   calendar_week_seconds?: number;
+  calendar_week_active_seconds?: number;
+  calendar_week_passive_seconds?: number;
   calendar_month_seconds?: number;
   day_boundary_hour?: number;
   hourly_minutes?: Record<string, number>;
@@ -40,6 +45,8 @@ export interface ServerSession {
   resource_url?: string;
   url?: string;
   activity_type?: string;
+  is_passive?: number | string | null;
+  isPassive?: boolean;
 }
 
 export async function ajaxPost(
@@ -97,6 +104,7 @@ function normalizeServerSessions(raw: ServerSession[]): ServerSession[] {
     date: normalizeServerDate(s.date || s.logged_at || ''),
     duration_seconds: s.duration_seconds ?? (s.duration_minutes ?? s.minutes ?? 0) * 60,
     url: s.resource_url || s.url || undefined,
+    isPassive: normalizeIsPassive(s.is_passive),
   }));
 }
 

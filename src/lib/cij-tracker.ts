@@ -1,6 +1,7 @@
 import type { VideoState, Platform } from '../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from './debug-logger';
 import { showUpdateNotification } from './update-notification';
+import { sampleAttention } from './attention';
 
 export interface CijSiteConfig {
   platform: Platform;
@@ -88,7 +89,7 @@ export function createCijTracker(config: CijSiteConfig): void {
     if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
     const ms = accumulatedDeltaMs;
     accumulatedDeltaMs = 0;
-    sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+    sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId, attention: sampleAttention() });
   }
 
   sendDiagnostic('content_script_loaded');

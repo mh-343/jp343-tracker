@@ -12,6 +12,7 @@ export function findMergeTarget(
   return pending.find(e =>
     e.project_id === entry.project_id &&
     (isReaderEntry || e.project === entry.project) &&
+    e.isPassive === entry.isPassive &&
     getLocalDateString(new Date(e.date), dayStartHour) === entryDay
   );
 }

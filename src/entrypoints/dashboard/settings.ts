@@ -243,6 +243,13 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
   ));
 
   section.appendChild(createToggleRow(
+    'Show active/passive detection',
+    'Active/passive bars and labels in stats, popup and session history',
+    settings.showAttentionUi ?? true,
+    async (val) => { await updateSettings({ showAttentionUi: val }); }
+  ));
+
+  section.appendChild(createToggleRow(
     'Use original YouTube titles',
     'Show untranslated titles instead of auto-translated ones',
     settings.useOriginalTitles ?? false,

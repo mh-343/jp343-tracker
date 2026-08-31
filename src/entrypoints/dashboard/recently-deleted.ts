@@ -1,6 +1,6 @@
 import type { DeletedEntrySnapshot } from '../../types';
 import { formatDuration, formatSessionDate } from '../../lib/format-utils';
-import { armDeleteButton } from './delete-confirm';
+import { armConfirmButton } from './delete-confirm';
 import { getDayStartHour } from './stats';
 
 interface DeletedEntriesResponse {
@@ -65,7 +65,7 @@ function createDeletedRow(snap: DeletedEntrySnapshot): HTMLElement {
   purgeBtn.className = 'deleted-purge-btn';
   purgeBtn.textContent = 'Delete';
   purgeBtn.title = 'Delete permanently';
-  armDeleteButton(purgeBtn, async () => {
+  armConfirmButton(purgeBtn, async () => {
     purgeBtn.disabled = true;
     purgeBtn.textContent = 'Deleting…';
     let ok = false;

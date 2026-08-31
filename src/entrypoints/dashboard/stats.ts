@@ -1,5 +1,6 @@
 import type { ExtensionStats } from '../../types';
 import { STORAGE_KEYS } from '../../types';
+import { computeAttentionShare } from '../../lib/attention';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import { stableUserId } from '../../lib/auth-helpers';
 import { loadUserState, readOwnedServerStats, readServerCacheEpoch } from '../../lib/server-cache';
@@ -31,6 +32,28 @@ export function setDayStartHour(hour: number): void {
 
 export function getDayStartHour(): number {
   return _dayStartHour;
+}
+
+let _attentionDisplay = false;
+let _localDailyActive: Record<string, number> = {};
+let _localDailyPassive: Record<string, number> = {};
+
+export function setAttentionDisplay(on: boolean): void {
+  _attentionDisplay = on;
+}
+
+export function setLocalAttentionMinutes(active: Record<string, number>, passive: Record<string, number>): void {
+  _localDailyActive = active;
+  _localDailyPassive = passive;
+}
+
+export interface AttentionDailyMaps {
+  active: Record<string, number>;
+  passive: Record<string, number>;
+}
+
+export function isAttentionDisplayEnabled(): boolean {
+  return _attentionDisplay;
 }
 
 export function setGoalMinutes(minutes: number): void {
@@ -238,6 +261,11 @@ export function renderStats(stats: ExtensionStats): void {
   setText('statStreak', `${stats.currentStreak}d`);
   renderHeroTime(stats.totalMinutes);
 
+  const weekActiveMin = weekDates.reduce((sum, d) => sum + (stats.dailyActiveMinutes?.[d.date] || 0), 0);
+  const weekPassiveMin = weekDates.reduce((sum, d) => sum + (stats.dailyPassiveMinutes?.[d.date] || 0), 0);
+  const localShare = _attentionDisplay ? computeAttentionShare(weekActiveMin, weekPassiveMin, weekMin) : null;
+  setText('statWeekAttention', localShare !== null ? `${localShare}% active` : '');
+
   const activeDayValues = Object.values(stats.dailyMinutes).filter(m => m > 0);
   const activeDays = activeDayValues.length;
   if (activeDays > 0) {
@@ -385,11 +413,43 @@ export function renderHeatmap(dailyMinutes: Record<string, number>): void {
   container.appendChild(body);
 }
 
-export function renderWeekBars(dailyMinutes: Record<string, number>): void {
+function applyAttentionSplit(bar: HTMLDivElement, totalMin: number, activeMin: number, passiveMin: number): void {
+  if (!_attentionDisplay || totalMin <= 0) return;
+  let active = Math.max(0, activeMin);
+  let passive = Math.max(0, passiveMin);
+  const tagged = active + passive;
+  if (tagged <= 0) return;
+  if (tagged > totalMin) {
+    // Drift: keep ratio, clamp to total
+    const scale = totalMin / tagged;
+    active *= scale;
+    passive *= scale;
+  }
+
+  bar.classList.add('split');
+
+  const activeSeg = document.createElement('div');
+  activeSeg.className = 'att-bar-seg active';
+  activeSeg.style.height = `${((active / totalMin) * 100).toFixed(1)}%`;
+  bar.appendChild(activeSeg);
+
+  const passiveSeg = document.createElement('div');
+  passiveSeg.className = 'att-bar-seg passive';
+  passiveSeg.style.height = `${((passive / totalMin) * 100).toFixed(1)}%`;
+  bar.appendChild(passiveSeg);
+
+  const untagged = totalMin - active - passive;
+  let title = `${formatStatDuration(active)} active · ${formatStatDuration(passive)} passive`;
+  if (untagged >= 1) title += ` · ${formatStatDuration(untagged)} untagged`;
+  bar.title = title;
+}
+
+export function renderWeekBars(dailyMinutes: Record<string, number>, attention?: AttentionDailyMaps): void {
   const container = document.getElementById('weekBars');
   if (!container) return;
   container.textContent = '';
 
+  const att = attention ?? { active: _localDailyActive, passive: _localDailyPassive };
   const days = getWeekDates(_dayStartHour);
   const maxMin = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
   const BAR_MAX_PX = 64;
@@ -408,6 +468,7 @@ export function renderWeekBars(dailyMinutes: Record<string, number>): void {
     const bar = document.createElement('div');
     bar.className = `week-bar${day.isToday ? ' today' : ''}`;
     bar.style.height = `${heightPx}px`;
+    applyAttentionSplit(bar, min, att.active[day.date] || 0, att.passive[day.date] || 0);
 
     const label = document.createElement('div');
     label.className = 'week-bar-label';
@@ -420,13 +481,22 @@ export function renderWeekBars(dailyMinutes: Record<string, number>): void {
   }
 }
 
-export function renderMonthBars(dailyMinutes: Record<string, number>, currentMonthMinutes?: number): void {
+function sumMonthPrefix(map: Record<string, number>, prefix: string): number {
+  let total = 0;
+  for (const [date, min] of Object.entries(map)) {
+    if (date.startsWith(prefix)) total += min;
+  }
+  return total;
+}
+
+export function renderMonthBars(dailyMinutes: Record<string, number>, currentMonthMinutes?: number, attention?: AttentionDailyMaps): void {
   const container = document.getElementById('monthBars');
   if (!container) return;
   container.textContent = '';
 
+  const att = attention ?? { active: _localDailyActive, passive: _localDailyPassive };
   const now = getLogicalNow(_dayStartHour);
-  const months: { key: string; label: string; minutes: number; isCurrent: boolean }[] = [];
+  const months: { key: string; label: string; minutes: number; activeMin: number; passiveMin: number; isCurrent: boolean }[] = [];
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   for (let i = 5; i >= 0; i--) {
@@ -435,14 +505,17 @@ export function renderMonthBars(dailyMinutes: Record<string, number>, currentMon
     const month = d.getMonth();
     const prefix = `${year}-${String(month + 1).padStart(2, '0')}`;
 
-    let total = 0;
-    for (const [date, min] of Object.entries(dailyMinutes)) {
-      if (date.startsWith(prefix)) total += min;
-    }
-
+    let total = sumMonthPrefix(dailyMinutes, prefix);
     const isCurrent = i === 0;
     if (isCurrent && currentMonthMinutes !== undefined) total = currentMonthMinutes;
-    months.push({ key: prefix, label: monthLabels[month], minutes: total, isCurrent });
+    months.push({
+      key: prefix,
+      label: monthLabels[month],
+      minutes: total,
+      activeMin: sumMonthPrefix(att.active, prefix),
+      passiveMin: sumMonthPrefix(att.passive, prefix),
+      isCurrent
+    });
   }
 
   const maxMin = Math.max(1, ...months.map(m => m.minutes));
@@ -461,6 +534,7 @@ export function renderMonthBars(dailyMinutes: Record<string, number>, currentMon
     const bar = document.createElement('div');
     bar.className = `month-bar${month.isCurrent ? ' current' : ''}`;
     bar.style.height = `${heightPx}px`;
+    applyAttentionSplit(bar, month.minutes, month.activeMin, month.passiveMin);
 
     const label = document.createElement('div');
     label.className = 'month-bar-label';
@@ -484,6 +558,24 @@ function mergeDailyMinutes(
     }
   }
   return merged;
+}
+
+function mergeServerAttention(serverData: ServerStatsResponse): AttentionDailyMaps | undefined {
+  const serverActive = serverData.daily_active_minutes;
+  const serverPassive = serverData.daily_passive_minutes;
+  if (!serverActive && !serverPassive) return undefined;
+
+  const serverDaily = serverData.daily_minutes || {};
+  const active: Record<string, number> = { ...(serverActive || {}) };
+  const passive: Record<string, number> = { ...(serverPassive || {}) };
+  // Local tags fill server-unknown dates
+  for (const [date, min] of Object.entries(_localDailyActive)) {
+    if (!(date in serverDaily)) active[date] = min;
+  }
+  for (const [date, min] of Object.entries(_localDailyPassive)) {
+    if (!(date in serverDaily)) passive[date] = min;
+  }
+  return { active, passive };
 }
 
 function applyDerivedStats(dailyMinutes: Record<string, number>): void {
@@ -545,18 +637,18 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
   if (weekSec !== undefined) {
     setText('statWeek', formatStatDuration(weekSec / 60));
   }
-  if (serverData.today_seconds !== undefined) {
-    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const tzMatch = !serverData.timezone || serverData.timezone === browserTz;
-    if (tzMatch) {
-      const todayKey = getLocalDateString(new Date(), _dayStartHour);
-      const todayMin = Math.max(_localDailyMinutes[todayKey] || 0, serverData.today_seconds / 60);
-      _localDailyMinutes[todayKey] = todayMin;
-      setText('statToday', formatStatDuration(todayMin));
-      renderGoalBar(todayMin, _goalMinutes, _stretchEnabled);
-      renderStretchGoals(todayMin, _goalMinutes, _stretchEnabled);
-    }
+  let serverShare: number | null = null;
+  if (_attentionDisplay
+    && serverData.calendar_week_active_seconds !== undefined
+    && serverData.calendar_week_passive_seconds !== undefined
+    && serverData.calendar_week_seconds !== undefined) {
+    serverShare = computeAttentionShare(
+      serverData.calendar_week_active_seconds / 60,
+      serverData.calendar_week_passive_seconds / 60,
+      serverData.calendar_week_seconds / 60
+    );
   }
+  setText('statWeekAttention', serverShare !== null ? `${serverShare}% active` : '');
   if (!fromCache && !_dayStartHourSynced && serverData.day_boundary_hour !== undefined) {
     _dayStartHourSynced = true;
     const serverHour = Math.max(0, Math.min(6, serverData.day_boundary_hour));
@@ -572,6 +664,18 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
       }).catch(() => {});
     }
   }
+  if (serverData.today_seconds !== undefined) {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tzMatch = !serverData.timezone || serverData.timezone === browserTz;
+    if (tzMatch) {
+      const todayKey = getLocalDateString(new Date(), _dayStartHour);
+      const todayMin = Math.max(_localDailyMinutes[todayKey] || 0, serverData.today_seconds / 60);
+      _localDailyMinutes[todayKey] = todayMin;
+      setText('statToday', formatStatDuration(todayMin));
+      renderGoalBar(todayMin, _goalMinutes, _stretchEnabled);
+      renderStretchGoals(todayMin, _goalMinutes, _stretchEnabled);
+    }
+  }
   if (serverData.streak !== undefined) {
     setText('statStreak', `${serverData.streak}d`);
   }
@@ -580,9 +684,10 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
   }
   if (serverData.daily_minutes) {
     const merged = mergeDailyMinutes(_localDailyMinutes, serverData.daily_minutes);
+    const mergedAttention = mergeServerAttention(serverData);
     renderHeatmap(merged);
-    renderWeekBars(merged);
-    renderMonthBars(merged, serverData.calendar_month_seconds !== undefined ? serverData.calendar_month_seconds / 60 : undefined);
+    renderWeekBars(merged, mergedAttention);
+    renderMonthBars(merged, serverData.calendar_month_seconds !== undefined ? serverData.calendar_month_seconds / 60 : undefined, mergedAttention);
     applyDerivedStats(merged);
   }
   if (serverData.calendar_month_seconds !== undefined) {

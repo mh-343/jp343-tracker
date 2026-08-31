@@ -328,6 +328,47 @@ body {
   transform: translateY(-1px);
 }
 
+/* Attention Row */
+.attention-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.attention-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.attention-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.attention-chip {
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.attention-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.attention-chip.active {
+  background: rgba(var(--accent-rgb), 0.25);
+  border-color: var(--accent);
+  color: #fff;
+}
+[data-theme="light"] .attention-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Pending Section */
 .pending-section {
   padding: 12px 16px;
@@ -444,6 +485,76 @@ body {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.entry-passive-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-secondary);
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  border-radius: 4px;
+}
+
+/* Group active/passive split */
+.entry-split-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.entry-split-label {
+  font-weight: 600;
+}
+
+.entry-split-label.active {
+  color: var(--success);
+}
+
+.entry-split-label.passive {
+  color: var(--warning);
+}
+
+.entry-split-dot {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.pending-entry.has-split-bar {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+
+.entry-split-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  display: flex;
+  gap: 2px;
+}
+
+.entry-split-segment {
+  flex-basis: 0;
+  min-width: 8%;
+}
+
+.entry-split-segment.active {
+  background: var(--success);
+}
+
+.entry-split-segment.passive {
+  background: var(--warning);
 }
 
 /* Clickable Thumbnails */

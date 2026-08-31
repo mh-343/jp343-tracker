@@ -1,16 +1,20 @@
 import type { PendingEntry, Platform, ActivityType } from '../../types';
+import { activityAllowsPassive } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
-import { armDeleteButton } from './delete-confirm';
+import { armConfirmButton } from './delete-confirm';
 import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { subtractSessionFromServerStats } from '../../lib/server-stats';
 import type { ServerSession } from './api';
-import { getDayStartHour } from './stats';
+import { getDayStartHour, isAttentionDisplayEnabled } from './stats';
 import { setText, renderHeroTime, readCachedServerStats } from './stats';
+import { showStatus as showBulkStatus } from './settings-helpers';
 
 let sessionDisplayCount = 20;
 let rawServerCache: ServerSession[] | null = null;
 let cacheTimestamp = 0;
 let serverSessionsExpanded = false;
+let bulkTagExpanded = false;
+let bulkTagBusy = false;
 const INITIAL_SERVER_SESSIONS = 5;
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -46,6 +50,32 @@ async function requestServerEntryDelete(serverEntryId: number, snapshot: Pending
     } catch { /* lost message response, retry is safe */ }
   }
   return false;
+}
+
+interface RetagResponse {
+  success?: boolean;
+  error?: string;
+  updated?: number;
+}
+
+async function requestRetagPendingEntry(entryId: string, isPassive: boolean): Promise<RetagResponse | undefined> {
+  try {
+    return await browser.runtime.sendMessage({ type: 'RETAG_ENTRY', entryId, isPassive }) as RetagResponse | undefined;
+  } catch {
+    return { success: false, error: 'Retag failed' };
+  }
+}
+
+async function requestRetagServerEntry(session: ServerSession, isPassive: boolean): Promise<RetagResponse | undefined> {
+  const idStr = String(session.id ?? '');
+  try {
+    if (/^\d+$/.test(idStr)) {
+      return await browser.runtime.sendMessage({ type: 'RETAG_ENTRY', serverEntryId: session.id, isPassive }) as RetagResponse | undefined;
+    }
+    return await browser.runtime.sendMessage({ type: 'RETAG_ENTRY', entryId: idStr, isPassive }) as RetagResponse | undefined;
+  } catch {
+    return { success: false, error: 'Retag failed' };
+  }
 }
 
 function isRenamableSeries(projectId?: string): boolean {
@@ -189,6 +219,222 @@ function attachSeriesRename(
   });
 }
 
+interface AttentionAggregate {
+  activeMin: number;
+  passiveMin: number;
+  totalMin: number;
+  tagged: boolean;
+}
+
+function historyGroupKey(projectKey: string, dateStr: string | undefined, tagged: boolean): string {
+  const day = dateStr ? getLocalDateString(new Date(dateStr), getDayStartHour()) : '';
+  return `${projectKey}|${day}|${tagged ? 't' : 'u'}`;
+}
+
+async function retagSequentially<T>(
+  items: T[],
+  isPassive: boolean,
+  retag: (item: T, isPassive: boolean) => Promise<RetagResponse | undefined>
+): Promise<RetagResponse | undefined> {
+  let last: RetagResponse | undefined = { success: true };
+  for (const item of items) {
+    last = await retag(item, isPassive);
+    if (!last?.success) return last;
+  }
+  return last;
+}
+
+function buildAttentionBar(agg: AttentionAggregate): HTMLElement {
+  const bar = document.createElement('div');
+  bar.className = 'session-attention-bar';
+  if (agg.activeMin > 0) {
+    const seg = document.createElement('div');
+    seg.className = 'att-seg-active';
+    seg.style.flexGrow = String(agg.activeMin);
+    bar.appendChild(seg);
+  }
+  if (agg.passiveMin > 0) {
+    const seg = document.createElement('div');
+    seg.className = 'att-seg-passive';
+    seg.style.flexGrow = String(agg.passiveMin);
+    bar.appendChild(seg);
+  }
+  return bar;
+}
+
+function attachAttentionLabels(
+  meta: HTMLElement,
+  item: HTMLElement,
+  agg: AttentionAggregate,
+  activityType: ActivityType | undefined,
+  retagMode: (mode: 'active' | 'passive', targetIsPassive: boolean) => Promise<RetagResponse | undefined>
+): void {
+  const addLabel = (mode: 'active' | 'passive', minutes: number): void => {
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = `session-att-label att-${mode}`;
+    label.textContent = `${formatDuration(minutes)} ${mode}`;
+    const locked = mode === 'active' && !activityAllowsPassive(activityType);
+    if (locked) {
+      label.disabled = true;
+      label.title = 'Reading and speaking sessions are always active';
+    } else {
+      const idleLabel = `${formatDuration(minutes)} ${mode}`;
+      const target = mode === 'active' ? 'passive' : 'active';
+      const idleTitle = `Retag this ${mode} time as ${target}`;
+      label.title = idleTitle;
+      armConfirmButton(label, async () => {
+        label.disabled = true;
+        const res = await retagMode(mode, mode === 'active');
+        if (res?.success) {
+          requestRefresh();
+          return;
+        }
+        label.textContent = 'Failed';
+        setTimeout(() => { label.textContent = idleLabel; label.disabled = false; }, 1500);
+      }, {
+        idleLabel,
+        idleTitle,
+        armedLabel: `${formatDuration(minutes)} → ${target}?`,
+        armedTitle: 'Click again to confirm, the original split cannot be restored'
+      });
+    }
+    meta.appendChild(label);
+  };
+  if (agg.activeMin > 0) addLabel('active', agg.activeMin);
+  if (agg.activeMin > 0 && agg.passiveMin > 0) {
+    const sep = document.createElement('span');
+    sep.className = 'session-att-sep';
+    sep.textContent = '·';
+    meta.appendChild(sep);
+  }
+  if (agg.passiveMin > 0) addLabel('passive', agg.passiveMin);
+  item.classList.add('has-attention-bar');
+  item.appendChild(buildAttentionBar(agg));
+}
+
+interface ServerSessionGroup {
+  first: ServerSession;
+  members: ServerSession[];
+  agg: AttentionAggregate;
+}
+
+function groupServerSessions(sessions: ServerSession[]): ServerSessionGroup[] {
+  const byKey = new Map<string, ServerSessionGroup>();
+  const groups: ServerSessionGroup[] = [];
+  for (const s of sessions) {
+    const tagged = s.isPassive !== undefined;
+    const key = historyGroupKey(s.project_id || s.title || '', s.date, tagged);
+    let group = byKey.get(key);
+    if (!group) {
+      group = { first: s, members: [], agg: { activeMin: 0, passiveMin: 0, totalMin: 0, tagged } };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.members.push(s);
+    const min = (s.duration_seconds || 0) / 60;
+    group.agg.totalMin += min;
+    if (s.isPassive === true) group.agg.passiveMin += min;
+    else if (s.isPassive === false) group.agg.activeMin += min;
+  }
+  return groups;
+}
+
+interface PendingGroup {
+  first: PendingEntry;
+  members: PendingEntry[];
+  agg: AttentionAggregate;
+}
+
+function groupPendingEntries(entries: PendingEntry[]): PendingGroup[] {
+  const byKey = new Map<string, PendingGroup>();
+  const groups: PendingGroup[] = [];
+  for (const entry of entries) {
+    const tagged = entry.isPassive !== undefined;
+    const key = historyGroupKey(`${entry.project_id}|${entry.project}`, entry.date, tagged);
+    let group = byKey.get(key);
+    if (!group) {
+      group = { first: entry, members: [], agg: { activeMin: 0, passiveMin: 0, totalMin: 0, tagged } };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.members.push(entry);
+    group.agg.totalMin += entry.duration_min;
+    if (entry.isPassive === true) group.agg.passiveMin += entry.duration_min;
+    else if (entry.isPassive === false) group.agg.activeMin += entry.duration_min;
+  }
+  return groups;
+}
+
+function createBulkTagToolbar(): HTMLElement {
+  const toolbar = document.createElement('div');
+  toolbar.className = 'session-bulk-toolbar';
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'session-bulk-trigger';
+  trigger.textContent = 'Tag untagged…';
+  trigger.disabled = bulkTagBusy;
+  toolbar.appendChild(trigger);
+
+  const panel = document.createElement('div');
+  panel.className = 'session-bulk-panel';
+  panel.style.display = bulkTagExpanded ? 'flex' : 'none';
+  toolbar.appendChild(panel);
+
+  function setBusy(busy: boolean): void {
+    bulkTagBusy = busy;
+    trigger.disabled = busy;
+    for (const btn of Array.from(panel.querySelectorAll('button'))) {
+      (btn as HTMLButtonElement).disabled = busy;
+    }
+  }
+
+  function makeOption(label: string, isPassive: boolean): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'session-bulk-option';
+    btn.textContent = label;
+    armConfirmButton(btn, async () => {
+      if (bulkTagBusy) return;
+      setBusy(true);
+      let res: RetagResponse | undefined;
+      try {
+        res = await browser.runtime.sendMessage({ type: 'BULK_RETAG_UNTAGGED', isPassive }) as RetagResponse | undefined;
+      } catch {
+        res = { success: false, error: 'Bulk retag failed' };
+      }
+      setBusy(false);
+      if (res?.success) {
+        const resultLabel = typeof res.updated === 'number' ? `${res.updated} entries tagged` : 'Entries tagged';
+        showBulkStatus(toolbar, resultLabel, 'success');
+        bulkTagExpanded = false;
+        panel.style.display = 'none';
+        setTimeout(requestRefresh, 1200);
+      } else {
+        showBulkStatus(toolbar, res?.error || 'Bulk retag failed', 'error');
+      }
+    }, {
+      idleLabel: label,
+      idleTitle: 'Cannot be undone',
+      armedLabel: 'Sure? Cannot be undone',
+      armedTitle: 'Click again to confirm'
+    });
+    btn.title = 'Cannot be undone';
+    return btn;
+  }
+
+  panel.appendChild(makeOption('All untagged → Active', false));
+  panel.appendChild(makeOption('All untagged → Passive', true));
+
+  trigger.addEventListener('click', () => {
+    bulkTagExpanded = !bulkTagExpanded;
+    panel.style.display = bulkTagExpanded ? 'flex' : 'none';
+  });
+
+  return toolbar;
+}
+
 export function resetSessionDisplayCount(): void {
   sessionDisplayCount = 20;
 }
@@ -234,7 +480,8 @@ export function renderSessions(entries: PendingEntry[]): void {
   if (!container) return;
 
   const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const display = sorted.slice(0, sessionDisplayCount);
+  const groups = groupPendingEntries(sorted);
+  const display = groups.slice(0, sessionDisplayCount);
 
   if (display.length === 0) {
     container.textContent = '';
@@ -253,8 +500,10 @@ export function renderSessions(entries: PendingEntry[]): void {
   }
 
   container.textContent = '';
+  if (isAttentionDisplayEnabled()) container.appendChild(createBulkTagToolbar());
 
-  for (const entry of display) {
+  for (const group of display) {
+    const entry = group.first;
     const item = document.createElement('div');
     item.className = 'session-item';
 
@@ -304,25 +553,36 @@ export function renderSessions(entries: PendingEntry[]): void {
     dateEl.textContent = formatSessionDate(entry.date, getDayStartHour());
     meta.appendChild(dateEl);
 
+    if (isAttentionDisplayEnabled() && group.agg.tagged) {
+      attachAttentionLabels(meta, item, group.agg, entry.activityType, (mode, targetIsPassive) => {
+        const targets = group.members.filter(m => m.isPassive === (mode === 'passive'));
+        return retagSequentially(targets, targetIsPassive, (m, v) => requestRetagPendingEntry(m.id, v)).then(res => {
+          if (res?.success) for (const m of targets) m.isPassive = targetIsPassive;
+          return res;
+        });
+      });
+    }
+
     info.appendChild(meta);
     item.appendChild(info);
 
     const dur = document.createElement('div');
     dur.className = 'session-duration';
-    dur.textContent = formatDuration(entry.duration_min);
+    dur.textContent = formatDuration(group.agg.totalMin);
     item.appendChild(dur);
 
     const delBtn = document.createElement('button');
     delBtn.className = 'btn-delete-entry';
     delBtn.textContent = '×';
-    delBtn.title = 'Delete';
-    armDeleteButton(delBtn, async () => {
-      if (entry.synced && entry.serverEntryId) {
-        if (!await requestServerEntryDelete(entry.serverEntryId, entry)) return;
-        requestRefresh();
-        return;
+    delBtn.title = group.members.length > 1 ? `Delete (×${group.members.length})` : 'Delete';
+    armConfirmButton(delBtn, async () => {
+      for (const member of group.members) {
+        if (member.synced && member.serverEntryId) {
+          await requestServerEntryDelete(member.serverEntryId, member);
+          continue;
+        }
+        await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: member.id, entrySnapshot: member });
       }
-      await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: entry.id, entrySnapshot: entry });
       requestRefresh();
     });
     item.appendChild(delBtn);
@@ -330,12 +590,12 @@ export function renderSessions(entries: PendingEntry[]): void {
     container.appendChild(item);
   }
 
-  if (sorted.length > sessionDisplayCount) {
+  if (groups.length > sessionDisplayCount) {
     const loadMore = document.createElement('button');
     loadMore.className = 'btn-sync-dashboard';
     loadMore.style.width = '100%';
     loadMore.style.marginTop = '12px';
-    loadMore.textContent = `Show ${sorted.length - sessionDisplayCount} more sessions`;
+    loadMore.textContent = `Show ${groups.length - sessionDisplayCount} more sessions`;
     loadMore.addEventListener('click', () => {
       sessionDisplayCount += 20;
       requestRefresh();
@@ -355,6 +615,7 @@ function pendingToServerSession(entry: PendingEntry): ServerSession {
     image: entry.thumbnail || undefined,
     url: entry.url,
     activity_type: entry.activityType,
+    isPassive: entry.isPassive,
   };
 }
 
@@ -381,7 +642,8 @@ function serverSessionToPendingEntry(session: ServerSession): PendingEntry {
   };
 }
 
-function createServerSessionItem(session: ServerSession): HTMLElement {
+function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
+  const session = group.first;
   const item = document.createElement('div');
   item.className = 'session-item';
 
@@ -444,58 +706,77 @@ function createServerSessionItem(session: ServerSession): HTMLElement {
   const dateEl = document.createElement('span');
   dateEl.textContent = formatSessionDate(session.date, getDayStartHour());
   meta.appendChild(dateEl);
+
+  if (isAttentionDisplayEnabled() && group.agg.tagged) {
+    attachAttentionLabels(meta, item, group.agg, session.activity_type as ActivityType | undefined, (mode, targetIsPassive) => {
+      const targets = group.members.filter(m => m.isPassive === (mode === 'passive'));
+      return retagSequentially(targets, targetIsPassive, (m, v) => requestRetagServerEntry(m, v)).then(res => {
+        if (res?.success) {
+          const ids = new Set(targets.map(m => String(m.id)));
+          for (const m of targets) m.isPassive = targetIsPassive;
+          if (rawServerCache) {
+            rawServerCache = rawServerCache.map(s => ids.has(String(s.id)) ? { ...s, isPassive: targetIsPassive } : s);
+          }
+        }
+        return res;
+      });
+    });
+  }
+
   info.appendChild(meta);
 
   item.appendChild(info);
 
   const dur = document.createElement('div');
   dur.className = 'session-duration';
-  dur.textContent = formatDuration((session.duration_seconds || 0) / 60);
+  dur.textContent = formatDuration(group.agg.totalMin);
   item.appendChild(dur);
 
   const delBtn = document.createElement('button');
   delBtn.className = 'btn-delete-entry';
   delBtn.textContent = '×';
-  delBtn.title = 'Delete';
-  armDeleteButton(delBtn, async () => {
-    const idStr = String(session.id ?? '');
-    if (!idStr) return;
-    if (!/^\d+$/.test(idStr)) {
-      // Local entry shown in the merged list
-      await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: idStr });
-      requestRefresh();
-      return;
-    }
-    if (!await requestServerEntryDelete(Number(idStr), serverSessionToPendingEntry(session))) return;
+  delBtn.title = group.members.length > 1 ? `Delete (×${group.members.length})` : 'Delete';
+  armConfirmButton(delBtn, async () => {
+    for (const member of group.members) {
+      const idStr = String(member.id ?? '');
+      if (!idStr) continue;
+      if (!/^\d+$/.test(idStr)) {
+        // Local entry shown in the merged list
+        await browser.runtime.sendMessage({ type: 'DELETE_PENDING_ENTRY', entryId: idStr });
+        continue;
+      }
+      if (!await requestServerEntryDelete(Number(idStr), serverSessionToPendingEntry(member))) continue;
 
-    item.remove();
-    if (rawServerCache) {
-      rawServerCache = rawServerCache.filter(s => String(s.id) !== idStr);
-    }
-    const durationSec = session.duration_seconds || 0;
-    if (durationSec > 0) {
-      const cached = await readCachedServerStats();
-      if (cached) {
-        const dsh = getDayStartHour();
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const tzMatch = !cached.timezone || cached.timezone === browserTz;
-        const sessionDate = session.date ? getLocalDateString(new Date(session.date), dsh) : '';
-        const today = getLocalDateString(new Date(), dsh);
-        const weekDays = getWeekDates(dsh);
-        const weekStart = weekDays[0]?.date ?? '';
-        const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
-        subtractSessionFromServerStats(cached, durationSec, sessionDate, today, weekStart, weekEnd, browserTz);
-        if (cached.total_seconds !== undefined) renderHeroTime(cached.total_seconds / 60);
-        if (sessionDate === today && tzMatch && cached.today_seconds !== undefined) {
-          setText('statToday', formatStatDuration(cached.today_seconds / 60));
-        }
-        if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {
-          const weekSec = cached.calendar_week_seconds ?? cached.week_seconds;
-          if (weekSec !== undefined) setText('statWeek', formatStatDuration(weekSec / 60));
+      if (rawServerCache) {
+        rawServerCache = rawServerCache.filter(s => String(s.id) !== idStr);
+      }
+      const durationSec = member.duration_seconds || 0;
+      if (durationSec > 0) {
+        const cached = await readCachedServerStats();
+        if (cached) {
+          const dsh = getDayStartHour();
+          const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          const tzMatch = !cached.timezone || cached.timezone === browserTz;
+          const sessionDate = member.date ? getLocalDateString(new Date(member.date), dsh) : '';
+          const today = getLocalDateString(new Date(), dsh);
+          const weekDays = getWeekDates(dsh);
+          const weekStart = weekDays[0]?.date ?? '';
+          const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
+          subtractSessionFromServerStats(cached, durationSec, sessionDate, today, weekStart, weekEnd, browserTz, member.isPassive);
+          if (cached.total_seconds !== undefined) renderHeroTime(cached.total_seconds / 60);
+          if (sessionDate === today && tzMatch && cached.today_seconds !== undefined) {
+            setText('statToday', formatStatDuration(cached.today_seconds / 60));
+          }
+          if (weekStart && sessionDate >= weekStart && sessionDate <= weekEnd) {
+            const weekSec = cached.calendar_week_seconds ?? cached.week_seconds;
+            if (weekSec !== undefined) setText('statWeek', formatStatDuration(weekSec / 60));
+          }
         }
       }
     }
+    item.remove();
     void renderRecentlyDeleted();
+    requestRefresh();
   });
   item.appendChild(delBtn);
 
@@ -528,11 +809,14 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
     return;
   }
 
-  const display = serverSessionsExpanded ? merged : merged.slice(0, INITIAL_SERVER_SESSIONS);
-  const remaining = serverSessionsExpanded ? 0 : merged.length - INITIAL_SERVER_SESSIONS;
+  if (isAttentionDisplayEnabled()) container.appendChild(createBulkTagToolbar());
 
-  for (const session of display) {
-    container.appendChild(createServerSessionItem(session));
+  const groups = groupServerSessions(merged);
+  const display = serverSessionsExpanded ? groups : groups.slice(0, INITIAL_SERVER_SESSIONS);
+  const remaining = serverSessionsExpanded ? 0 : groups.length - INITIAL_SERVER_SESSIONS;
+
+  for (const group of display) {
+    container.appendChild(createServerSessionItem(group));
   }
 
   if (remaining > 0) {
@@ -544,8 +828,8 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
     showMore.addEventListener('click', () => {
       serverSessionsExpanded = true;
       showMore.remove();
-      for (const session of merged.slice(INITIAL_SERVER_SESSIONS)) {
-        container.appendChild(createServerSessionItem(session));
+      for (const group of groups.slice(INITIAL_SERVER_SESSIONS)) {
+        container.appendChild(createServerSessionItem(group));
       }
     });
     container.appendChild(showMore);

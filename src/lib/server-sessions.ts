@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../types';
 import { withStorageLock } from './storage-lock';
 import { postJsonWithRetry, coalesceRefresh, type RefreshState } from './server-fetch';
 import { applyLocalRenamesToSessions } from './background/custom-site-names';
+import { normalizeIsPassive } from './attention';
 import {
   applyAuthParams,
   awaitServerCacheStartup,
@@ -47,6 +48,7 @@ async function runSessionsFetch(): Promise<void> {
     url: (s.resource_url || s.url || undefined) as string | undefined,
     thumbnail: (s.image || undefined) as string | undefined,
     activityType: (s.activity_type || undefined) as string | undefined,
+    isPassive: normalizeIsPassive(s.is_passive),
   }));
 
   await withStorageLock(async () => {

@@ -5,7 +5,7 @@ import { normalizeUserId } from '../../lib/auth-helpers';
 import { fetchServerStats, fetchServerSessions } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
-import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setGoalMinutes, setDayStartHour, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats, refreshDashboardScope, isScopeStillCurrent, resetAccountScopedState } from './stats';
+import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setLocalAttentionMinutes, setGoalMinutes, setDayStartHour, setAttentionDisplay, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats, refreshDashboardScope, isScopeStillCurrent, resetAccountScopedState } from './stats';
 import { setTargetStartTimes, setDayStartHourForTargetStart, computeLocalFirstSessions, renderTargetStartFromLocal, renderTargetStartChart } from './target-start';
 import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
 import { renderRecentlyDeleted } from './recently-deleted';
@@ -29,6 +29,7 @@ interface DashboardData {
   dayStartHour: number;
   targetStartTimes: (string | null)[];
   stretchGoalsEnabled: boolean;
+  showAttentionUi: boolean;
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -48,7 +49,8 @@ async function loadData(): Promise<DashboardData> {
     goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60,
     dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0)),
     targetStartTimes: result[STORAGE_KEYS.SETTINGS]?.targetStartTimes ?? [null, null, null, null, null, null, null],
-    stretchGoalsEnabled: result[STORAGE_KEYS.SETTINGS]?.stretchGoalsEnabled ?? true
+    stretchGoalsEnabled: result[STORAGE_KEYS.SETTINGS]?.stretchGoalsEnabled ?? true,
+    showAttentionUi: (result[STORAGE_KEYS.SETTINGS] as { showAttentionUi?: boolean } | undefined)?.showAttentionUi ?? true
   };
 }
 
@@ -72,8 +74,10 @@ async function refresh(): Promise<void> {
     }
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
     setLocalHourlyMinutes({ ...(data.stats.hourlyMinutes || {}) });
+    setLocalAttentionMinutes({ ...(data.stats.dailyActiveMinutes || {}) }, { ...(data.stats.dailyPassiveMinutes || {}) });
     setGoalMinutes(data.goalMinutes);
     setDayStartHour(data.dayStartHour);
+    setAttentionDisplay(data.showAttentionUi);
     const todayMinutes = data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0;
     renderGoalBar(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     renderStretchGoals(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);

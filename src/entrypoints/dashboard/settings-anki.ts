@@ -2,7 +2,7 @@ import type { AnkiState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { createToggleRow, getFreshSettings } from './settings-helpers';
-import { armDeleteButton } from './delete-confirm';
+import { armConfirmButton } from './delete-confirm';
 
 function ankiTodayReviews(state: AnkiState, dayStartHour: number): number {
   const col = state.activeCollection ? state.collections[state.activeCollection] : undefined;
@@ -193,7 +193,7 @@ export function buildAnkiPanel(container: HTMLElement): void {
   resetBtn.type = 'button';
   resetBtn.className = 'anki-reset-btn';
   resetBtn.textContent = 'Reset Anki data';
-  armDeleteButton(resetBtn, async () => {
+  armConfirmButton(resetBtn, async () => {
     resetBtn.disabled = true;
     resetBtn.textContent = 'Resetting…';
     await browser.runtime.sendMessage({ type: 'ANKI_RESET' });

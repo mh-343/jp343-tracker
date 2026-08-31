@@ -13,6 +13,7 @@ import { deriveAsrState, mapYtCategory } from './sensor-signals';
 import type { OriginalTitleDetail } from './sensor-signals';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
+import { sampleAttention } from '../../lib/attention';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -52,6 +53,8 @@ export default defineContentScript({
     let currentSessionId: string | null = null;
     let currentSessionVideoId: string | null = null;
     let playGeneration = 0;
+    let boundVideoEvents: Array<[string, EventListener]> = [];
+    let boundVideoTarget: HTMLVideoElement | null = null;
 
     document.querySelectorAll('video[data-jp343-tracked]').forEach(v => {
       v.removeAttribute('data-jp343-tracked');
@@ -62,11 +65,16 @@ export default defineContentScript({
     function cleanup(): void {
       hideDifficultyChip();
       stopFeedBadges();
+      detachVideoEvents();
       observers.forEach(o => o.disconnect());
       intervalIds.forEach(clearInterval);
       observers.length = 0;
       intervalIds.length = 0;
+      stateUpdateInterval = null;
+      adCheckInterval = null;
       if (originalTitleRetryTimer) clearTimeout(originalTitleRetryTimer);
+      pendingRetryTimeouts.forEach(clearTimeout);
+      pendingRetryTimeouts = [];
       window.removeEventListener('jp343-original-title', handleOriginalTitleResponse);
     }
     window.addEventListener('pagehide', () => {
@@ -77,14 +85,8 @@ export default defineContentScript({
       cleanup();
     });
     window.addEventListener('pageshow', (e) => {
-      if (e.persisted && isExtensionContextValid()) {
-        const video = findVideoElement();
-        if (video) {
-          video.removeAttribute('data-jp343-tracked');
-          currentVideoElement = video;
-          attachVideoEvents(video);
-          startAdMonitoring();
-        }
+      if (e.persisted && isExtensionContextValid() && window.location.pathname.includes('/watch')) {
+        tryInitialVideoAttach();
       }
     });
     document.addEventListener('visibilitychange', () => {
@@ -375,6 +377,7 @@ export default defineContentScript({
           clearInterval(stateUpdateInterval);
           stateUpdateInterval = null;
         }
+        detachVideoEvents(true);
       }
     }
 
@@ -421,14 +424,6 @@ export default defineContentScript({
       fallback = fallback.replace(/^\(\d+\)\s*/, '');
       fallback = fallback.replace(/\s*-\s*YouTube$/, '');
       return fallback.trim() || 'YouTube Video';
-    }
-
-    function getThumbnailUrl(): string | null {
-      const videoId = getVideoId();
-      if (videoId) {
-        return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-      }
-      return null;
     }
 
     function getChannelInfo(): { id: string | null; name: string | null; url: string | null } {
@@ -718,7 +713,7 @@ export default defineContentScript({
         url: window.location.href,
         platform: 'youtube',
         isAd: isAdPlaying(),
-        thumbnailUrl: getThumbnailUrl(),
+        thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null,
         videoId: videoId,
         channelId: channelInfo.id,
         channelName: channelInfo.name,
@@ -738,7 +733,7 @@ export default defineContentScript({
       if (accumulatedDeltaMs <= 0 || !currentSessionId) return;
       const ms = accumulatedDeltaMs;
       accumulatedDeltaMs = 0;
-      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId });
+      sendMessage('TIME_DELTA', { deltaMs: Math.round(ms), sessionId: currentSessionId, attention: sampleAttention() });
     }
 
     async function sendMessage(type: string, data?: Record<string, unknown>): Promise<unknown> {
@@ -760,14 +755,28 @@ export default defineContentScript({
       }
     }
 
+    function detachVideoEvents(keepMarker = false): void {
+      if (!boundVideoTarget) return;
+      for (const [type, handler] of boundVideoEvents) {
+        boundVideoTarget.removeEventListener(type, handler);
+      }
+      boundVideoEvents = [];
+      if (!keepMarker) boundVideoTarget.removeAttribute('data-jp343-tracked');
+      boundVideoTarget = null;
+    }
+
     function attachVideoEvents(video: HTMLVideoElement): void {
       if (window.location.pathname.startsWith('/shorts/')) return;
-      if (video.hasAttribute('data-jp343-tracked')) {
-        return;
-      }
+      if (boundVideoTarget === video) { ensureStateUpdates(); syncAlreadyPlaying(video); return; }
+      detachVideoEvents();
       video.setAttribute('data-jp343-tracked', 'true');
+      boundVideoTarget = video;
+      const on = (type: string, handler: EventListener): void => {
+        video.addEventListener(type, handler);
+        boundVideoEvents.push([type, handler]);
+      };
 
-      video.addEventListener('play', () => {
+      on('play', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
@@ -812,7 +821,7 @@ export default defineContentScript({
         }
       });
 
-      video.addEventListener('pause', () => {
+      on('pause', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_PAUSE', '=== VIDEO PAUSE EVENT ===', collectUIState());
@@ -826,7 +835,7 @@ export default defineContentScript({
         }, 300);
       });
 
-      video.addEventListener('ended', () => {
+      on('ended', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (DEBUG_MODE) debugLog('VIDEO_ENDED', '=== VIDEO ENDED EVENT ===', collectUIState());
@@ -835,7 +844,7 @@ export default defineContentScript({
         hideTrackingToast();
       });
 
-      video.addEventListener('waiting', () => {
+      on('waiting', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (!isCurrentlyAd) {
@@ -843,7 +852,7 @@ export default defineContentScript({
         }
       });
 
-      video.addEventListener('emptied', () => {
+      on('emptied', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (document.hidden && video.paused && video.readyState === 0) {
@@ -852,7 +861,7 @@ export default defineContentScript({
         }
       });
 
-      video.addEventListener('playing', () => {
+      on('playing', () => {
         if (!isExtensionContextValid()) return;
         if (video !== currentVideoElement) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
@@ -865,7 +874,7 @@ export default defineContentScript({
         }
       });
 
-      video.addEventListener('timeupdate', () => {
+      on('timeupdate', () => {
         if (!isExtensionContextValid()) return;
         if (isCurrentlyAd) return;
         if (video.paused || video.ended) return;
@@ -881,21 +890,28 @@ export default defineContentScript({
         }
       });
 
-      if (!stateUpdateInterval) {
-        stateUpdateInterval = setInterval(() => {
-          if (!isExtensionContextValid()) return;
-          const state = getCurrentVideoState();
-          if (state && state.isPlaying && !state.isAd) {
-            sendMessage('VIDEO_STATE_UPDATE', { state });
-          }
-        }, 30000);
-        intervalIds.push(stateUpdateInterval);
-      }
+      ensureStateUpdates();
 
       debugLog('INIT', 'Video events bound', { src: video.src?.slice(0, 80) });
       log('[JP343] Video events bound');
 
-      setTimeout(() => {
+      syncAlreadyPlaying(video);
+    }
+
+    function ensureStateUpdates(): void {
+      if (stateUpdateInterval) return;
+      stateUpdateInterval = setInterval(() => {
+        if (!isExtensionContextValid()) return;
+        const state = getCurrentVideoState();
+        if (state && state.isPlaying && !state.isAd) {
+          sendMessage('VIDEO_STATE_UPDATE', { state });
+        }
+      }, 30000);
+      intervalIds.push(stateUpdateInterval);
+    }
+
+    function syncAlreadyPlaying(video: HTMLVideoElement): void {
+      pendingRetryTimeouts.push(setTimeout(() => {
         if (!isExtensionContextValid()) return;
         if (!video.paused && !video.ended) {
           const videoId = getVideoId();
@@ -909,7 +925,7 @@ export default defineContentScript({
             sendVideoPlay(state);
           }
         }
-      }, 500);
+      }, 500));
     }
 
     let lastAdState = false;
@@ -1009,9 +1025,7 @@ export default defineContentScript({
         videoResponseRead = false;
         originalTitleResponsePending = false;
 
-        if (currentVideoElement) {
-          currentVideoElement.removeAttribute('data-jp343-tracked');
-        }
+        // YT reuses the video node across watch pages
         currentVideoElement = null;
 
         disconnectObserver();

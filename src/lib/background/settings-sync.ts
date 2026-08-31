@@ -98,6 +98,7 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
       color_theme: settings.colorTheme ?? 'magenta',
       hide_non_japanese: String(settings.hideNonJapanese ?? false),
       track_japanese_only: String(settings.trackJapaneseOnly ?? true),
+      attention_ui_enabled: String(settings.showAttentionUi ?? true),
       daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
       target_start_times: JSON.stringify(settings.targetStartTimes ?? [null, null, null, null, null, null, null]),
     };
@@ -212,6 +213,7 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     const serverColorTheme: string | undefined = result.data?.color_theme;
     const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
     const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
+    const serverAttentionUi: boolean | undefined = result.data?.attention_ui_enabled;
     const serverDailyGoal: number | undefined = result.data?.daily_goal;
 
     const settings = await deps.loadSettings();
@@ -239,6 +241,10 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     }
     if (serverTrackJpOnly !== undefined && settings.trackJapaneseOnly !== serverTrackJpOnly) {
       settings.trackJapaneseOnly = serverTrackJpOnly;
+      changed = true;
+    }
+    if (serverAttentionUi !== undefined && settings.showAttentionUi !== serverAttentionUi) {
+      settings.showAttentionUi = serverAttentionUi;
       changed = true;
     }
     if (serverDailyGoal !== undefined && serverDailyGoal > 0 && settings.dailyGoalMinutes !== serverDailyGoal) {

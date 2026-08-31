@@ -281,6 +281,16 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     mergedReadingDaily[date] = Math.max(mergedReadingDaily[date] || 0, minutes);
   }
 
+  const mergedActiveDaily: Record<string, number> = { ...(local.dailyActiveMinutes || {}) };
+  for (const [date, minutes] of Object.entries(imported.dailyActiveMinutes || {})) {
+    mergedActiveDaily[date] = Math.max(mergedActiveDaily[date] || 0, minutes);
+  }
+
+  const mergedPassiveDaily: Record<string, number> = { ...(local.dailyPassiveMinutes || {}) };
+  for (const [date, minutes] of Object.entries(imported.dailyPassiveMinutes || {})) {
+    mergedPassiveDaily[date] = Math.max(mergedPassiveDaily[date] || 0, minutes);
+  }
+
   const totalMinutes = Object.values(mergedDaily).reduce((sum, m) => sum + m, 0);
   const lastActiveDate = local.lastActiveDate > (imported.lastActiveDate || '')
     ? local.lastActiveDate
@@ -289,5 +299,5 @@ function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionS
     ? local.currentStreak
     : (imported.currentStreak || local.currentStreak);
 
-  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly, readingDailyMinutes: mergedReadingDaily };
+  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly, readingDailyMinutes: mergedReadingDaily, dailyActiveMinutes: mergedActiveDaily, dailyPassiveMinutes: mergedPassiveDaily };
 }
