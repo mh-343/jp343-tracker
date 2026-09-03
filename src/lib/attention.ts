@@ -13,9 +13,10 @@ export function normalizeIsPassive(raw: unknown): boolean | undefined {
 export const ATTENTION_SHARE_MIN_TAGGED = 0.2;
 
 // Same contract as website weekly ratio
-export function computeAttentionShare(activeMin: number, passiveMin: number, totalMin: number): number | null {
-  if (totalMin <= 0) return null;
-  const tagged = Math.min(activeMin + passiveMin, totalMin);
-  if (tagged < ATTENTION_SHARE_MIN_TAGGED * totalMin) return null;
+export function computeAttentionShare(activeMin: number, passiveMin: number, totalMin: number, podcastMin = 0): number | null {
+  const taggable = totalMin - podcastMin;
+  if (taggable <= 0) return null;
+  const tagged = Math.min(activeMin + passiveMin, taggable);
+  if (tagged < ATTENTION_SHARE_MIN_TAGGED * taggable) return null;
   return Math.round((activeMin / (activeMin + passiveMin)) * 100);
 }

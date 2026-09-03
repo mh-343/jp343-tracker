@@ -44,6 +44,7 @@ No other sections. No "Misc", no "Miscellaneous", no "Bug Fixes". Drift is banne
 - Description is one sentence in user-facing language
 - No function names, no "race condition", no "null check", no "refactor"
 - No "Fix N", no "Iteration N", no internal jargon
+- **No absolute promises.** "no longer freezes", "never crashes", "always tracks" only when the exact case was reproduced and confirmed fixed. Otherwise describe what the extension now does and the expected effect: "now backs off instead of retrying, which should remove the slowdowns some users saw", "recovers on its own", "more reliable"
 - **No unverified numbers.** Do not write "40% faster", "2x performance", "saves 30 seconds" unless the value was actually measured against a baseline. If unsure, describe the direction instead: "faster", "sooner", "more reliable", "no longer stutters"
 
 ## Title Rules

@@ -12,6 +12,7 @@ export interface ServerStatsResponse {
   daily_minutes?: Record<string, number>;
   daily_active_minutes?: Record<string, number>;
   daily_passive_minutes?: Record<string, number>;
+  daily_podcast_minutes?: Record<string, number>;
   timezone?: string;
   calendar_week_seconds?: number;
   calendar_week_active_seconds?: number;

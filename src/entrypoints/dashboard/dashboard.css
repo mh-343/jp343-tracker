@@ -976,12 +976,34 @@
     .week-bar.split, .month-bar.split {
       display: flex;
       flex-direction: column-reverse;
-      background: rgba(var(--accent-rgb), 0.12);
+      gap: 2px;
+      background: rgba(var(--accent-rgb), 0.22);
       overflow: hidden;
+      cursor: pointer;
     }
+    /* Active keeps the theme accent (largest area follows the user's theme); passive is its own hue, not a faded accent */
     .att-bar-seg { width: 100%; flex: none; }
     .att-bar-seg.active { background: linear-gradient(to bottom, var(--accent), rgba(var(--accent-rgb), 0.55)); }
-    .att-bar-seg.passive { background: rgba(var(--accent-rgb), 0.3); }
+    .att-bar-seg.passive { background: var(--orange); }
+    .att-bar-seg.podcast { background: var(--blue); }
+
+    .att-breakdown-note {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 4px 10px;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .att-breakdown-note strong { color: var(--text); font-weight: 600; }
+    .att-note-item { display: inline-flex; align-items: center; gap: 4px; }
+    .att-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .att-dot.active { background: var(--accent); }
+    .att-dot.passive { background: var(--orange); }
+    .att-dot.podcast { background: var(--blue); }
+    .att-dot.untagged { background: rgba(var(--accent-rgb), 0.25); border: 1px solid rgba(var(--accent-rgb), 0.45); }
 
     /* ── Session History ────────────────────────────── */
     .session-list { display: flex; flex-direction: column; gap: 6px; }
@@ -1195,6 +1217,7 @@
       font-size: inherit;
       font-weight: 500;
       cursor: pointer;
+      white-space: nowrap;
     }
     .session-att-label.att-active { color: var(--green); }
     .session-att-label.att-passive { color: var(--orange); }
@@ -1203,6 +1226,15 @@
     .session-att-label.armed { color: #ff8a80; text-decoration: underline; }
     .session-bulk-option.armed { background: rgba(244, 67, 54, 0.15); border-color: #f44336; color: #ff8a80; }
     .session-att-sep { color: var(--text-muted); }
+
+    /* Narrow screens: meta wraps, duration moves below when tight, delete stays reachable without hover */
+    @media (max-width: 640px) {
+      .session-item { flex-wrap: wrap; row-gap: 4px; }
+      .session-info { min-width: 140px; }
+      .session-meta { flex-wrap: wrap; row-gap: 2px; }
+      .session-att-sep { display: none; }
+      .btn-delete-entry { opacity: 0.5; margin-left: auto; }
+    }
 
     /* ── Recently deleted ──────────────────────────── */
     .recently-deleted {
@@ -1432,9 +1464,7 @@
     [data-theme="light"] .month-bar.current {
       background: linear-gradient(180deg, var(--accent), rgba(var(--accent-rgb), 0.6));
     }
-    [data-theme="light"] .week-bar.split, [data-theme="light"] .month-bar.split { background: rgba(var(--accent-rgb), 0.12); }
-    [data-theme="light"] .att-bar-seg.active { background: linear-gradient(180deg, var(--accent), rgba(var(--accent-rgb), 0.6)); }
-    [data-theme="light"] .att-bar-seg.passive { background: rgba(var(--accent-rgb), 0.32); }
+    [data-theme="light"] .week-bar.split, [data-theme="light"] .month-bar.split { background: rgba(var(--accent-rgb), 0.15); }
     [data-theme="light"] .session-thumb { background: var(--accent-soft); }
     [data-theme="light"] .session-thumb-placeholder { background: var(--accent-soft); color: var(--accent); }
     [data-theme="light"] .session-platform { background: rgba(0, 0, 0, 0.04); }

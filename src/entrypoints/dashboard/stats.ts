@@ -50,6 +50,7 @@ export function setLocalAttentionMinutes(active: Record<string, number>, passive
 export interface AttentionDailyMaps {
   active: Record<string, number>;
   passive: Record<string, number>;
+  podcast?: Record<string, number>;
 }
 
 export function isAttentionDisplayEnabled(): boolean {
@@ -413,12 +414,45 @@ export function renderHeatmap(dailyMinutes: Record<string, number>): void {
   container.appendChild(body);
 }
 
-function applyAttentionSplit(bar: HTMLDivElement, totalMin: number, activeMin: number, passiveMin: number): void {
-  if (!_attentionDisplay || totalMin <= 0) return;
+interface AttentionBreakdownPart {
+  cls: 'active' | 'passive' | 'podcast' | 'untagged';
+  text: string;
+}
+
+// Tap tooltip, doubles as color legend
+function attachAttentionBreakdown(col: HTMLElement, barsContainer: HTMLElement, label: string, parts: AttentionBreakdownPart[]): void {
+  col.addEventListener('click', () => {
+    const key = `${barsContainer.id}:${label}`;
+    const existing = barsContainer.parentElement?.querySelector('.att-breakdown-note');
+    if (existing instanceof HTMLElement) {
+      const same = existing.dataset.key === key;
+      existing.remove();
+      if (same) return;
+    }
+    const note = document.createElement('div');
+    note.className = 'att-breakdown-note';
+    note.dataset.key = key;
+    const name = document.createElement('strong');
+    name.textContent = label;
+    note.appendChild(name);
+    for (const part of parts) {
+      const item = document.createElement('span');
+      item.className = 'att-note-item';
+      const dot = document.createElement('span');
+      dot.className = `att-dot ${part.cls}`;
+      item.appendChild(dot);
+      item.appendChild(document.createTextNode(part.text));
+      note.appendChild(item);
+    }
+    barsContainer.insertAdjacentElement('afterend', note);
+  });
+}
+
+function applyAttentionSplit(bar: HTMLDivElement, totalMin: number, activeMin: number, passiveMin: number, podcastMin = 0): AttentionBreakdownPart[] | undefined {
+  if (!_attentionDisplay || totalMin <= 0) return undefined;
   let active = Math.max(0, activeMin);
   let passive = Math.max(0, passiveMin);
   const tagged = active + passive;
-  if (tagged <= 0) return;
   if (tagged > totalMin) {
     // Drift: keep ratio, clamp to total
     const scale = totalMin / tagged;
@@ -426,28 +460,51 @@ function applyAttentionSplit(bar: HTMLDivElement, totalMin: number, activeMin: n
     passive *= scale;
   }
 
-  bar.classList.add('split');
+  const rest = totalMin - active - passive;
+  const podcast = Math.min(Math.max(0, podcastMin), rest);
+  const untagged = rest - podcast;
 
-  const activeSeg = document.createElement('div');
-  activeSeg.className = 'att-bar-seg active';
-  activeSeg.style.height = `${((active / totalMin) * 100).toFixed(1)}%`;
-  bar.appendChild(activeSeg);
+  if (tagged > 0 || podcast >= 1) {
+    bar.classList.add('split');
 
-  const passiveSeg = document.createElement('div');
-  passiveSeg.className = 'att-bar-seg passive';
-  passiveSeg.style.height = `${((passive / totalMin) * 100).toFixed(1)}%`;
-  bar.appendChild(passiveSeg);
+    if (active > 0) {
+      const activeSeg = document.createElement('div');
+      activeSeg.className = 'att-bar-seg active';
+      activeSeg.style.height = `${((active / totalMin) * 100).toFixed(1)}%`;
+      bar.appendChild(activeSeg);
+    }
 
-  const untagged = totalMin - active - passive;
-  let title = `${formatStatDuration(active)} active · ${formatStatDuration(passive)} passive`;
-  if (untagged >= 1) title += ` · ${formatStatDuration(untagged)} untagged`;
-  bar.title = title;
+    if (passive > 0) {
+      const passiveSeg = document.createElement('div');
+      passiveSeg.className = 'att-bar-seg passive';
+      passiveSeg.style.height = `${((passive / totalMin) * 100).toFixed(1)}%`;
+      bar.appendChild(passiveSeg);
+    }
+
+    if (podcast >= 1) {
+      const podcastSeg = document.createElement('div');
+      podcastSeg.className = 'att-bar-seg podcast';
+      podcastSeg.style.height = `${((podcast / totalMin) * 100).toFixed(1)}%`;
+      bar.appendChild(podcastSeg);
+    }
+  }
+  const parts: AttentionBreakdownPart[] = [];
+  if (tagged > 0) {
+    parts.push({ cls: 'active', text: `${formatStatDuration(active)} active` });
+    parts.push({ cls: 'passive', text: `${formatStatDuration(passive)} passive` });
+  }
+  if (podcast >= 1) parts.push({ cls: 'podcast', text: `${formatStatDuration(podcast)} podcast` });
+  if (parts.length && untagged >= 1) parts.push({ cls: 'untagged', text: `${formatStatDuration(untagged)} untagged` });
+  if (!parts.length) return undefined;
+  bar.title = parts.map(p => p.text).join(' · ');
+  return parts;
 }
 
 export function renderWeekBars(dailyMinutes: Record<string, number>, attention?: AttentionDailyMaps): void {
   const container = document.getElementById('weekBars');
   if (!container) return;
   container.textContent = '';
+  container.parentElement?.querySelector('.att-breakdown-note')?.remove();
 
   const att = attention ?? { active: _localDailyActive, passive: _localDailyPassive };
   const days = getWeekDates(_dayStartHour);
@@ -468,7 +525,8 @@ export function renderWeekBars(dailyMinutes: Record<string, number>, attention?:
     const bar = document.createElement('div');
     bar.className = `week-bar${day.isToday ? ' today' : ''}`;
     bar.style.height = `${heightPx}px`;
-    applyAttentionSplit(bar, min, att.active[day.date] || 0, att.passive[day.date] || 0);
+    const parts = applyAttentionSplit(bar, min, att.active[day.date] || 0, att.passive[day.date] || 0, att.podcast?.[day.date] || 0);
+    if (parts) attachAttentionBreakdown(col, container, day.label, parts);
 
     const label = document.createElement('div');
     label.className = 'week-bar-label';
@@ -493,10 +551,11 @@ export function renderMonthBars(dailyMinutes: Record<string, number>, currentMon
   const container = document.getElementById('monthBars');
   if (!container) return;
   container.textContent = '';
+  container.parentElement?.querySelector('.att-breakdown-note')?.remove();
 
   const att = attention ?? { active: _localDailyActive, passive: _localDailyPassive };
   const now = getLogicalNow(_dayStartHour);
-  const months: { key: string; label: string; minutes: number; activeMin: number; passiveMin: number; isCurrent: boolean }[] = [];
+  const months: { key: string; label: string; minutes: number; activeMin: number; passiveMin: number; podcastMin: number; isCurrent: boolean }[] = [];
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   for (let i = 5; i >= 0; i--) {
@@ -514,6 +573,7 @@ export function renderMonthBars(dailyMinutes: Record<string, number>, currentMon
       minutes: total,
       activeMin: sumMonthPrefix(att.active, prefix),
       passiveMin: sumMonthPrefix(att.passive, prefix),
+      podcastMin: att.podcast ? sumMonthPrefix(att.podcast, prefix) : 0,
       isCurrent
     });
   }
@@ -534,7 +594,8 @@ export function renderMonthBars(dailyMinutes: Record<string, number>, currentMon
     const bar = document.createElement('div');
     bar.className = `month-bar${month.isCurrent ? ' current' : ''}`;
     bar.style.height = `${heightPx}px`;
-    applyAttentionSplit(bar, month.minutes, month.activeMin, month.passiveMin);
+    const parts = applyAttentionSplit(bar, month.minutes, month.activeMin, month.passiveMin, month.podcastMin);
+    if (parts) attachAttentionBreakdown(col, container, month.label, parts);
 
     const label = document.createElement('div');
     label.className = 'month-bar-label';
@@ -563,6 +624,8 @@ function mergeDailyMinutes(
 function mergeServerAttention(serverData: ServerStatsResponse): AttentionDailyMaps | undefined {
   const serverActive = serverData.daily_active_minutes;
   const serverPassive = serverData.daily_passive_minutes;
+  const serverPodcast = serverData.daily_podcast_minutes;
+  // Podcast map is no attention signal
   if (!serverActive && !serverPassive) return undefined;
 
   const serverDaily = serverData.daily_minutes || {};
@@ -575,7 +638,7 @@ function mergeServerAttention(serverData: ServerStatsResponse): AttentionDailyMa
   for (const [date, min] of Object.entries(_localDailyPassive)) {
     if (!(date in serverDaily)) passive[date] = min;
   }
-  return { active, passive };
+  return { active, passive, podcast: serverPodcast };
 }
 
 function applyDerivedStats(dailyMinutes: Record<string, number>): void {
@@ -642,10 +705,13 @@ export function applyServerStats(serverData: ServerStatsResponse, fromCache = fa
     && serverData.calendar_week_active_seconds !== undefined
     && serverData.calendar_week_passive_seconds !== undefined
     && serverData.calendar_week_seconds !== undefined) {
+    const weekPodcastMin = getWeekDates(_dayStartHour)
+      .reduce((sum, d) => sum + (serverData.daily_podcast_minutes?.[d.date] || 0), 0);
     serverShare = computeAttentionShare(
       serverData.calendar_week_active_seconds / 60,
       serverData.calendar_week_passive_seconds / 60,
-      serverData.calendar_week_seconds / 60
+      serverData.calendar_week_seconds / 60,
+      weekPodcastMin
     );
   }
   setText('statWeekAttention', serverShare !== null ? `${serverShare}% active` : '');

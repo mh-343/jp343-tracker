@@ -106,6 +106,7 @@ export async function bulkRetagUntagged(isPassive: boolean): Promise<RetagResult
       nonce: 'jp343_retag_untagged'
     });
     params.set('is_passive', isPassive ? '1' : '0');
+    params.set('scope', 'all');
     const result = await postJsonWithRetry(context.ajaxUrl, params, 'retag_untagged', {
       credentials: requestCredentialsMode(context)
     });

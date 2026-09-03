@@ -60,6 +60,8 @@ export default defineContentScript({
     const BROWSING_DEBOUNCE_MS = 50;
     const CACHE_SAVE_DEBOUNCE_MS = 500;
     const REPLACED_ATTR = 'data-jp343-title-replaced';
+    const REWRITE_WINDOW_MS = 10_000;
+    const REWRITE_MAX = 5;
 
     let enabled = false;
     let titleCache = new Map<string, CacheEntry>();
@@ -76,6 +78,23 @@ export default defineContentScript({
     let cacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
     let currentWatchVideoId: string | null = null;
     let pendingResolutions = new Map<string, Promise<string | null>>();
+    let surrenderedTitleEls = new Set<Element>();
+    let documentTitleSurrendered: string | null = null;
+
+    // Stops title rewrite ping-pong wars
+    function makeRewriteBudget(): () => boolean {
+      let count = 0;
+      let windowStart = 0;
+      return () => {
+        const now = Date.now();
+        if (now - windowStart > REWRITE_WINDOW_MS) {
+          windowStart = now;
+          count = 0;
+        }
+        count++;
+        return count > REWRITE_MAX;
+      };
+    }
 
     // --- Persistent cache ---
 
@@ -248,6 +267,7 @@ export default defineContentScript({
     // --- Watch title replacement (stores original for restore) ---
 
     function replaceWatchElement(el: Element, newText: string): void {
+      if (surrenderedTitleEls.has(el)) return;
       if (!watchReplacedElements.has(el)) {
         watchReplacedElements.set(el, el.textContent?.trim() ?? '');
       }
@@ -259,9 +279,17 @@ export default defineContentScript({
 
       setElementText(el, newText);
 
+      const exceeded = makeRewriteBudget();
       const obs = new MutationObserver(() => {
         if (contextLost()) return;
         if (el.textContent?.trim() !== newText) {
+          if (exceeded()) {
+            removeObserver(obs);
+            watchObservers.delete(el);
+            surrenderedTitleEls.add(el);
+            log('[JP343-titles] Watch title war, backing off');
+            return;
+          }
           obs.disconnect();
           setElementText(el, newText);
           obs.observe(el, { characterData: true, childList: true, subtree: true });
@@ -275,6 +303,7 @@ export default defineContentScript({
     // --- Card title replacement (recycling-aware, no original storage) ---
 
     function replaceCardTitle(card: Element, titleEl: Element, videoId: string, newText: string): void {
+      if (surrenderedTitleEls.has(titleEl)) return;
       if (titleEl.textContent?.trim() === newText) {
         card.setAttribute(REPLACED_ATTR, videoId);
         return;
@@ -286,6 +315,7 @@ export default defineContentScript({
       setElementText(titleEl, newText);
       card.setAttribute(REPLACED_ATTR, videoId);
 
+      const exceeded = makeRewriteBudget();
       const obs = new MutationObserver(() => {
         if (contextLost()) return;
         const currentVideoId = extractVideoIdFromElement(card);
@@ -296,6 +326,13 @@ export default defineContentScript({
           return;
         }
         if (titleEl.textContent?.trim() !== newText) {
+          if (exceeded()) {
+            removeObserver(obs);
+            cardObservers.delete(titleEl);
+            surrenderedTitleEls.add(titleEl);
+            log('[JP343-titles] Card title war, backing off');
+            return;
+          }
           obs.disconnect();
           setElementText(titleEl, newText);
           obs.observe(titleEl, { characterData: true, childList: true, subtree: true });
@@ -309,11 +346,15 @@ export default defineContentScript({
     // --- Document title ---
 
     function replaceDocumentTitle(title: string): void {
+      const expected = `${title} - YouTube`;
+      if (documentTitleSurrendered === expected) return;
+      documentTitleSurrendered = null;
+
       if (originalDocumentTitle === null) {
         originalDocumentTitle = document.title;
       }
 
-      documentTitleExpected = `${title} - YouTube`;
+      documentTitleExpected = expected;
 
       if (document.title !== documentTitleExpected) {
         titleGuard = true;
@@ -326,11 +367,21 @@ export default defineContentScript({
       const titleEl = document.querySelector('title');
       if (!titleEl) return;
 
+      const exceeded = makeRewriteBudget();
       documentTitleObserver = new MutationObserver(() => {
         if (titleGuard) return;
         if (contextLost()) return;
         if (!documentTitleExpected) return;
         if (document.title !== documentTitleExpected) {
+          if (exceeded()) {
+            documentTitleSurrendered = documentTitleExpected;
+            if (documentTitleObserver) {
+              removeObserver(documentTitleObserver);
+              documentTitleObserver = null;
+            }
+            log('[JP343-titles] Doc title war, backing off');
+            return;
+          }
           titleGuard = true;
           document.title = documentTitleExpected;
           titleGuard = false;
@@ -354,6 +405,7 @@ export default defineContentScript({
 
       documentTitleExpected = null;
       originalDocumentTitle = null;
+      documentTitleSurrendered = null;
     }
 
     // --- Restore ---
@@ -371,6 +423,7 @@ export default defineContentScript({
         removeObserver(obs);
       }
       cardObservers.clear();
+      surrenderedTitleEls.clear();
 
       cleanupDocumentTitle(true);
 
@@ -490,6 +543,7 @@ export default defineContentScript({
         removeObserver(obs);
       }
       cardObservers.clear();
+      surrenderedTitleEls.clear();
 
       cleanupDocumentTitle(false);
 
