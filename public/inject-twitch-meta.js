@@ -30,6 +30,10 @@
         if (thumb.indexOf('{width}') !== -1) {
           thumb = thumb.replace('{width}', '320').replace('{height}', '180');
         }
+        // Unprocessed VODs return a placeholder image
+        if (/\/_404\/|404_processing|404_preview/i.test(thumb)) {
+          thumb = '';
+        }
         fire({
           login: owner.login,
           channelName: owner.displayName || owner.login,

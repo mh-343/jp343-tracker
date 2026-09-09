@@ -32,6 +32,12 @@ export function parseVodId(pathname: string): string | null {
   return match ? match[1] : null;
 }
 
+const PLACEHOLDER_THUMB = /\/_404\/|404_processing|404_preview/i;
+
+function isUsableThumbnail(url: string): boolean {
+  return isValidImageUrl(url) && !PLACEHOLDER_THUMB.test(url);
+}
+
 export function parseTwitchMetaEvent(detail: unknown): TwitchMetaEvent | null {
   if (!detail || typeof detail !== 'object') return null;
   const d = detail as Record<string, unknown>;
@@ -48,6 +54,6 @@ export function parseTwitchMetaEvent(detail: unknown): TwitchMetaEvent | null {
     isLive: d.isLive === true,
     isVod: d.isVod === true,
     vodId: cap(d.vodId, 20),
-    thumbnail: isValidImageUrl(rawThumb) ? rawThumb : ''
+    thumbnail: isUsableThumbnail(rawThumb) ? rawThumb : ''
   };
 }
