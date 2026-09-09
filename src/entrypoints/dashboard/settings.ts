@@ -1,5 +1,5 @@
 import type { ExtensionSettings, Platform, SpotifyContentType, ColorTheme, ReaderState, JP343UserState } from '../../types';
-import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES } from '../../types';
+import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES, DAILY_GOAL_MIN_MINUTES, DAILY_GOAL_MAX_MINUTES } from '../../types';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { buildTargetStartSection } from './target-start-settings';
@@ -349,8 +349,8 @@ function buildGoalRow(container: HTMLElement, settings: ExtensionSettings): void
   const input = document.createElement('input');
   input.type = 'number';
   input.className = 'settings-goal-input';
-  input.min = '1';
-  input.max = '1440';
+  input.min = String(DAILY_GOAL_MIN_MINUTES);
+  input.max = String(DAILY_GOAL_MAX_MINUTES);
   input.value = String(settings.dailyGoalMinutes);
 
   const unitBtn = document.createElement('button');
@@ -370,7 +370,11 @@ function buildGoalRow(container: HTMLElement, settings: ExtensionSettings): void
   saveBtn.textContent = 'Save';
   saveBtn.addEventListener('click', async () => {
     const raw = parseFloat(input.value) || 0;
-    const minutes = Math.max(1, useHours ? Math.round(raw * 60) : Math.round(raw));
+    const minutes = useHours ? Math.round(raw * 60) : Math.round(raw);
+    if (minutes < DAILY_GOAL_MIN_MINUTES || minutes > DAILY_GOAL_MAX_MINUTES) {
+      showStatus(container, 'Daily goal must be between 5 minutes and 24 hours', 'error');
+      return;
+    }
     await updateSettings({ dailyGoalMinutes: minutes });
     useHours = false;
     unitBtn.textContent = 'min';

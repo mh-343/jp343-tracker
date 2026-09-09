@@ -509,6 +509,9 @@ export const DEFAULT_READER_STATE: ReaderState = {
   ownerId: null
 };
 
+export const DAILY_GOAL_MIN_MINUTES = 5;
+export const DAILY_GOAL_MAX_MINUTES = 1440;
+
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   enabled: true,
   autoSync: true,

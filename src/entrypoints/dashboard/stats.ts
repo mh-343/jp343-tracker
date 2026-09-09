@@ -1,5 +1,5 @@
 import type { ExtensionStats } from '../../types';
-import { STORAGE_KEYS } from '../../types';
+import { DAILY_GOAL_MAX_MINUTES, DAILY_GOAL_MIN_MINUTES, STORAGE_KEYS } from '../../types';
 import { computeAttentionShare } from '../../lib/attention';
 import { formatStatDuration, getLocalDateString, getLogicalNow, getWeekDates } from '../../lib/format-utils';
 import { stableUserId } from '../../lib/auth-helpers';
@@ -162,10 +162,10 @@ export function setupGoalEditor(initialGoalMinutes: number): void {
   saveBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const raw = parseFloat(customInput.value) || 0;
-    let newGoal = Math.max(5, useHours ? Math.round(raw * 60) : Math.round(raw));
-    if (newGoal > 480) {
-      newGoal = 480;
-      customInput.value = useHours ? String(8) : String(480);
+    let newGoal = Math.max(DAILY_GOAL_MIN_MINUTES, useHours ? Math.round(raw * 60) : Math.round(raw));
+    if (newGoal > DAILY_GOAL_MAX_MINUTES) {
+      newGoal = DAILY_GOAL_MAX_MINUTES;
+      customInput.value = useHours ? String(DAILY_GOAL_MAX_MINUTES / 60) : String(DAILY_GOAL_MAX_MINUTES);
       customInput.style.outline = '2px solid #e74c3c';
       setTimeout(() => { customInput.style.outline = ''; }, 1500);
       return;
