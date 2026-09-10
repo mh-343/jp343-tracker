@@ -8,6 +8,10 @@ export function formatStatDuration(minutes: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+export function formatGoalMinutes(minutes: number): string {
+  return minutes > 0 ? formatStatDuration(minutes) : '0m';
+}
+
 export function formatDuration(minutes: number): string {
   const totalSec = Math.round(Math.max(0, minutes) * 60);
   const h = Math.floor(totalSec / 3600);

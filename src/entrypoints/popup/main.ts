@@ -1,11 +1,13 @@
 // JP343 Extension - Popup UI
 
-import { STORAGE_KEYS, activityAllowsPassive } from '../../types';
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionMode } from '../../types';
+import { STORAGE_KEYS, activityAllowsPassive, EMPTY_DAILY_GOALS } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionMode, DailyGoals } from '../../types';
 import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
 import { renderPendingList } from './pending-list';
+import { computeActivityGoalRows, type ActivityGoalRow } from '../../lib/activity-goals';
+import { appendActivityGoalLines } from './activity-goals-tooltip';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -121,6 +123,7 @@ let _popupGoalMinutes = 60;
 let _popupDayStartHour = 0;
 let _popupStretchEnabled = true;
 let _popupShowAttention = true;
+let popupDailyGoals: DailyGoals = EMPTY_DAILY_GOALS;
 
 function createGoalTooltipText<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -140,7 +143,7 @@ function createGoalTooltipChip(text: string, isLevel = false): HTMLSpanElement {
   return chip;
 }
 
-function renderGoalMicroBar(todayMinutes: number): void {
+function renderGoalMicroBar(todayMinutes: number, activityRows: ActivityGoalRow[] = []): void {
   const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
   if (!fill) return;
   const bar = fill.parentElement;
@@ -245,6 +248,7 @@ function renderGoalMicroBar(todayMinutes: number): void {
     metrics,
     createGoalTooltipText('div', 'goal-tooltip-note', detailText)
   );
+  appendActivityGoalLines(card, activityRows);
 
   tooltip.replaceChildren(card);
 
@@ -278,6 +282,7 @@ async function loadAndApplySettings(): Promise<void> {
       _popupGoalMinutes = settings.dailyGoalMinutes ?? 60;
       _popupDayStartHour = Math.max(0, Math.min(6, settings.dayStartHour ?? 0));
       _popupStretchEnabled = settings.stretchGoalsEnabled ?? true;
+      popupDailyGoals = settings.dailyGoals ?? EMPTY_DAILY_GOALS;
       whitelistedChannels = settings.whitelistedChannels || [];
       hideNonJapanese = settings.hideNonJapanese ?? false;
       trackJapaneseOnly = settings.trackJapaneseOnly ?? true;
@@ -986,11 +991,14 @@ async function fetchAndRenderStats(): Promise<void> {
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_STATS' });
     if (response?.success && response.data) {
-      const { weekMinutes, todayMinutes, streak, rawDailyMinutes } = response.data;
+      const { weekMinutes, todayMinutes, streak, rawDailyMinutes, todayByActivity, todayActiveMinutes } = response.data;
       elements.statWeek.textContent = formatStatDuration(weekMinutes || 0);
       elements.statToday.textContent = formatStatDuration(todayMinutes || 0);
       elements.statStreak.textContent = `${streak || 0}d`;
-      renderGoalMicroBar(todayMinutes || 0);
+      renderGoalMicroBar(
+        todayMinutes || 0,
+        computeActivityGoalRows(popupDailyGoals, todayByActivity, todayActiveMinutes || 0, _popupShowAttention)
+      );
       if (rawDailyMinutes) {
         renderWeekBars(rawDailyMinutes);
       }

@@ -11,7 +11,7 @@ import {
 } from '../lib/background/settings-sync';
 import { loadPendingEntries } from '../lib/pending-entries';
 import { migrateHourlyMinutes } from '../lib/background/hourly-stats';
-import { initStatsCallbacks, loadStats, updateStats, subtractFromStats } from '../lib/background/stats-managers';
+import { initStatsCallbacks, loadStats, updateStats, subtractFromStats, seedDailyMinutesByActivity } from '../lib/background/stats-managers';
 import {
   initBadgeService,
   scheduleStatusBadgeUpdate,
@@ -1056,6 +1056,7 @@ export default defineBackground(() => {
 
   syncCustomSitesRegistration().catch(() => {});
 
+  void seedDailyMinutesByActivity();
   (async function migrateLocalHubBgFlag(): Promise<void> {
     const flagRes = await browser.storage.local.get(STORAGE_KEYS.MIGRATED_HUB_BG);
     if (flagRes[STORAGE_KEYS.MIGRATED_HUB_BG]) return;

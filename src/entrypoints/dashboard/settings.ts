@@ -4,6 +4,7 @@ import { resizeImage, saveBackground, loadBackground, removeBackground, applyDas
 import { applyColorTheme } from '../../lib/theme';
 import { buildTargetStartSection } from './target-start-settings';
 import { getSettings, getFreshSettings, updateSettings, createToggleRow, setToggleRowDisabled, showStatus } from './settings-helpers';
+import { buildActivityGoalsSection } from './activity-goals-settings';
 import { buildExportImportPanel } from './settings-backup';
 import { buildAnkiPanel } from './settings-anki';
 import { buildShortcutPanel } from './settings-shortcut';
@@ -226,6 +227,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
   ));
 
   buildGoalRow(section, settings);
+  buildActivityGoalsSection(section, settings);
   buildDayStartRow(section, settings);
 
   section.appendChild(createToggleRow(
@@ -246,7 +248,7 @@ function buildTrackingPanel(container: HTMLElement, settings: ExtensionSettings)
     'Show active/passive detection',
     'Active/passive bars and labels in stats, popup and session history',
     settings.showAttentionUi ?? true,
-    async (val) => { await updateSettings({ showAttentionUi: val }); }
+    async (val) => { await updateSettings({ showAttentionUi: val }); await setupSettings(); }
   ));
 
   section.appendChild(createToggleRow(

@@ -4,6 +4,7 @@ import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { isReading } from '../time-tracker';
 import { addHourlyMinutes, subtractHourlyMinutes } from './hourly-stats';
+import { loadPendingEntries } from '../pending-entries';
 
 interface StatsManagerDeps {
   log: (...args: unknown[]) => void;
@@ -26,6 +27,13 @@ export async function loadStats(): Promise<ExtensionStats> {
   } catch {
     return { ...DEFAULT_STATS };
   }
+}
+
+function addToActivityMap(stats: ExtensionStats, entry: PendingEntry, entryDate: string): void {
+  if (!entry.activityType) return;
+  const byActivity = (stats.dailyMinutesByActivity ??= {});
+  const dayMap = (byActivity[entryDate] ??= {});
+  dayMap[entry.activityType] = (dayMap[entry.activityType] || 0) + entry.duration_min;
 }
 
 export async function updateStats(entry: PendingEntry): Promise<void> {
@@ -52,6 +60,8 @@ export async function updateStats(entry: PendingEntry): Promise<void> {
         attentionMap[entryDate] = (attentionMap[entryDate] || 0) + entry.duration_min;
       }
 
+      addToActivityMap(stats, entry, entryDate);
+
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 90);
       const cutoffStr = getLocalDateString(cutoff);
@@ -65,6 +75,13 @@ export async function updateStats(entry: PendingEntry): Promise<void> {
         for (const dateKey of Object.keys(map)) {
           if (dateKey < cutoffStr) {
             delete map[dateKey];
+          }
+        }
+      }
+      if (stats.dailyMinutesByActivity) {
+        for (const dateKey of Object.keys(stats.dailyMinutesByActivity)) {
+          if (dateKey < cutoffStr) {
+            delete stats.dailyMinutesByActivity[dateKey];
           }
         }
       }
@@ -137,6 +154,15 @@ export function applyStatsSubtraction(
       }
     }
   }
+  if (entry.activityType) {
+    const dayMap = stats.dailyMinutesByActivity?.[entryDate];
+    const current = dayMap?.[entry.activityType];
+    if (dayMap && current) {
+      const next = Math.max(0, current - entry.duration_min);
+      if (next <= 0) delete dayMap[entry.activityType]; else dayMap[entry.activityType] = next;
+      if (Object.keys(dayMap).length === 0 && stats.dailyMinutesByActivity) delete stats.dailyMinutesByActivity[entryDate];
+    }
+  }
   subtractHourlyMinutes(stats, entry);
 
   stats.currentStreak = recalculateStreak(stats.dailyMinutes, dayStartHour);
@@ -200,5 +226,26 @@ export async function subtractFromStats(entry: PendingEntry): Promise<void> {
     if (!stats) return;
     await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
     deps.log('[JP343] Stats after deletion: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
+  });
+}
+
+// Backfill map once from pending entries
+export async function seedDailyMinutesByActivity(): Promise<void> {
+  await withStorageLock(async () => {
+    try {
+      const stats = await loadStats();
+      if (stats.dailyMinutesByActivity !== undefined) return;
+      const settings = await deps.loadSettings();
+      const dsh = settings.dayStartHour || 0;
+      const pending = await loadPendingEntries();
+      for (const entry of pending) {
+        const entryDate = getLocalDateString(new Date(entry.date), dsh);
+        addToActivityMap(stats, entry, entryDate);
+      }
+      stats.dailyMinutesByActivity ??= {};
+      await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
+    } catch (error) {
+      deps.log('[JP343] Failed to seed activity map:', error);
+    }
   });
 }

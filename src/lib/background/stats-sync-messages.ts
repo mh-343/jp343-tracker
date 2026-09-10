@@ -117,7 +117,9 @@ export async function handleStatsSyncMessage(
           weekMinutes,
           todayMinutes,
           streak,
-          rawDailyMinutes
+          rawDailyMinutes,
+          todayByActivity: stats.dailyMinutesByActivity?.[todayStr] ?? {},
+          todayActiveMinutes: stats.dailyActiveMinutes?.[todayStr] ?? 0
         }
       };
     }

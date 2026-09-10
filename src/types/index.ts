@@ -4,6 +4,13 @@ export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'd
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
+export interface DailyGoals {
+  v: 1;
+  byActivity: Partial<Record<ActivityType, number>>;
+  activeMinutes: number | null;
+}
+export const EMPTY_DAILY_GOALS: DailyGoals = { v: 1, byActivity: {}, activeMinutes: null };
+
 export type AttentionMode = 'active' | 'passive';
 
 export const PASSIVE_CAPABLE_ACTIVITIES: ReadonlyArray<ActivityType> = ['watching', 'listening', 'other'];
@@ -218,6 +225,7 @@ export interface ExtensionSettings {
   difficultyVotingEnabled?: boolean;
   difficultyContribEnabled?: boolean;
   showAttentionUi?: boolean;
+  dailyGoals?: DailyGoals;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -402,6 +410,7 @@ export interface ExtensionStats {
   readingDailyMinutes?: Record<string, number>;
   dailyActiveMinutes?: Record<string, number>;
   dailyPassiveMinutes?: Record<string, number>;
+  dailyMinutesByActivity?: Record<string, Partial<Record<ActivityType, number>>>;
 }
 
 export const DEFAULT_STATS: ExtensionStats = {
@@ -537,7 +546,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   difficultyLocalOnly: false,
   difficultyVotingEnabled: true,
   difficultyContribEnabled: false,
-  showAttentionUi: true
+  showAttentionUi: true,
+  dailyGoals: EMPTY_DAILY_GOALS
 };
 
 export const STORAGE_KEYS = {

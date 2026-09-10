@@ -15,6 +15,7 @@ import { setupSettings } from './settings';
 import { renderAnkiCard } from './anki-card';
 import { renderReadingCard } from './reading-card';
 import { renderStretchGoals } from './stretch-goals';
+import { refreshActivityGoals, setupActivityGoals } from './activity-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
@@ -81,6 +82,7 @@ async function refresh(): Promise<void> {
     const todayMinutes = data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0;
     renderGoalBar(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     renderStretchGoals(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
+    void refreshActivityGoals();
     const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
 
     renderHeatmap(data.stats.dailyMinutes);
@@ -218,6 +220,7 @@ browser.storage.local.get(STORAGE_KEYS.SETTINGS).then(result => {
   applyColorTheme(settings?.colorTheme ?? 'magenta');
 });
 setupSettings();
+setupActivityGoals();
 refresh();
 loadNews();
 browser.runtime.sendMessage({ type: 'ANKI_SYNC_NOW' }).catch(() => {});
