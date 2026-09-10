@@ -1,5 +1,7 @@
-import type { ExtensionMessage } from '../../types';
+import type { ExtensionMessage, DailyGoalsWire } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
+import { loadPendingEntries } from '../pending-entries';
+import { computeTodayProgress } from './activity-progress';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { stableUserId } from '../auth-helpers';
@@ -15,6 +17,9 @@ interface CachedServerStats {
   timezone?: string;
   calendar_week_seconds?: number;
   day_boundary_hour?: number;
+  today_by_activity_seconds?: Record<string, number>;
+  today_active_seconds?: number;
+  daily_goals?: DailyGoalsWire | null;
   cachedAt?: number;
 }
 
@@ -78,9 +83,9 @@ export async function handleStatsSyncMessage(
       const owner = stableUserId(await loadUserState());
       const envelope = await readOwnedServerStats(owner);
       const cached = envelope?.value as CachedServerStats | undefined;
+      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
       if (cached) {
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const serverTz = cached.timezone;
         const tzMatch = !serverTz || serverTz === browserTz;
         if (cached.today_seconds !== undefined && tzMatch)
@@ -110,6 +115,11 @@ export async function handleStatsSyncMessage(
         }
       }
 
+      const pending = await loadPendingEntries();
+      const progress = computeTodayProgress(cached ?? null, pending, todayStr, dsh, browserTz);
+      const todayByActivity = progress ? progress.byActivity : (stats.dailyMinutesByActivity?.[todayStr] ?? {});
+      const todayActiveMinutes = progress ? progress.activeMinutes : (stats.dailyActiveMinutes?.[todayStr] ?? 0);
+
       return {
         success: true,
         data: {
@@ -118,8 +128,8 @@ export async function handleStatsSyncMessage(
           todayMinutes,
           streak,
           rawDailyMinutes,
-          todayByActivity: stats.dailyMinutesByActivity?.[todayStr] ?? {},
-          todayActiveMinutes: stats.dailyActiveMinutes?.[todayStr] ?? 0
+          todayByActivity,
+          todayActiveMinutes
         }
       };
     }

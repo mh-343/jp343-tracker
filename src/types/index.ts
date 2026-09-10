@@ -11,6 +11,13 @@ export interface DailyGoals {
 }
 export const EMPTY_DAILY_GOALS: DailyGoals = { v: 1, byActivity: {}, activeMinutes: null };
 
+// Server wire form (snake_case)
+export interface DailyGoalsWire {
+  v: 1;
+  by_activity: Partial<Record<ActivityType, number>>;
+  active_minutes: number | null;
+}
+
 export type AttentionMode = 'active' | 'passive';
 
 export const PASSIVE_CAPABLE_ACTIVITIES: ReadonlyArray<ActivityType> = ['watching', 'listening', 'other'];
@@ -226,6 +233,7 @@ export interface ExtensionSettings {
   difficultyContribEnabled?: boolean;
   showAttentionUi?: boolean;
   dailyGoals?: DailyGoals;
+  dailyGoalsTouched?: boolean;
   platformDefaultsMigrated?: boolean;
 }
 
@@ -298,6 +306,7 @@ export interface SettingsPullResponse {
     track_japanese_only?: boolean;
     attention_ui_enabled?: boolean;
     daily_goal?: number;
+    daily_goals?: DailyGoalsWire | null;
     target_start_times?: (string | null)[] | null;
     message?: string;
     code?: string;
@@ -547,7 +556,8 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   difficultyVotingEnabled: true,
   difficultyContribEnabled: false,
   showAttentionUi: true,
-  dailyGoals: EMPTY_DAILY_GOALS
+  dailyGoals: EMPTY_DAILY_GOALS,
+  dailyGoalsTouched: false
 };
 
 export const STORAGE_KEYS = {

@@ -1,4 +1,4 @@
-import type { ActivityType, DailyGoals } from '../types';
+import type { ActivityType, DailyGoals, DailyGoalsWire } from '../types';
 import { DAILY_GOAL_MIN_MINUTES, DAILY_GOAL_MAX_MINUTES } from '../types';
 
 export type ActivityGoalKey = ActivityType | 'active';
@@ -66,4 +66,49 @@ export function computeActivityGoalRows(
 export function validateGoalMinutes(value: number): string | null {
   const isValid = Number.isInteger(value) && value >= DAILY_GOAL_MIN_MINUTES && value <= DAILY_GOAL_MAX_MINUTES;
   return isValid ? null : 'Enter a whole number between 5 and 1440 minutes';
+}
+
+export function dailyGoalsToWire(doc: DailyGoals): DailyGoalsWire {
+  return {
+    v: 1,
+    by_activity: { ...doc.byActivity },
+    active_minutes: doc.activeMinutes
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidGoalMinutes(value: unknown): value is number {
+  return typeof value === 'number' && validateGoalMinutes(value) === null;
+}
+
+function isActivityGoalKey(key: string): key is ActivityType {
+  return (ACTIVITY_GOAL_ORDER as readonly string[]).includes(key);
+}
+
+function isValidActiveMinutes(value: unknown): value is number | null {
+  return value === null || isValidGoalMinutes(value);
+}
+
+export function dailyGoalsFromWire(raw: unknown): DailyGoals | null {
+  if (!isPlainObject(raw)) return null;
+  if (raw.v !== 1) return null;
+
+  const byActivityRaw = raw.by_activity;
+  if (!isPlainObject(byActivityRaw)) return null;
+
+  const byActivity: Partial<Record<ActivityType, number>> = {};
+  for (const key of Object.keys(byActivityRaw)) {
+    if (!isActivityGoalKey(key)) return null;
+    const value = byActivityRaw[key];
+    if (!isValidGoalMinutes(value)) return null;
+    byActivity[key] = value;
+  }
+
+  const activeMinutesRaw = raw.active_minutes;
+  if (!isValidActiveMinutes(activeMinutesRaw)) return null;
+
+  return { v: 1, byActivity, activeMinutes: activeMinutesRaw };
 }

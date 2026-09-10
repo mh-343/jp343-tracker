@@ -1,9 +1,10 @@
-import type { ExtensionStats, ExtensionSettings } from '../../types';
+import type { ExtensionStats, ExtensionSettings, PendingEntry } from '../../types';
 import { DEFAULT_STATS, EMPTY_DAILY_GOALS, STORAGE_KEYS } from '../../types';
 import type { ActivityGoalRow } from '../../lib/activity-goals';
 import { computeActivityGoalRows, ACTIVITY_GOAL_COLORS } from '../../lib/activity-goals';
+import { computeTodayProgress } from '../../lib/background/activity-progress';
 import { formatGoalMinutes, getLocalDateString } from '../../lib/format-utils';
-import { getDayStartHour, isAttentionDisplayEnabled } from './stats';
+import { getDayStartHour, isAttentionDisplayEnabled, readCachedServerStats } from './stats';
 
 function openActivityGoalSettings(): void {
   document.getElementById('tabBtnSettings')?.click();
@@ -16,15 +17,20 @@ export function setupActivityGoals(): void {
 }
 
 export async function refreshActivityGoals(): Promise<void> {
-  const result = await browser.storage.local.get([STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS]);
+  const result = await browser.storage.local.get([STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS, STORAGE_KEYS.PENDING]);
   const stats = (result[STORAGE_KEYS.STATS] as ExtensionStats | undefined) ?? DEFAULT_STATS;
   const settings = result[STORAGE_KEYS.SETTINGS] as ExtensionSettings | undefined;
-  const todayKey = getLocalDateString(new Date(), getDayStartHour());
+  const pending = (result[STORAGE_KEYS.PENDING] as PendingEntry[] | undefined) ?? [];
+  const dsh = getDayStartHour();
+  const todayKey = getLocalDateString(new Date(), dsh);
+  const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const cached = await readCachedServerStats();
+  const progress = computeTodayProgress(cached, pending, todayKey, dsh, browserTz);
 
   const rows = computeActivityGoalRows(
     settings?.dailyGoals ?? EMPTY_DAILY_GOALS,
-    stats.dailyMinutesByActivity?.[todayKey],
-    stats.dailyActiveMinutes?.[todayKey] ?? 0,
+    progress ? progress.byActivity : stats.dailyMinutesByActivity?.[todayKey],
+    progress ? progress.activeMinutes : (stats.dailyActiveMinutes?.[todayKey] ?? 0),
     isAttentionDisplayEnabled()
   );
   renderActivityGoals(rows);

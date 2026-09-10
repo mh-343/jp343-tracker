@@ -1,4 +1,4 @@
-import type { JP343UserState } from '../../types';
+import type { JP343UserState, DailyGoalsWire } from '../../types';
 import { normalizeIsPassive } from '../../lib/attention';
 
 export const AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
@@ -19,6 +19,9 @@ export interface ServerStatsResponse {
   calendar_week_passive_seconds?: number;
   calendar_month_seconds?: number;
   day_boundary_hour?: number;
+  today_by_activity_seconds?: Record<string, number>;
+  today_active_seconds?: number;
+  daily_goals?: DailyGoalsWire | null;
   hourly_minutes?: Record<string, number>;
   first_session_times?: Record<string, string>;
   has_unread_ticket?: boolean;

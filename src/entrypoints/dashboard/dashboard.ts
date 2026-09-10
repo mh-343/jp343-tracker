@@ -237,6 +237,9 @@ browser.storage.onChanged.addListener((changes, area) => {
     if (changes[STORAGE_KEYS.PENDING]) clearRawCache();
     refresh();
   }
+  if (area === 'local' && changes[STORAGE_KEYS.CACHED_SERVER_STATS]) {
+    void refreshActivityGoals();
+  }
   if (area === 'local' && changes[STORAGE_KEYS.ANKI]) {
     void renderAnkiCard();
   }

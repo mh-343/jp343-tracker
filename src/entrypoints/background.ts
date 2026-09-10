@@ -706,6 +706,7 @@ export default defineBackground(() => {
           await onAuthSuccess();
           scheduleStatusBadgeUpdate();
           void retryQueuedVotes(batch.filter(e => resultMap.get(e.id)?.success).map(e => e.channelId));
+          if (succeeded > 0) void fetchAndCacheServerStats(true);
           return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
         }
 
@@ -807,6 +808,7 @@ export default defineBackground(() => {
       }
     }
 
+    if (succeeded > 0) void fetchAndCacheServerStats(true);
     scheduleStatusBadgeUpdate();
     return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
   }

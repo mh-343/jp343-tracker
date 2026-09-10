@@ -5,7 +5,8 @@ import type {
   SpotifyContentType,
   ColorTheme,
 } from '../../types';
-import { STORAGE_KEYS } from '../../types';
+import { EMPTY_DAILY_GOALS, STORAGE_KEYS } from '../../types';
+import { dailyGoalsToWire, dailyGoalsFromWire } from '../activity-goals';
 import { isAuthFailure, normalizeAjaxUrl, stableUserId } from '../auth-helpers';
 import { loadUserState } from '../server-cache';
 import { VALID_COLOR_THEMES } from '../theme';
@@ -35,6 +36,7 @@ export function normalizeTargetStartTimes(raw: unknown): (string | null)[] {
 }
 
 let settingsPullComplete = false;
+let firstContactPushDone = false;
 let settingsLastUpdated = '';
 let settingsLastPullTime = 0;
 let settingsPullInFlight: Promise<boolean> | null = null;
@@ -50,6 +52,7 @@ function resetOwnerScopedPullState(owner: number | null): void {
   settingsLastUpdated = '';
   settingsLastPullTime = 0;
   settingsPullComplete = false;
+  firstContactPushDone = false;
   browser.storage.session.remove(STORAGE_KEYS.SETTINGS_PULL_ATTEMPT).catch(() => {});
 }
 
@@ -74,6 +77,13 @@ function stampPullAttempt(): void {
   try {
     browser.storage.session.set({ [STORAGE_KEYS.SETTINGS_PULL_ATTEMPT]: settingsLastPullTime }).catch(() => {});
   } catch { /* session storage unavailable */ }
+}
+
+function assertsDailyGoals(settings: ExtensionSettings): boolean {
+  const doc = settings.dailyGoals ?? EMPTY_DAILY_GOALS;
+  return settings.dailyGoalsTouched === true
+    || Object.keys(doc.byActivity).length > 0
+    || doc.activeMinutes !== null;
 }
 
 export async function syncSettingsToServer(settings: ExtensionSettings): Promise<void> {
@@ -102,6 +112,9 @@ export async function syncSettingsToServer(settings: ExtensionSettings): Promise
       daily_goal_minutes: String(settings.dailyGoalMinutes || 60),
       target_start_times: JSON.stringify(settings.targetStartTimes ?? [null, null, null, null, null, null, null]),
     };
+    if (assertsDailyGoals(settings)) {
+      pushParams.daily_goals = JSON.stringify(dailyGoalsToWire(settings.dailyGoals ?? EMPTY_DAILY_GOALS));
+    }
     const controller = new AbortController();
     const pushTimeout = setTimeout(() => controller.abort(), 10000);
     let resp: Response;
@@ -259,6 +272,20 @@ async function doPullAndMergeSettings(): Promise<boolean> {
       }
     }
 
+    const serverGoalsRaw = result.data?.daily_goals;
+    let firstContactAsserts = false;
+    if (serverGoalsRaw !== null && serverGoalsRaw !== undefined) {
+      const serverGoals = dailyGoalsFromWire(serverGoalsRaw);
+      if (serverGoals !== null
+          && JSON.stringify(settings.dailyGoals ?? EMPTY_DAILY_GOALS) !== JSON.stringify(serverGoals)) {
+        settings.dailyGoals = serverGoals;
+        settings.dailyGoalsTouched = true;
+        changed = true;
+      }
+    } else {
+      firstContactAsserts = assertsDailyGoals(settings);
+    }
+
     if (changed) {
       if (!await pullCredentialStillCurrent(pullOwner, pullToken)) return false;
       await deps.saveSettings(settings);
@@ -266,6 +293,11 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     }
     settingsPullComplete = true;
     stampPullAttempt();
+
+    if (firstContactAsserts && !firstContactPushDone) {
+      firstContactPushDone = true;
+      void syncSettingsToServer(settings);
+    }
 
     deps.pullChannelsFromServer().catch(() => {});
 
