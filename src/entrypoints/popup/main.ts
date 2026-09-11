@@ -1,7 +1,7 @@
 // JP343 Extension - Popup UI
 
 import { STORAGE_KEYS, activityAllowsPassive, EMPTY_DAILY_GOALS } from '../../types';
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionMode, DailyGoals } from '../../types';
+import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
 import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
@@ -34,6 +34,7 @@ const elements = {
   btnPause: document.getElementById('btnPause') as HTMLButtonElement,
   btnStop: document.getElementById('btnStop') as HTMLButtonElement,
   attentionRow: document.getElementById('attentionRow') as HTMLElement,
+  btnAttentionAuto: document.getElementById('btnAttentionAuto') as HTMLButtonElement,
   btnAttentionActive: document.getElementById('btnAttentionActive') as HTMLButtonElement,
   btnAttentionPassive: document.getElementById('btnAttentionPassive') as HTMLButtonElement,
   pendingSection: document.getElementById('pendingSection') as HTMLElement,
@@ -48,6 +49,11 @@ const elements = {
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
   btnAllowChannel: document.getElementById('btnAllowChannel') as HTMLButtonElement,
+  musicSkippedSection: document.getElementById('musicSkippedSection') as HTMLElement,
+  musicSkippedTitle: document.getElementById('musicSkippedTitle') as HTMLElement,
+  btnMusicSkippedSettings: document.getElementById('btnMusicSkippedSettings') as HTMLButtonElement,
+  attentionModeBanner: document.getElementById('attentionModeBanner') as HTMLElement,
+  attentionModeText: document.getElementById('attentionModeText') as HTMLElement,
   btnEditTitle: document.getElementById('btnEditTitle') as HTMLButtonElement,
   // Manual Tracking
   manualTrackMode: document.getElementById('manualTrackMode') as HTMLElement,
@@ -124,6 +130,8 @@ let _popupDayStartHour = 0;
 let _popupStretchEnabled = true;
 let _popupShowAttention = true;
 let popupDailyGoals: DailyGoals = EMPTY_DAILY_GOALS;
+let popupAttentionPref: AttentionPreference = 'auto';
+let popupSkippedMusic: { videoId: string | null; title: string } | null = null;
 
 function createGoalTooltipText<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -291,6 +299,7 @@ async function loadAndApplySettings(): Promise<void> {
       const attnChanged = _popupShowAttention !== (settings.showAttentionUi ?? true);
       _popupShowAttention = settings.showAttentionUi ?? true;
       if (attnChanged) void fetchPendingEntries();
+      popupAttentionPref = settings.attentionPreference ?? 'auto';
     }
   } catch (error) {
     log('[JP343 Popup] Failed to load settings:', error);
@@ -786,18 +795,39 @@ function updateSessionDisplay(
   elements.adLabel.style.display = isAd ? 'block' : 'none';
 
   elements.btnPause.textContent = session.isPaused ? 'Resume' : 'Pause';
+  const manualPageSession = session.platform === 'generic' && !session.videoId?.startsWith('cs_');
+  elements.btnPause.style.display = manualPageSession ? '' : 'none';
   updateAttentionRow(session);
 }
 
 function updateAttentionRow(session: TrackingSession): void {
-  if (!_popupShowAttention || !activityAllowsPassive(session.activityType)) {
+  if ((!_popupShowAttention && popupAttentionPref === 'auto') || !activityAllowsPassive(session.activityType)) {
     elements.attentionRow.style.display = 'none';
     return;
   }
   elements.attentionRow.style.display = 'flex';
-  const effective = session.attentionOverride ?? session.attention;
-  elements.btnAttentionActive.classList.toggle('active', effective === 'active');
-  elements.btnAttentionPassive.classList.toggle('active', effective === 'passive');
+  const ov = session.attentionOverride;
+  elements.btnAttentionAuto.classList.toggle('active', ov === undefined);
+  elements.btnAttentionActive.classList.toggle('active', ov === 'active');
+  elements.btnAttentionPassive.classList.toggle('active', ov === 'passive');
+}
+
+function updateStatusBanners(session: TrackingSession | null): void {
+  const showMusicSkipped = !session && !!popupSkippedMusic;
+  elements.musicSkippedSection.style.display = showMusicSkipped ? 'block' : 'none';
+  if (showMusicSkipped && popupSkippedMusic) {
+    elements.musicSkippedTitle.textContent = popupSkippedMusic.title;
+  }
+
+  const chipsVisible = !!session && activityAllowsPassive(session.activityType)
+    && (_popupShowAttention || popupAttentionPref !== 'auto');
+  const showMode = popupAttentionPref !== 'auto' && !chipsVisible;
+  elements.attentionModeBanner.style.display = showMode ? 'block' : 'none';
+  if (showMode) {
+    elements.attentionModeText.textContent = popupAttentionPref === 'passive'
+      ? 'Passive mode on'
+      : 'Active mode on';
+  }
 }
 
 function updatePendingDisplay(entries: PendingEntry[]): void {
@@ -832,8 +862,9 @@ async function fetchCurrentState(): Promise<void> {
     if (seq !== fetchSeq) return;
 
     if (response.success && response.data) {
-      const { session, durationMs, isAd, skippedChannel } = response.data;
+      const { session, durationMs, isAd, skippedChannel, skippedMusic } = response.data;
       lastSkippedChannel = skippedChannel || null;
+      popupSkippedMusic = skippedMusic || null;
 
       const newDurationMs = typeof durationMs === 'number' ? durationMs : 0;
       const newTicking = !!session && session.isActive && !session.isPaused && !isAd;
@@ -854,6 +885,7 @@ async function fetchCurrentState(): Promise<void> {
       updateSessionDisplay(session, isAd);
       tickTimerDisplay();
       updateChannelDisplay(session, skippedChannel);
+      updateStatusBanners(session);
       updateManualTrackDisplay();
       if (platformChanged) {
         loadAndApplySettings();
@@ -896,12 +928,13 @@ elements.btnStop.addEventListener('click', async () => {
   }
 });
 
-async function setSessionAttention(attention: AttentionMode): Promise<void> {
+async function setSessionAttention(attention: AttentionPreference): Promise<void> {
   if (!currentSession) return;
 
   try {
     const response = await browser.runtime.sendMessage({ type: 'SET_SESSION_ATTENTION', attention });
     if (response.success) {
+      popupAttentionPref = attention;
       await fetchCurrentState();
     } else {
       log('[JP343 Popup] Failed to set attention:', response.error);
@@ -911,6 +944,7 @@ async function setSessionAttention(attention: AttentionMode): Promise<void> {
   }
 }
 
+elements.btnAttentionAuto.addEventListener('click', () => setSessionAttention('auto'));
 elements.btnAttentionActive.addEventListener('click', () => setSessionAttention('active'));
 elements.btnAttentionPassive.addEventListener('click', () => setSessionAttention('passive'));
 
@@ -933,6 +967,10 @@ document.getElementById('btnDashboard')?.addEventListener('click', async () => {
 });
 
 document.getElementById('btnSettings')?.addEventListener('click', async () => {
+  await openOrFocusDashboard('/dashboard.html?tab=settings');
+});
+
+elements.btnMusicSkippedSettings.addEventListener('click', async () => {
   await openOrFocusDashboard('/dashboard.html?tab=settings');
 });
 

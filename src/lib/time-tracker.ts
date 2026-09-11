@@ -1,5 +1,5 @@
-import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, AttentionMode, LangSignalSource } from '../types';
-import { PLATFORM_ACTIVITY_TYPE, SENSOR_VERSION } from '../types';
+import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, AttentionMode, AttentionPreference, LangSignalSource } from '../types';
+import { PLATFORM_ACTIVITY_TYPE, SENSOR_VERSION, activityAllowsPassive } from '../types';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -64,7 +64,7 @@ export class TimeTracker {
     setInterval(() => this.tick(), 1000);
   }
 
-  startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType): TrackingSession {
+  startSession(videoState: VideoState, tabId?: number, activityTypeOverride?: ActivityType, attentionPreference: AttentionPreference = 'auto'): TrackingSession {
     const now = Date.now();
 
     if (this.session && this.session.url === videoState.url) {
@@ -124,6 +124,13 @@ export class TimeTracker {
       audioLanguage: videoState.audioLanguage ?? null,
       activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
+    if (attentionPreference === 'passive' && activityAllowsPassive(this.session.activityType)) {
+      this.session.attention = 'passive';
+      this.session.attentionOverride = 'passive';
+    } else if (attentionPreference === 'active' && activityAllowsPassive(this.session.activityType)) {
+      this.session.attention = 'active';
+      this.session.attentionOverride = 'active';
+    }
     this.updateSessionSensorData(videoState);
 
     log('[JP343] New session started:', this.session.title);
@@ -146,6 +153,14 @@ export class TimeTracker {
       this.session.lastUpdate = Date.now();
       log('[JP343] Session resumed');
     }
+  }
+
+  resumeAutoAttention(): boolean {
+    if (!this.session || this.session.attentionOverride === undefined) return false;
+    this.session.attentionOverride = undefined;
+    this.session.attentionCandidate = undefined;
+    this.session.attentionCandidateSince = undefined;
+    return true;
   }
 
   restoreSession(saved: TrackingSession): void {

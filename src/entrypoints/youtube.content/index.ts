@@ -556,6 +556,7 @@ export default defineContentScript({
       }
       if (!videoCategoryRaw && typeof detail.category === 'string' && detail.category) {
         videoCategoryRaw = detail.category;
+        gotSignal = true;
       }
       if (videoIsLive === null && typeof detail.isLive === 'boolean') {
         videoIsLive = detail.isLive;

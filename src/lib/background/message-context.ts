@@ -21,7 +21,7 @@ export interface BackgroundMessageContext {
   ensureFreshSettings: () => Promise<void>;
   syncSettingsToServer: (settings: ExtensionSettings) => Promise<void>;
   applyChannelOp: (op: Omit<ChannelOp, 'opId' | 'timestamp'>) => Promise<void>;
-  savePendingEntry: (entry: PendingEntry) => Promise<SavePendingResult>;
+  savePendingEntry: (entry: PendingEntry, bypassMusicSkip?: boolean) => Promise<SavePendingResult>;
   saveSessionState: (session: TrackingSession | null) => Promise<void>;
   loadStats: () => Promise<ExtensionStats>;
   subtractFromStats: (entry: PendingEntry) => Promise<void>;

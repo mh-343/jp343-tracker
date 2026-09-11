@@ -151,7 +151,7 @@ export async function handlePendingMessage(
         };
         let result: SavePendingResult = 'error';
         try {
-          result = await context.savePendingEntry(entry);
+          result = await context.savePendingEntry(entry, true);
         } catch { /* treated as error */ }
         if (result === 'error') {
           try {

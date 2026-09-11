@@ -63,9 +63,11 @@ export async function handleSettingsMessage(
 
     case 'UPDATE_SETTINGS': {
       if ('settings' in message && message.settings) {
+        const prev = await context.loadSettings();
         const newSettings = message.settings as ExtensionSettings;
         delete (newSettings as Record<string, unknown>).blockedChannels;
         delete (newSettings as Record<string, unknown>).whitelistedChannels;
+        newSettings.attentionPreference = prev.attentionPreference;
         await context.saveSettings(newSettings);
         context.syncSettingsToServer(newSettings).catch(() => {});
 

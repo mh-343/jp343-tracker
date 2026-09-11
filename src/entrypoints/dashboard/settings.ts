@@ -333,6 +333,12 @@ function buildPlatformsPanel(container: HTMLElement, settings: ExtensionSettings
   section.appendChild(title);
 
   buildPlatformToggles(section, settings);
+  section.appendChild(createToggleRow(
+    'Track YouTube music videos',
+    'Off by default. Turn on to count YouTube videos detected as music.',
+    settings.trackYoutubeMusic === true,
+    async (val) => { await updateSettings({ trackYoutubeMusic: val }); }
+  ));
   buildSpotifyChips(section, settings);
 
   container.appendChild(section);

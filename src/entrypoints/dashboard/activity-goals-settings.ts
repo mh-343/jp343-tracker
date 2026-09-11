@@ -262,7 +262,7 @@ export function buildActivityGoalsSection(container: HTMLElement, settings: Exte
       // keep the value when the row is hidden
       const finalActive = attentionAllowed ? activeMinutes : existingActiveMinutes;
       const dailyGoals: DailyGoals = { v: 1, byActivity, activeMinutes: finalActive };
-      await updateSettings({ dailyGoals });
+      await updateSettings({ dailyGoals, dailyGoalsTouched: true });
       showStatus(container, 'Activity goals saved', 'success');
       void refreshActivityGoals();
     } finally {

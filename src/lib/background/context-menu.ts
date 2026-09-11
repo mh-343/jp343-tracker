@@ -5,7 +5,7 @@ import { scheduleStatusBadgeUpdate } from '../badge-service';
 interface ContextMenuDeps {
   recoveryReady: Promise<void>;
   saveSessionState: (session: TrackingSession | null) => Promise<void>;
-  savePendingEntry: (entry: PendingEntry) => Promise<SavePendingResult>;
+  savePendingEntry: (entry: PendingEntry, bypassMusicSkip?: boolean) => Promise<SavePendingResult>;
 }
 
 export function initContextMenu(deps: ContextMenuDeps): () => void {

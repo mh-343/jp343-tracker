@@ -1,6 +1,8 @@
-import type { ActivityType, ExtensionMessage, LangSignalSource, Platform, TrackingSession, VideoState } from '../../types';
+import type { ActivityType, AttentionPreference, ExtensionMessage, LangSignalSource, Platform, TrackingSession, VideoState } from '../../types';
 import { activityAllowsPassive } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
+import { shouldSkipYoutubeMusic } from '../youtube-music';
+import { setSkippedMusic, getSkippedMusic } from './skipped-music';
 import { sessionOwnsId, tracker } from '../time-tracker';
 import { applyAttentionSample } from './attention-machine';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
@@ -144,6 +146,29 @@ async function renameActiveCustomSiteSession(
   };
 }
 
+async function applyAttentionChoice(
+  session: TrackingSession,
+  attention: AttentionPreference,
+  context: BackgroundMessageContext
+): Promise<unknown> {
+  if (attention !== 'auto' && !activityAllowsPassive(session.activityType)) {
+    return { success: false, error: 'Reading and speaking sessions count as active' };
+  }
+  if (attention === 'auto') {
+    tracker.resumeAutoAttention();
+  } else {
+    session.attentionOverride = attention;
+    session.attention = attention;
+    session.attentionCandidate = undefined;
+    session.attentionCandidateSince = undefined;
+  }
+  await context.saveSessionState(session);
+  const settings = await context.loadSettings();
+  settings.attentionPreference = attention;
+  await context.saveSettings(settings);
+  return { success: true };
+}
+
 export async function handleTrackingMessage(
   message: ExtensionMessage,
   messageSender: Browser.runtime.MessageSender,
@@ -192,6 +217,13 @@ export async function handleTrackingMessage(
             context.log('[JP343] Spotify content type blocked:', message.state.contentType);
             return { success: true, skipped: true, blocked: true };
           }
+        }
+
+        if (shouldSkipYoutubeMusic(message.state, settings)) {
+          setSkippedMusic({ videoId: message.state.videoId, title: message.state.title || '' });
+          context.setLastSkippedChannel(null);
+          context.log('[JP343] YouTube music skipped (opt-out)');
+          return { success: true, skipped: true, blocked: true };
         }
 
         // recorded even when the filter is off
@@ -244,13 +276,14 @@ export async function handleTrackingMessage(
         }
 
         context.setLastSkippedChannel(null);
+        setSkippedMusic(null);
         let customSiteName: string | null = null;
         if (message.state.platform === 'generic' && message.state.videoId?.startsWith('cs_')) {
           customSiteName = await getCustomSiteName(message.state.videoId);
           if (customSiteName) message.state.title = customSiteName;
         }
         const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
-        const session = tracker.startSession(message.state, tabId);
+        const session = tracker.startSession(message.state, tabId, undefined, settings.attentionPreference ?? 'auto');
         if (!session.trackingMode) {
           session.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
         }
@@ -372,12 +405,26 @@ export async function handleTrackingMessage(
 
         tracker.updateSessionSensorData(message.state);
 
+        const settings = await context.loadSettings();
+        if (shouldSkipYoutubeMusic(message.state, settings)) {
+          const musicSession = tracker.getCurrentSession();
+          if (musicSession) {
+            await collectUnflushedTime(musicSession, recordDiagnostic);
+            tracker.stopSession();
+            await context.saveSessionState(null);
+          }
+          setSkippedMusic({ videoId: message.state.videoId, title: message.state.title || '' });
+          context.setLastSkippedChannel(null);
+          scheduleStatusBadgeUpdate();
+          context.log('[JP343] YouTube music detected - session discarded');
+          return { success: true, skipped: true };
+        }
+
         // late metadata can turn a session Japanese
         const lateEvidence = detectJapaneseEvidence(message.state);
         if (lateEvidence) tracker.updateSessionLangSignal(lateEvidence);
 
         if (message.state.channelId || message.state.title) {
-          const settings = await context.loadSettings();
           if (message.state.channelId && isChannelInList(settings.blockedChannels, message.state.channelId, message.state.channelUrl)) {
             if (settings.trackJapaneseOnly && isJapaneseGatedPlatform(message.state.platform)) {
               context.setLastSkippedChannel({
@@ -431,7 +478,6 @@ export async function handleTrackingMessage(
           isJapaneseGatedPlatform(message.state.platform) &&
           message.state.isPlaying
         ) {
-          const settings = await context.loadSettings();
           if (settings.trackJapaneseOnly) {
             const lastSkipped = context.getLastSkippedChannel();
             const chId = message.state.channelId;
@@ -443,7 +489,7 @@ export async function handleTrackingMessage(
                   context.log('[JP343] Re-evaluation: original title is JP, starting session');
                   context.setLastSkippedChannel(null);
                   const tabId = ('tabId' in message ? message.tabId : undefined) || messageSender.tab?.id;
-                  const reEvalSession = tracker.startSession(message.state as VideoState, tabId);
+                  const reEvalSession = tracker.startSession(message.state as VideoState, tabId, undefined, settings.attentionPreference ?? 'auto');
                   if (!reEvalSession.trackingMode) {
                     reEvalSession.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
                   }
@@ -519,9 +565,15 @@ export async function handleTrackingMessage(
         }
       }
 
+      let skippedMusic: { videoId: string | null; title: string } | null = null;
+      if (!session) {
+        const sm = getSkippedMusic();
+        if (sm) skippedMusic = { videoId: sm.videoId, title: sm.title };
+      }
+
       return {
         success: true,
-        data: { session, duration, durationMs, isAd, skippedChannel }
+        data: { session, duration, durationMs, isAd, skippedChannel, skippedMusic }
       };
     }
 
@@ -621,18 +673,10 @@ export async function handleTrackingMessage(
       const session = tracker.getCurrentSession();
       if (!session) return { success: false, error: 'No active session' };
       const attention = 'attention' in message ? message.attention : undefined;
-      if (attention !== 'active' && attention !== 'passive') {
+      if (attention !== 'auto' && attention !== 'active' && attention !== 'passive') {
         return { success: false, error: 'Invalid attention value' };
       }
-      if (attention === 'passive' && !activityAllowsPassive(session.activityType)) {
-        return { success: false, error: 'Reading and speaking sessions count as active' };
-      }
-      session.attentionOverride = attention;
-      session.attention = attention;
-      session.attentionCandidate = undefined;
-      session.attentionCandidateSince = undefined;
-      await context.saveSessionState(session);
-      return { success: true };
+      return applyAttentionChoice(session, attention, context);
     }
 
     case 'GET_ACTIVE_TAB_INFO': {
@@ -735,7 +779,7 @@ export async function handleTrackingMessage(
         channelUrl: null
       };
 
-      const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType);
+      const session = tracker.startSession(manualState, message.tabId as number, message.activityType as ActivityType, settings.attentionPreference ?? 'auto');
       if (!session.trackingMode) {
         session.trackingMode = settings.trackJapaneseOnly ? 'jp_only' : 'all';
       }

@@ -2,6 +2,7 @@ import { tracker, generateProjectId, isReading, sensorEntryFields, attentionEntr
 import { buildSensorParams } from '../lib/background/sensor-params';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
+import { shouldSkipYoutubeMusic } from '../lib/youtube-music';
 import { isAuthFailure, stableUserId } from '../lib/auth-helpers';
 import {
   initSettingsSyncCallbacks,
@@ -402,13 +403,14 @@ export default defineBackground(() => {
     }
   })().catch(() => {});
 
-  async function savePendingEntry(entry: PendingEntry): Promise<SavePendingResult> {
+  async function savePendingEntry(entry: PendingEntry, bypassMusicSkip = false): Promise<SavePendingResult> {
     const result = await withStorageLock<SavePendingResult>(async () => {
       try {
         const pending = await loadPendingEntries();
         if (pending.some(e => e.id === entry.id)) return 'duplicate';
 
         const settings = await loadSettings();
+        if (!bypassMusicSkip && shouldSkipYoutubeMusic(entry, settings)) return 'skipped';
         if (settings.mergeSameDaySessions) {
           const dsh = settings.dayStartHour || 0;
           const mergeTarget = findMergeTarget(pending, entry, dsh);

@@ -79,7 +79,7 @@ function stampPullAttempt(): void {
   } catch { /* session storage unavailable */ }
 }
 
-function assertsDailyGoals(settings: ExtensionSettings): boolean {
+export function assertsDailyGoals(settings: ExtensionSettings): boolean {
   const doc = settings.dailyGoals ?? EMPTY_DAILY_GOALS;
   return settings.dailyGoalsTouched === true
     || Object.keys(doc.byActivity).length > 0
@@ -228,6 +228,7 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
     const serverAttentionUi: boolean | undefined = result.data?.attention_ui_enabled;
     const serverDailyGoal: number | undefined = result.data?.daily_goal;
+    const serverDayBoundary: number | undefined = result.data?.day_boundary_hour;
 
     const settings = await deps.loadSettings();
     let changed = false;
@@ -263,6 +264,13 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     if (serverDailyGoal !== undefined && serverDailyGoal > 0 && settings.dailyGoalMinutes !== serverDailyGoal) {
       settings.dailyGoalMinutes = serverDailyGoal;
       changed = true;
+    }
+    if (serverDayBoundary !== undefined) {
+      const clamped = Math.max(0, Math.min(6, serverDayBoundary));
+      if ((settings.dayStartHour || 0) !== clamped) {
+        settings.dayStartHour = clamped;
+        changed = true;
+      }
     }
     const serverTargets = result.data?.target_start_times;
     if (serverTargets && Array.isArray(serverTargets) && serverTargets.length === 7) {

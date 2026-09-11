@@ -19,6 +19,7 @@ export interface DailyGoalsWire {
 }
 
 export type AttentionMode = 'active' | 'passive';
+export type AttentionPreference = 'auto' | AttentionMode;
 
 export const PASSIVE_CAPABLE_ACTIVITIES: ReadonlyArray<ActivityType> = ['watching', 'listening', 'other'];
 
@@ -164,7 +165,7 @@ export interface DeletedEntrySnapshot {
   userId?: number | null;
 }
 
-export type SavePendingResult = 'saved' | 'merged' | 'duplicate' | 'error';
+export type SavePendingResult = 'saved' | 'merged' | 'duplicate' | 'error' | 'skipped';
 
 export interface JP343UserState {
   isLoggedIn: boolean;
@@ -218,6 +219,7 @@ export interface ExtensionSettings {
   dayStartHour: number;
   hideNonJapanese: boolean;
   trackJapaneseOnly: boolean;
+  trackYoutubeMusic?: boolean;
   whitelistedChannels: WhitelistedChannel[];
   useOriginalTitles: boolean;
   diagnosticsEnabled: boolean;
@@ -232,6 +234,7 @@ export interface ExtensionSettings {
   difficultyVotingEnabled?: boolean;
   difficultyContribEnabled?: boolean;
   showAttentionUi?: boolean;
+  attentionPreference?: AttentionPreference;
   dailyGoals?: DailyGoals;
   dailyGoalsTouched?: boolean;
   platformDefaultsMigrated?: boolean;
@@ -306,6 +309,7 @@ export interface SettingsPullResponse {
     track_japanese_only?: boolean;
     attention_ui_enabled?: boolean;
     daily_goal?: number;
+    day_boundary_hour?: number;
     daily_goals?: DailyGoalsWire | null;
     target_start_times?: (string | null)[] | null;
     message?: string;
@@ -344,7 +348,7 @@ export type ExtensionMessage =
   | { type: 'UNWHITELIST_CHANNEL'; channelId: string }
   | { type: 'GET_CURRENT_CHANNEL' }
   | { type: 'UPDATE_SESSION_TITLE'; title: string }
-  | { type: 'SET_SESSION_ATTENTION'; attention: AttentionMode }
+  | { type: 'SET_SESSION_ATTENTION'; attention: AttentionPreference }
   | { type: 'RETAG_ENTRY'; entryId?: string; serverEntryId?: number | string; isPassive: boolean }
   | { type: 'BULK_RETAG_UNTAGGED'; isPassive: boolean }
   | { type: 'UPDATE_PENDING_ENTRY_TITLE'; entryId: string; title: string }
@@ -542,6 +546,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   dayStartHour: 0,
   hideNonJapanese: false,
   trackJapaneseOnly: true,
+  trackYoutubeMusic: false,
   whitelistedChannels: [],
   useOriginalTitles: false,
   diagnosticsEnabled: true,
@@ -556,6 +561,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   difficultyVotingEnabled: true,
   difficultyContribEnabled: false,
   showAttentionUi: true,
+  attentionPreference: 'auto',
   dailyGoals: EMPTY_DAILY_GOALS,
   dailyGoalsTouched: false
 };

@@ -90,8 +90,9 @@
       <div class="attention-row" id="attentionRow" style="display: none;">
         <span class="attention-label">Attention</span>
         <div class="attention-buttons">
-          <button class="attention-chip" id="btnAttentionActive">Active</button>
-          <button class="attention-chip" id="btnAttentionPassive">Passive</button>
+          <button class="attention-chip" id="btnAttentionAuto" title="Detect attention per video">Auto</button>
+          <button class="attention-chip" id="btnAttentionActive" title="Count every video as active until changed">Active</button>
+          <button class="attention-chip" id="btnAttentionPassive" title="Count every video as passive until changed">Passive</button>
         </div>
       </div>
     </div>
@@ -128,6 +129,19 @@
       <span class="channel-name"><span id="channelLabel">Channel</span>: <strong id="currentChannelName">-</strong></span>
       <button class="btn-block" id="btnBlockChannel">Block</button>
       <button class="btn-allow" id="btnAllowChannel" style="display: none;" title="Always track this channel (whitelist)">Allow</button>
+    </div>
+  </div>
+
+  <div class="channel-section" id="musicSkippedSection" style="display: none;">
+    <div class="channel-info">
+      <span class="channel-name">Music skipped: <span id="musicSkippedTitle"></span></span>
+      <button class="btn-block" id="btnMusicSkippedSettings">Settings</button>
+    </div>
+  </div>
+
+  <div class="channel-section" id="attentionModeBanner" style="display: none;">
+    <div class="channel-info">
+      <span class="channel-name" id="attentionModeText"></span>
     </div>
   </div>
 
