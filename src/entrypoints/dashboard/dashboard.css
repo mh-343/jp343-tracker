@@ -2884,3 +2884,6 @@
     }
 
 
+
+.session-platform.platform-mpchc { background: #315f85; color: #fff; }
+[data-theme="light"] .session-platform.platform-mpchc { background: #dceaf5; color: #254e70; }

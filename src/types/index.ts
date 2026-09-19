@@ -1,6 +1,6 @@
 import type { DifficultySeed } from '../lib/difficulty-seeds';
 
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mokuro' | 'ttu' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mpchc' | 'mokuro' | 'ttu' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -49,6 +49,7 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   spotify: 'listening',
   twitch: 'watching',
   asbplayer: 'watching',
+  mpchc: 'watching',
   mokuro: 'reading',
   ttu: 'reading',
   generic: 'watching',
@@ -124,6 +125,7 @@ export interface TrackingSession {
 }
 
 export interface PendingEntry {
+  syncState?: import('../lib/sync-policy').EntrySyncState;
   id: string;
   date: string;
   duration_min: number;
@@ -143,6 +145,7 @@ export interface PendingEntry {
   channelUrl: string | null;
   activityType?: ActivityType;
   mergeResync?: boolean;
+  mergedSessionIds?: string[];
   chars?: number;
   readingCurrentPage?: number;
   readingCompleted?: boolean;
@@ -357,11 +360,18 @@ export type ExtensionMessage =
   | { type: 'GET_STATS' }
   | { type: 'RESET_STATS' }
   | { type: 'SYNC_ENTRIES_DIRECT' }
+  | { type: 'RETRY_PENDING_SYNC'; entryIds?: string[] }
+  | { type: 'GET_SYNC_STATUS' }
+  | { type: 'REMOVE_BLOCKED_SYNC_ENTRY'; entryId: string }
+  | { type: 'IMPORT_PENDING_BACKUP'; entries: PendingEntry[]; stats: ExtensionStats; dayStartHour: number }
   | { type: 'OPEN_DASHBOARD' }
   | { type: 'DIAGNOSTIC_EVENT'; code: string; platform?: Platform }
   | { type: 'GET_DIAGNOSTICS' }
   | { type: 'REFETCH_AVATAR' }
   | { type: 'PULL_CHANNELS' }
+  | { type: 'GET_MPCHC_STATUS' }
+  | { type: 'SET_MPCHC_ENABLED'; enabled: boolean }
+  | { type: 'MPCHC_PROBE' }
   | { type: 'GET_ANKI_STATE' }
   | { type: 'SET_ANKI_ENABLED'; enabled: boolean }
   | { type: 'ANKI_SYNC_NOW' }
@@ -383,6 +393,7 @@ export type ExtensionMessage =
   | { type: 'CUSTOM_SITE_NAME_RESET'; projectId: string };
 
 export interface DirectSyncResult {
+  deferredUntil?: number;
   attempted: number;
   succeeded: number;
   failed: number;
@@ -567,6 +578,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
 };
 
 export const STORAGE_KEYS = {
+  SYNC_QUEUE: 'jp343_extension_sync_queue',
   PENDING: 'jp343_extension_pending',
   PENDING_VOTES: 'jp343_extension_pending_votes',
   DELETED_ENTRIES: 'jp343_deleted_entries',
@@ -590,6 +602,7 @@ export const STORAGE_KEYS = {
   POPUP_HEIGHT: 'jp343_popup_height',
   RELOGIN_REQUIRED: 'jp343_relogin_required',
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
+  MPCHC: 'jp343_extension_mpchc',
   ANKI: 'jp343_extension_anki',
   MOKURO: 'jp343_extension_mokuro',
   TTU: 'jp343_extension_ttu',

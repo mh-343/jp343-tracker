@@ -43,5 +43,8 @@ SESSION-HANDOFF-*.md
 
 # Local tooling
 .claude/
+.agents/
+.codex/
+AGENTS.md
 
 dev/

@@ -14,6 +14,7 @@ import {
 } from '../server-cache';
 import { fetchAndCacheServerSessions } from '../server-sessions';
 import { canonicalServerEntryId } from './server-delete';
+import { resetEntrySync } from '../sync-policy';
 
 export interface RetagResult {
   success: boolean;
@@ -85,6 +86,10 @@ export async function retagPendingEntry(entryId: string, isPassive: boolean): Pr
     }
     const oldIsPassive = entry.isPassive;
     entry.isPassive = isPassive;
+    if (!entry.synced && oldIsPassive !== isPassive) {
+      if (entry.syncState?.everSent || entry.syncAttempts > 0 || entry.serverEntryId != null) entry.mergeResync = true;
+      resetEntrySync(entry);
+    }
     await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
     if (oldIsPassive !== isPassive) {
       await applyAttentionRetagToStats([{ entry, oldIsPassive }]);
@@ -125,6 +130,10 @@ export async function bulkRetagUntagged(isPassive: boolean): Promise<RetagResult
       if (isPassive && !activityAllowsPassive(entry.activityType)) continue;
       moves.push({ entry, oldIsPassive: undefined });
       entry.isPassive = isPassive;
+      if (!entry.synced) {
+        if (entry.syncState?.everSent || entry.syncAttempts > 0 || entry.serverEntryId != null) entry.mergeResync = true;
+        resetEntrySync(entry);
+      }
     }
     if (moves.length > 0) {
       await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });

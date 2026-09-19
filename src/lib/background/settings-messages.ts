@@ -12,6 +12,7 @@ import { flushCustomSiteRenames } from './custom-site-names';
 import { reconcileConfirmedDeletes } from './server-delete';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
+import { acknowledgeSyncCounts } from './sync-queue';
 
 async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMessageContext): Promise<void> {
   const state = commit.state;
@@ -69,6 +70,7 @@ export async function handleSettingsMessage(
         delete (newSettings as Record<string, unknown>).whitelistedChannels;
         newSettings.attentionPreference = prev.attentionPreference;
         await context.saveSettings(newSettings);
+        if (newSettings.diagnosticsEnabled === false) await acknowledgeSyncCounts({});
         context.syncSettingsToServer(newSettings).catch(() => {});
 
         return { success: true };

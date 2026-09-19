@@ -6,6 +6,8 @@ import { handleSettingsMessage } from './settings-messages';
 import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
+import { handleMpchcMessage } from './mpchc-messages';
+import { handleSyncMessage } from './sync-messages';
 import { handleAnkiMessage } from './anki-messages';
 import { handleReaderMessage } from './reader-messages';
 import { handleCustomSitesMessage } from './custom-sites-messages';
@@ -17,7 +19,7 @@ function getMessageType(message: unknown): string {
   return typeof candidate.type === 'string' ? candidate.type : 'unknown';
 }
 
-const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY', 'RETAG_ENTRY', 'BULK_RETAG_UNTAGGED']);
+const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY', 'RETAG_ENTRY', 'BULK_RETAG_UNTAGGED', 'SET_MPCHC_ENABLED', 'GET_MPCHC_STATUS', 'MPCHC_PROBE', 'IMPORT_PENDING_BACKUP']);
 
 function isDashboardSender(messageSender: Browser.runtime.MessageSender): boolean {
   if (messageSender?.id !== browser.runtime.id) return false;
@@ -25,6 +27,14 @@ function isDashboardSender(messageSender: Browser.runtime.MessageSender): boolea
   const dashboardUrl = browser.runtime.getURL('/dashboard.html');
   if (url === dashboardUrl) return true;
   return url.startsWith(`${dashboardUrl}?`) || url.startsWith(`${dashboardUrl}#`);
+}
+
+function isSyncPageSender(messageSender: Browser.runtime.MessageSender): boolean {
+  if (messageSender.id !== browser.runtime.id) return false;
+  return (['/popup.html', '/dashboard.html'] as const).some(page => {
+    const url = browser.runtime.getURL(page);
+    return messageSender.url === url || messageSender.url?.startsWith(`${url}?`) || messageSender.url?.startsWith(`${url}#`);
+  });
 }
 
 export function createBackgroundMessageHandler(
@@ -39,6 +49,9 @@ export function createBackgroundMessageHandler(
       return { success: false, error: 'Invalid message format' };
     }
     if (DASHBOARD_ONLY_MESSAGES.has(message.type) && !isDashboardSender(messageSender)) {
+      return { success: false, error: 'Unauthorized sender' };
+    }
+    if (['GET_SYNC_STATUS', 'RETRY_PENDING_SYNC', 'REMOVE_BLOCKED_SYNC_ENTRY'].includes(message.type) && !isSyncPageSender(messageSender)) {
       return { success: false, error: 'Unauthorized sender' };
     }
 
@@ -65,6 +78,7 @@ export function createBackgroundMessageHandler(
 
         case 'GET_PENDING_ENTRIES':
         case 'DELETE_PENDING_ENTRY':
+        case 'REMOVE_BLOCKED_SYNC_ENTRY':
         case 'DELETE_SERVER_ENTRY':
         case 'GET_DELETED_ENTRIES':
         case 'RESTORE_DELETED_ENTRY':
@@ -94,9 +108,20 @@ export function createBackgroundMessageHandler(
         case 'RESET_STATS':
           return handleStatsSyncMessage(message, context);
 
+        case 'GET_SYNC_STATUS':
+        case 'RETRY_PENDING_SYNC':
+        case 'IMPORT_PENDING_BACKUP':
+          return handleSyncMessage(message, context);
+
         case 'DIAGNOSTIC_EVENT':
         case 'GET_DIAGNOSTICS':
           return handleDiagnosticsMessage(message, diagnosticsContext);
+
+        case 'SET_MPCHC_ENABLED':
+        case 'GET_MPCHC_STATUS':
+        case 'MPCHC_PROBE':
+          await context.recoveryReady;
+          return handleMpchcMessage(message);
 
         case 'GET_ANKI_STATE':
         case 'SET_ANKI_ENABLED':

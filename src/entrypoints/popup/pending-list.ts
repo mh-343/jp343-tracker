@@ -1,5 +1,5 @@
 import type { PendingEntry, Platform } from '../../types';
-import { formatDuration, formatSessionDate, isValidImageUrl } from '../../lib/format-utils';
+import { formatDuration, formatSessionStart, earliestIsoDate, getLocalDateString, isValidImageUrl } from '../../lib/format-utils';
 
 export interface PendingListDeps {
   listEl: HTMLElement;
@@ -215,6 +215,17 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
   if (isRenamableSeries(entry.project_id)) {
     attachGroupRename(titleRow, titleSpan, entry);
   }
+  const dsh = deps.getDayStartHour();
+  const primaryDay = getLocalDateString(new Date(group.primary.date), dsh);
+  const sameDayDates = group.entries.filter(e => getLocalDateString(new Date(e.date), dsh) === primaryDay).map(e => e.date);
+  const startStr = formatSessionStart(earliestIsoDate(sameDayDates), dsh);
+  if (startStr) {
+    const startEl = document.createElement('span');
+    startEl.className = 'pending-entry-start';
+    startEl.textContent = startStr;
+    startEl.title = 'Session start';
+    titleRow.appendChild(startEl);
+  }
 
   const meta = document.createElement('div');
   meta.className = 'pending-entry-meta';
@@ -303,7 +314,7 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
 
       const dateSpan = document.createElement('span');
       dateSpan.className = 'session-detail-date';
-      dateSpan.textContent = formatSessionDate(e.date, deps.getDayStartHour());
+      dateSpan.textContent = formatSessionStart(e.date, deps.getDayStartHour());
       detail.appendChild(dateSpan);
 
       const durSpan = document.createElement('span');

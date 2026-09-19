@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../types';
 import { withStorageLock } from './storage-lock';
 import { postJsonWithRetry, coalesceRefresh, type RefreshState } from './server-fetch';
 import { applyLocalRenamesToSessions } from './background/custom-site-names';
+import { reconcileDeletedServerEntries } from './background/server-session-reconcile';
 import { normalizeIsPassive } from './attention';
 import {
   applyAuthParams,
@@ -32,6 +33,7 @@ async function runSessionsFetch(): Promise<void> {
   });
   params.set('limit', '20');
 
+  const requestedAt = Date.now();
   const result = await postJsonWithRetry(context.ajaxUrl, params, 'get_recent_sessions', {
     credentials: requestCredentialsMode(context)
   });
@@ -51,10 +53,12 @@ async function runSessionsFetch(): Promise<void> {
     isPassive: normalizeIsPassive(s.is_passive),
   }));
 
-  await withStorageLock(async () => {
+  const wrote = await withStorageLock(async () => {
     const sessions = await applyLocalRenamesToSessions(mapped);
-    if (!await isContextStillCurrent(context)) return;
+    if (!await isContextStillCurrent(context)) return false;
     const envelope = buildOwnedCache(context.ownerUserId, sessions, Date.now());
     await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: envelope });
+    return true;
   });
+  if (wrote) await reconcileDeletedServerEntries(requestedAt);
 }

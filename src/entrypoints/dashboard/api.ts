@@ -29,6 +29,15 @@ export interface ServerStatsResponse {
   cachedAt?: number;
 }
 
+export interface ServerReadingStatsResponse {
+  has_data: boolean;
+  today_minutes?: number;
+  total_minutes?: number;
+  total_chars?: number;
+  reading_speed?: number | null;
+  daily?: { day: string; minutes: number }[];
+}
+
 export interface ServerSession {
   id: number | string;
   project_id?: string;
@@ -88,6 +97,24 @@ export async function fetchServerStats(userState: JP343UserState): Promise<Serve
     try {
       const result = await ajaxPost('jp343_get_time_stats', { nonce: userState.nonce });
       if (result.success) return result.data as ServerStatsResponse;
+    } catch {}
+  }
+  return null;
+}
+
+export async function fetchReadingStats(userState: JP343UserState): Promise<ServerReadingStatsResponse | null> {
+  if (userState.extApiToken) {
+    try {
+      const result = await ajaxPost('jp343_extension_get_reading_stats', {
+        ext_api_token: userState.extApiToken
+      }, 'omit');
+      if (result.success) return result.data as ServerReadingStatsResponse;
+    } catch {}
+  }
+  if (userState.nonce) {
+    try {
+      const result = await ajaxPost('jp343_get_reading_stats', { nonce: userState.nonce });
+      if (result.success) return result.data as ServerReadingStatsResponse;
     } catch {}
   }
   return null;

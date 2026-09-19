@@ -1,5 +1,8 @@
 import type { Platform, ExtensionDiagnostics, PlatformHealth, DiagnosticError } from '../types';
-import { STORAGE_KEYS, DEFAULT_DIAGNOSTICS, DEFAULT_PLATFORM_HEALTH } from '../types';
+import { STORAGE_KEYS, DEFAULT_DIAGNOSTICS, DEFAULT_PLATFORM_HEALTH, PLATFORM_ACTIVITY_TYPE } from '../types';
+import { acknowledgeSyncCounts, readSyncPending, readSyncQueue, syncDiagnosticsAllowed } from './background/sync-queue';
+import type { SyncCounts } from './background/sync-queue';
+import { hasSyncIssue } from './sync-policy';
 
 const MAX_RECENT_ERRORS = 50;
 
@@ -125,14 +128,16 @@ function aggregateErrorsByPlatform(
   return byPlatform;
 }
 
-export function buildRemotePayload(diagnostics: ExtensionDiagnostics): RemotePayload {
+export function buildRemotePayload(diagnostics: ExtensionDiagnostics, syncErrors: Partial<Record<Platform, Array<{ code: string; count: number }>>> = {}): RemotePayload {
   const browserInfo = navigator.userAgent.includes('Firefox') ? 'firefox' : 'chrome';
   const errorsByPlatform = aggregateErrorsByPlatform(diagnostics.recentErrors);
 
   const platforms: RemotePlatformEntry[] = [];
-  for (const [platform, health] of Object.entries(diagnostics.platformHealth)) {
+  const names = new Set([...Object.keys(diagnostics.platformHealth), ...Object.keys(syncErrors)] as Platform[]);
+  for (const platform of names) {
+    const health = diagnostics.platformHealth[platform] ?? DEFAULT_PLATFORM_HEALTH;
     const platformErrors = errorsByPlatform.get(platform);
-    const errors: Array<{ code: string; count: number }> = [];
+    const errors: Array<{ code: string; count: number }> = [...(syncErrors[platform] ?? [])];
     if (platformErrors) {
       for (const [code, count] of platformErrors) {
         errors.push({ code, count });
@@ -141,7 +146,7 @@ export function buildRemotePayload(diagnostics: ExtensionDiagnostics): RemotePay
     platforms.push({
       platform,
       counters: { ...health },
-      errors
+      errors: errors.slice(0, 20)
     });
   }
 
@@ -157,10 +162,34 @@ export function buildRemotePayload(diagnostics: ExtensionDiagnostics): RemotePay
 const DIAGNOSTICS_ENDPOINT = 'https://jp343.com/wp-json/jp343/v1/extension/diagnostics';
 
 export async function sendDiagnosticsReport(diagnostics: ExtensionDiagnostics): Promise<boolean> {
-  const payload = buildRemotePayload(diagnostics);
+  if (!await syncDiagnosticsAllowed()) {
+    await acknowledgeSyncCounts({});
+    return false;
+  }
+  const snapshot = structuredClone(diagnostics);
+  const queue = await readSyncQueue();
+  const counts: SyncCounts = structuredClone(queue.counts);
+  const pending = await readSyncPending();
+  const syncErrors: Partial<Record<Platform, Array<{ code: string; count: number }>>> = {};
+  for (const [name, metrics] of Object.entries(counts)) {
+    syncErrors[name as Platform] = Object.entries(metrics).filter(([, count]) => count > 0).map(([code, count]) => ({ code, count }));
+  }
+  const issues = pending.filter(hasSyncIssue);
+  const user = (await browser.storage.local.get(STORAGE_KEYS.USER))[STORAGE_KEYS.USER] as { isLoggedIn?: boolean } | undefined;
+  if (user?.isLoggedIn || issues.length) {
+    const generic = syncErrors.generic ?? (syncErrors.generic = []);
+    generic.push({ code: 'sync_queue_sample', count: 1 }, { code: 'sync_queue_affected', count: issues.length ? 1 : 0 });
+  }
+  for (const platform of new Set(issues.map(e => e.platform))) {
+    if (!(platform in PLATFORM_ACTIVITY_TYPE)) continue;
+    const errors = syncErrors[platform] ?? (syncErrors[platform] = []);
+    errors.push({ code: 'sync_retry_pending', count: issues.filter(e => e.platform === platform && e.syncState?.status !== 'blocked').length });
+  }
+  const payload = buildRemotePayload(snapshot, syncErrors);
   if (payload.platforms.length === 0) return false;
 
   try {
+    if (!await syncDiagnosticsAllowed()) { await acknowledgeSyncCounts({}); return false; }
     const response = await fetch(DIAGNOSTICS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -172,8 +201,25 @@ export async function sendDiagnosticsReport(diagnostics: ExtensionDiagnostics): 
     if (!result.received || result.received <= 0) return false;
 
     diagnostics.lastReportSent = new Date().toISOString();
-    diagnostics.platformHealth = {};
-    diagnostics.recentErrors = [];
+    for (const platform of Object.keys(snapshot.platformHealth) as Platform[]) {
+      const current = diagnostics.platformHealth[platform];
+      const sent = snapshot.platformHealth[platform];
+      if (current && sent) for (const counter of Object.keys(sent) as (keyof PlatformHealth)[]) {
+        current[counter] = Math.max(0, current[counter] - sent[counter]);
+      }
+    }
+    const sentErrors = new Map<string, number>();
+    for (const error of snapshot.recentErrors) {
+      const key = JSON.stringify(error);
+      sentErrors.set(key, (sentErrors.get(key) ?? 0) + 1);
+    }
+    diagnostics.recentErrors = diagnostics.recentErrors.filter(error => {
+      const key = JSON.stringify(error);
+      const remaining = sentErrors.get(key) ?? 0;
+      if (remaining) { sentErrors.set(key, remaining - 1); return false; }
+      return true;
+    });
+    await acknowledgeSyncCounts(counts);
     await saveDiagnostics(diagnostics);
     return true;
   } catch {

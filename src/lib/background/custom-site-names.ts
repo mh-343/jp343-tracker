@@ -2,7 +2,9 @@ import type { CachedServerSession, JP343UserState, PendingEntry, TrackingSession
 import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
 import { loadPendingEntries } from '../pending-entries';
+import { readSyncPending } from './sync-queue';
 import { tracker } from '../time-tracker';
+import { resetEntrySync } from '../sync-policy';
 import { getCustomSitesState, saveCustomSitesState } from './custom-sites';
 import { attemptRecovery } from './auth-recovery';
 import { stableUserId } from '../auth-helpers';
@@ -66,9 +68,16 @@ export async function applyLocalRenamesToSessions(sessions: CachedServerSession[
 }
 
 async function patchLocalTitles(projectId: string, title: string): Promise<void> {
-  const pending = await loadPendingEntries();
-  const patched = pending.map((e: PendingEntry) => e.project_id === projectId ? { ...e, project: title } : e);
-  await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: patched });
+  try {
+    const pending = await readSyncPending();
+    const patched = pending.map((e: PendingEntry) => {
+      if (e.project_id !== projectId) return e;
+      const updated = { ...e, project: title };
+      if (!updated.synced) resetEntrySync(updated);
+      return updated;
+    });
+    await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: patched });
+  } catch { /* best effort: rename continues */ }
   const owner = stableUserId(await loadUserState());
   const cached = await readOwnedServerSessions(owner);
   if (cached && owner !== null && cached.value.length > 0) {

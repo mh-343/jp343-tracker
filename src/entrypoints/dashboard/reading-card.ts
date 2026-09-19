@@ -5,8 +5,22 @@ import { isReading } from '../../lib/time-tracker';
 import type { ReaderSource } from '../../lib/reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../../lib/reader-sources';
 import { hasReaderPermission, requestReaderPermission } from './reader-permission';
+import type { ServerReadingStatsResponse } from './api';
 
 const MYHUB_URL = 'https://jp343.com/my-hub/?src=ext_reading';
+
+let serverReadingStats: ServerReadingStatsResponse | null = null;
+
+export function setServerReadingStats(stats: ServerReadingStatsResponse | null): void {
+  serverReadingStats = stats;
+}
+
+let readingRenderGen = 0;
+
+function sumRecentDaily(daily: { day: string; minutes: number }[] | undefined, days: number): number {
+  if (!daily || daily.length === 0) return 0;
+  return daily.slice(-days).reduce((sum, d) => sum + (d.minutes || 0), 0);
+}
 
 interface SourceState {
   source: ReaderSource;
@@ -75,9 +89,8 @@ function lastDays(daily: Record<string, number>, today: string, count: number): 
   return vals;
 }
 
-function buildSparkline(daily: Record<string, number>, today: string): HTMLElement {
+function buildSparklineFromVals(vals: number[]): HTMLElement {
   const wrap = el('div', 'reading-spark-wrap');
-  const vals = lastDays(daily, today, 7);
   const spark = el('div', 'reading-spark');
   const max = Math.max(1, ...vals);
   for (const v of vals) {
@@ -154,40 +167,64 @@ export async function renderReadingCard(): Promise<void> {
   const body = document.getElementById('readingCardBody');
   if (!card || !body) return;
 
+  const gen = ++readingRenderGen;
   const view = await loadView();
-  if (!view) {
+  if (gen !== readingRenderGen) return;
+
+  const server = serverReadingStats;
+  const serverHasData = !!server?.has_data;
+  if (!view && !serverHasData) {
     card.style.display = 'none';
     return;
   }
-  card.style.display = '';
-  body.textContent = '';
 
-  const { states, entries, readingDaily, dayStartHour } = view;
+  const states = view?.states ?? [];
+  const entries = view?.entries ?? [];
+  const readingDaily = view?.readingDaily ?? {};
+  const dayStartHour = view?.dayStartHour ?? 0;
 
+  const warnings: HTMLElement[] = [];
   for (const { source, state } of states) {
     if (state.enabled && !(await hasReaderPermission(source))) {
-      body.appendChild(buildPermissionWarning(source));
+      warnings.push(buildPermissionWarning(source));
     }
   }
+  if (gen !== readingRenderGen) return;
+
   const today = getLocalDateString(new Date(), dayStartHour);
-  const todayMin = readingDaily[today] ?? 0;
-  const weekMin = lastDays(readingDaily, today, 7).reduce((sum, m) => sum + m, 0);
-  const totalMinutes = states.reduce((sum, s) => sum + (s.state.totalMinutes ?? 0), 0);
-  const totalChars = states.reduce((sum, s) => sum + (s.state.totalChars ?? 0), 0);
-  const hasTimedReading = totalMinutes > 0;
-  const speed = hasTimedReading ? Math.round(totalChars / totalMinutes) : 0;
+  const localTotalMinutes = states.reduce((sum, s) => sum + (s.state.totalMinutes ?? 0), 0);
+  const localTotalChars = states.reduce((sum, s) => sum + (s.state.totalChars ?? 0), 0);
+  const localSpeed = localTotalMinutes > 0 ? Math.round(localTotalChars / localTotalMinutes) : 0;
+
+  const useServer = serverHasData;
+  const scopeSub = useServer ? 'all sources' : 'this browser';
+
+  const todayMin = useServer ? (server!.today_minutes ?? 0) : (readingDaily[today] ?? 0);
+  const weekMin = useServer
+    ? sumRecentDaily(server!.daily, 7)
+    : lastDays(readingDaily, today, 7).reduce((sum, m) => sum + m, 0);
+  const totalChars = useServer ? (server!.total_chars ?? 0) : localTotalChars;
+  const speed = useServer ? (server!.reading_speed ?? 0) : localSpeed;
+  const showAggregates = useServer || localTotalMinutes > 0;
+
+  card.style.display = '';
+  body.textContent = '';
+  for (const warning of warnings) body.appendChild(warning);
 
   const grid = el('div', 'reading-grid');
-  grid.appendChild(tile(formatStatDuration(todayMin), 'Read today', 'all sources'));
-  grid.appendChild(tile(formatStatDuration(weekMin), 'Last 7 days', 'all sources'));
-  if (hasTimedReading) {
-    grid.appendChild(tile(totalChars.toLocaleString('en-US'), 'Characters', 'all sources'));
-    grid.appendChild(tile(speed > 0 ? String(speed) : '—', 'chars/min', speed > 0 ? 'all sources' : 'no timed reading yet'));
+  grid.appendChild(tile(formatStatDuration(todayMin), 'Read today', scopeSub));
+  grid.appendChild(tile(formatStatDuration(weekMin), 'Last 7 days', scopeSub));
+  if (showAggregates) {
+    grid.appendChild(tile(totalChars > 0 ? totalChars.toLocaleString('en-US') : '—', 'Characters', scopeSub));
+    grid.appendChild(tile(speed > 0 ? String(speed) : '—', 'chars/min', speed > 0 ? scopeSub : 'no timed reading yet'));
   }
   body.appendChild(grid);
 
-  body.appendChild(buildSparkline(readingDaily, today));
-  body.appendChild(buildSeriesList(entries));
+  const sparkVals = useServer
+    ? (server!.daily ?? []).slice(-7).map(d => d.minutes || 0)
+    : lastDays(readingDaily, today, 7);
+  body.appendChild(buildSparklineFromVals(sparkVals));
+  if (view) body.appendChild(buildSeriesList(entries));
 
   const link = document.createElement('a');
   link.className = 'reading-myhub-link';

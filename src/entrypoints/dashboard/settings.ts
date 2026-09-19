@@ -6,6 +6,7 @@ import { buildTargetStartSection } from './target-start-settings';
 import { getSettings, getFreshSettings, updateSettings, createToggleRow, setToggleRowDisabled, showStatus } from './settings-helpers';
 import { buildActivityGoalsSection } from './activity-goals-settings';
 import { buildExportImportPanel } from './settings-backup';
+import { buildMpchcPanel } from './settings-mpchc';
 import { buildAnkiPanel } from './settings-anki';
 import { buildShortcutPanel } from './settings-shortcut';
 import { buildSettingsLayout, NAV_ICONS } from './settings-nav';
@@ -26,6 +27,7 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   spotify: 'Spotify',
   twitch: 'Twitch',
   asbplayer: 'asbplayer',
+  mpchc: 'MPC-HC',
   mokuro: 'Mokuro',
   ttu: 'ttu reader',
   generic: 'Generic'
@@ -638,6 +640,7 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, h
       id: 'integrations', label: 'Integrations', icon: NAV_ICONS.integrations,
       build: (el: HTMLElement) => {
         buildAnkiPanel(el);
+        buildMpchcPanel(el);
         buildReaderPanel(el, READER_SOURCES.mokuro);
         buildReaderPanel(el, READER_SOURCES.ttu);
       }

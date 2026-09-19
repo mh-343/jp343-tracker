@@ -41,22 +41,63 @@ export function isValidImageUrl(url: string): boolean {
   }
 }
 
+function sessionDayDiff(date: Date, dayStartHour: number): number {
+  const sessionDay = getLocalDateString(date, dayStartHour);
+  const todayDay = getLocalDateString(new Date(), dayStartHour);
+  return Math.round(
+    (new Date(todayDay).getTime() - new Date(sessionDay).getTime()) / (1000 * 60 * 60 * 24)
+  );
+}
+
+function olderDayLabel(date: Date, diffDays: number): string {
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function localClock(date: Date): string {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 export function formatSessionDate(isoDate: string, dayStartHour = 0): string {
   const date = new Date(isoDate);
   if (isNaN(date.getTime())) return '';
 
-  const sessionDay = getLocalDateString(date, dayStartHour);
-  const todayDay = getLocalDateString(new Date(), dayStartHour);
+  const diffDays = sessionDayDiff(date, dayStartHour);
+  if (diffDays <= 0) return localClock(date);
+  return olderDayLabel(date, diffDays);
+}
 
-  const diffDays = Math.round(
-    (new Date(todayDay).getTime() - new Date(sessionDay).getTime()) / (1000 * 60 * 60 * 24)
-  );
+// no clock time for date-only or tz-less values
+function hasReliableStartTime(raw: string): boolean {
+  return /[T ]\d{2}:\d{2}/.test(raw) && /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw);
+}
 
-  if (diffDays <= 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
+export function formatSessionStart(isoDate: string, dayStartHour = 0): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) return '';
 
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const clock = hasReliableStartTime(isoDate) ? localClock(date) : '';
+  const diffDays = sessionDayDiff(date, dayStartHour);
+  if (diffDays <= 0) return clock;
+
+  const label = olderDayLabel(date, diffDays);
+  return clock ? `${label} · ${clock}` : label;
+}
+
+export function earliestIsoDate(dates: (string | undefined | null)[]): string {
+  let best = '';
+  let bestTime = Infinity;
+  for (const value of dates) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (isNaN(time)) continue;
+    if (time < bestTime) {
+      bestTime = time;
+      best = value;
+    }
+  }
+  return best;
 }
 
 export function getLogicalNow(dayStartHour = 0): Date {

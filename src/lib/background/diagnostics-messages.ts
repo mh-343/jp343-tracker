@@ -1,5 +1,7 @@
 import type { ExtensionMessage, Platform } from '../../types';
 import type { DiagnosticsContext } from './diagnostics-context';
+import { readSyncQueue, readSyncPending } from './sync-queue';
+import { hasSyncIssue } from '../sync-policy';
 
 type DiagnosticsMessage = Extract<ExtensionMessage, { type: 'DIAGNOSTIC_EVENT' | 'GET_DIAGNOSTICS' }>;
 
@@ -31,5 +33,12 @@ async function handleGetDiagnostics(
 ): Promise<{ success: true; data: unknown }> {
   const diagnostics = await context.getDiagnostics();
   const report = context.buildExportReport(diagnostics);
-  return { success: true, data: report };
+  const queue = await readSyncQueue();
+  const entries = await readSyncPending();
+  return { success: true, data: { ...report, syncQueue: {
+    counters: queue.counts,
+    pending: entries.filter(e => !e.synced).length,
+    issues: entries.filter(hasSyncIssue).length,
+    blocked: entries.filter(e => !e.synced && e.syncState?.status === 'blocked').length
+  } } };
 }

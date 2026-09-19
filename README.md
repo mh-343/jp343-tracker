@@ -19,6 +19,7 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - CI Japanese
 - Nihongo no Jikan
 - asbplayer (local video files)
+- MPC-HC (local video player, opt-in)
 - Mokuro (manga reading, opt-in)
 - ttu ebook reader (book reading, opt-in)
 

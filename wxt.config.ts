@@ -12,6 +12,8 @@ export default defineConfig({
   hooks: {
     'build:manifestGenerated'(_wxt, manifest) {
       const OPTIONAL_ONLY = [
+        'http://localhost:13579/*',
+        'http://127.0.0.1:13579/*',
         '*://reader.mokuro.app/*',
         '*://reader.ttsu.app/*',
         '*://ttu-ebook.web.app/*',
@@ -25,6 +27,7 @@ export default defineConfig({
         manifest.permissions = manifest.permissions.filter(keep);
       }
       const matchesOptionalOnly = (m: string): boolean =>
+        m.includes(':13579/') ||
         m.includes('reader.mokuro.app') ||
         m.includes('reader.ttsu.app') ||
         m.includes('ttu-ebook.web.app') ||
@@ -42,7 +45,7 @@ export default defineConfig({
 
   manifest: ({ manifestVersion }) => ({
     name: 'jp343 Track Your Japanese Immersion',
-    version: '2.14.0',
+    version: '2.15.0',
     description: 'Track your Japanese immersion automatically. Built-in dashboard with heatmap, streaks and session history.',
 
     browser_specific_settings: {
@@ -98,6 +101,8 @@ export default defineConfig({
       ? { optional_host_permissions: [
           'https://*/*',
           'http://127.0.0.1:8765/*',
+          'http://localhost:13579/*',
+          'http://127.0.0.1:13579/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -105,6 +110,8 @@ export default defineConfig({
       : { optional_permissions: [
           'https://*/*',
           'http://127.0.0.1:8765/*',
+          'http://localhost:13579/*',
+          'http://127.0.0.1:13579/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -127,7 +134,7 @@ export default defineConfig({
     },
 
     content_security_policy: {
-      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765; object-src 'self'"
+      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765 http://localhost:13579 http://127.0.0.1:13579; object-src 'self'"
     },
 
     web_accessible_resources: [

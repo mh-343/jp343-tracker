@@ -2,10 +2,12 @@
 
 import { STORAGE_KEYS, activityAllowsPassive, EMPTY_DAILY_GOALS } from '../../types';
 import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
-import { formatDuration, formatDurationMs, formatStatDuration, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
+import { formatDuration, formatDurationMs, formatGoalMinutes, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
 import { renderPendingList } from './pending-list';
+import { createSyncIssues } from './sync-issues';
+import { createTodayLive, type LiveDisplay } from './today-live';
 import { computeActivityGoalRows, type ActivityGoalRow } from '../../lib/activity-goals';
 import { appendActivityGoalLines } from './activity-goals-tooltip';
 
@@ -81,6 +83,7 @@ const platformIcons: Record<Platform, string> = {
   spotify: '♪',
   twitch: 'T',
   asbplayer: 'A',
+  mpchc: '▶',
   mokuro: '本',
   ttu: '📗',
   generic: '⏵'
@@ -835,7 +838,9 @@ function updatePendingDisplay(entries: PendingEntry[]): void {
 }
 
 
+const syncIssues = createSyncIssues(document.getElementById('syncIssues')!, () => _popupDayStartHour);
 async function fetchPendingEntries(): Promise<void> {
+  void syncIssues.refresh();
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_PENDING_ENTRIES' });
 
@@ -881,6 +886,14 @@ async function fetchCurrentState(): Promise<void> {
 
       const platformChanged = currentSession?.platform !== session?.platform;
       currentSession = session;
+      todayLive.setSession(currentSession ? {
+        id: currentSession.id,
+        startTime: currentSession.startTime,
+        measuredMs: newDurationMs,
+        activityType: currentSession.activityType,
+        attention: currentSession.attention,
+        attentionOverride: currentSession.attentionOverride
+      } : null);
       updateStatus(session, isAd);
       updateSessionDisplay(session, isAd);
       tickTimerDisplay();
@@ -1025,24 +1038,53 @@ function renderWeekBars(dailyMinutes: Record<string, number>): void {
   container.style.display = 'flex';
 }
 
+function applyLiveDisplay(d: LiveDisplay): void {
+  elements.statWeek.textContent = formatGoalMinutes(d.weekMinutes);
+  elements.statToday.textContent = formatGoalMinutes(d.todayMinutes);
+  renderGoalMicroBar(
+    d.todayMinutes,
+    computeActivityGoalRows(popupDailyGoals, d.byActivity, d.activeMinutes, _popupShowAttention)
+  );
+  renderWeekBars(d.dailyMinutes);
+}
+
+const todayLive = createTodayLive({
+  getDayStartHour: () => _popupDayStartHour,
+  onNeedRefresh: () => { void fetchAndRenderStats(); },
+  onDisplay: applyLiveDisplay
+});
+
+let statsFetching = false;
+let statsRefreshQueued = false;
+
 async function fetchAndRenderStats(): Promise<void> {
+  if (statsFetching) {
+    statsRefreshQueued = true;
+    return;
+  }
+  statsRefreshQueued = false;
+  statsFetching = true;
   try {
     const response = await browser.runtime.sendMessage({ type: 'GET_STATS' });
     if (response?.success && response.data) {
       const { weekMinutes, todayMinutes, streak, rawDailyMinutes, todayByActivity, todayActiveMinutes } = response.data;
-      elements.statWeek.textContent = formatStatDuration(weekMinutes || 0);
-      elements.statToday.textContent = formatStatDuration(todayMinutes || 0);
       elements.statStreak.textContent = `${streak || 0}d`;
-      renderGoalMicroBar(
-        todayMinutes || 0,
-        computeActivityGoalRows(popupDailyGoals, todayByActivity, todayActiveMinutes || 0, _popupShowAttention)
-      );
-      if (rawDailyMinutes) {
-        renderWeekBars(rawDailyMinutes);
-      }
+      todayLive.setBase({
+        liveSessionId: response.data.liveSessionId,
+        dayKey: response.data.dayKey,
+        dayStartHour: response.data.dayStartHour,
+        todayMinutes: todayMinutes || 0,
+        weekMinutes: weekMinutes || 0,
+        byActivity: todayByActivity || {},
+        activeMinutes: todayActiveMinutes || 0,
+        dailyMinutes: rawDailyMinutes || {}
+      });
     }
   } catch (error) {
     log('[JP343 Popup] Stats fetch failed:', error);
+  } finally {
+    statsFetching = false;
+    if (statsRefreshQueued) void fetchAndRenderStats();
   }
 }
 
@@ -1136,7 +1178,7 @@ function onCachedStatsChanged(
   areaName: string
 ): void {
   if (areaName !== 'local') return;
-  if (!(STORAGE_KEYS.CACHED_SERVER_STATS in changes)) return;
+  if (!(STORAGE_KEYS.CACHED_SERVER_STATS in changes) && !(STORAGE_KEYS.STATS in changes)) return;
   fetchAndRenderStats();
 }
 browser.storage.onChanged.addListener(onCachedStatsChanged);

@@ -2,7 +2,7 @@ import type { PendingEntry, Platform, ActivityType } from '../../types';
 import { activityAllowsPassive } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { armConfirmButton } from './delete-confirm';
-import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
+import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionStart, earliestIsoDate, getLocalDateString, getWeekDates } from '../../lib/format-utils';
 import { subtractSessionFromServerStats } from '../../lib/server-stats';
 import type { ServerSession } from './api';
 import { getDayStartHour, isAttentionDisplayEnabled } from './stats';
@@ -29,6 +29,7 @@ const platformIcons: Record<string, string> = {
   spotify: '♪',
   twitch: 'T',
   asbplayer: 'A',
+  mpchc: '▶',
   mokuro: '本',
   ttu: '📗',
   generic: '⏵'
@@ -550,7 +551,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     }
 
     const dateEl = document.createElement('span');
-    dateEl.textContent = formatSessionDate(entry.date, getDayStartHour());
+    dateEl.textContent = formatSessionStart(earliestIsoDate(group.members.map(m => m.date)), getDayStartHour());
     meta.appendChild(dateEl);
 
     if (isAttentionDisplayEnabled() && group.agg.tagged) {
@@ -704,7 +705,7 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
   }
 
   const dateEl = document.createElement('span');
-  dateEl.textContent = formatSessionDate(session.date, getDayStartHour());
+  dateEl.textContent = formatSessionStart(earliestIsoDate(group.members.map(m => m.date)), getDayStartHour());
   meta.appendChild(dateEl);
 
   if (isAttentionDisplayEnabled() && group.agg.tagged) {

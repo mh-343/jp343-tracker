@@ -200,32 +200,18 @@ function sanitizeImportedAnki(raw: unknown): AnkiState | null {
 
 async function executeImport(data: ExportData, includeSettings: boolean, statusContainer: HTMLElement): Promise<void> {
   try {
-    const local = await browser.storage.local.get([
-      STORAGE_KEYS.PENDING,
-      STORAGE_KEYS.STATS,
-      STORAGE_KEYS.SETTINGS
-    ]);
-
-    const localEntries: PendingEntry[] = local[STORAGE_KEYS.PENDING] || [];
-    const localStats: ExtensionStats = local[STORAGE_KEYS.STATS] || { totalMinutes: 0, dailyMinutes: {}, lastActiveDate: '', currentStreak: 0 };
-
-    const mergedEntries = mergeEntries(localEntries, data.data.entries);
-    const mergedStats = mergeStats(localStats, data.data.stats);
-
-    const updates: Record<string, unknown> = {
-      [STORAGE_KEYS.PENDING]: mergedEntries,
-      [STORAGE_KEYS.STATS]: mergedStats
-    };
-
+    const updates: Record<string, unknown> = {};
     if (data.data.anki) {
       const cleanAnki = sanitizeImportedAnki(data.data.anki);
       if (cleanAnki) updates[STORAGE_KEYS.ANKI] = cleanAnki;
     }
 
     let isLoggedIn = false;
+    let importDayStartHour: number;
     if (includeSettings && data.data.settings) {
       const imported = { ...DEFAULT_SETTINGS, ...data.data.settings };
       imported.dayStartHour = Math.max(0, Math.min(6, imported.dayStartHour || 0));
+      importDayStartHour = imported.dayStartHour;
 
       const userResult = await browser.storage.local.get(STORAGE_KEYS.USER);
       const userState = userResult[STORAGE_KEYS.USER] as JP343UserState | undefined;
@@ -236,8 +222,17 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
       }
 
       updates[STORAGE_KEYS.SETTINGS] = imported;
+    } else {
+      const current = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+      const currentSettings = current[STORAGE_KEYS.SETTINGS] as ExtensionSettings | undefined;
+      importDayStartHour = Math.max(0, Math.min(6, currentSettings?.dayStartHour || 0));
     }
 
+    const result = await browser.runtime.sendMessage({
+      type: 'IMPORT_PENDING_BACKUP', entries: data.data.entries, stats: data.data.stats, dayStartHour: importDayStartHour
+    }) as { success?: boolean; data?: { added: number }; error?: string };
+    if (!result?.success || !result.data) throw new Error(result?.error || 'Import failed');
+    const added = result.data.added;
     await browser.storage.local.set(updates);
     invalidateSessionCache();
     document.dispatchEvent(new CustomEvent('jp343:refresh'));
@@ -249,7 +244,6 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
     const preview = statusContainer.querySelector('.import-preview');
     if (preview) preview.remove();
 
-    const added = mergedEntries.length - localEntries.length;
     const msg = added > 0
       ? `${added} new sessions added` + (includeSettings ? ' and settings applied' : '')
       : 'No new sessions found (all already present)' + (includeSettings ? ', settings applied' : '');
@@ -257,47 +251,4 @@ async function executeImport(data: ExportData, includeSettings: boolean, statusC
   } catch (error) {
     showStatus(statusContainer, 'Import failed: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
   }
-}
-
-function mergeEntries(local: PendingEntry[], imported: PendingEntry[]): PendingEntry[] {
-  const localIds = new Set(local.map(e => e.id));
-  const newEntries = imported.filter(e => !localIds.has(e.id));
-  return [...local, ...newEntries];
-}
-
-function mergeStats(local: ExtensionStats, imported: ExtensionStats): ExtensionStats {
-  const mergedDaily: Record<string, number> = { ...local.dailyMinutes };
-  for (const [date, minutes] of Object.entries(imported.dailyMinutes || {})) {
-    mergedDaily[date] = Math.max(mergedDaily[date] || 0, minutes);
-  }
-
-  const mergedHourly: Record<string, number> = { ...(local.hourlyMinutes || {}) };
-  for (const [hour, minutes] of Object.entries(imported.hourlyMinutes || {})) {
-    mergedHourly[hour] = Math.max(mergedHourly[hour] || 0, minutes);
-  }
-
-  const mergedReadingDaily: Record<string, number> = { ...(local.readingDailyMinutes || {}) };
-  for (const [date, minutes] of Object.entries(imported.readingDailyMinutes || {})) {
-    mergedReadingDaily[date] = Math.max(mergedReadingDaily[date] || 0, minutes);
-  }
-
-  const mergedActiveDaily: Record<string, number> = { ...(local.dailyActiveMinutes || {}) };
-  for (const [date, minutes] of Object.entries(imported.dailyActiveMinutes || {})) {
-    mergedActiveDaily[date] = Math.max(mergedActiveDaily[date] || 0, minutes);
-  }
-
-  const mergedPassiveDaily: Record<string, number> = { ...(local.dailyPassiveMinutes || {}) };
-  for (const [date, minutes] of Object.entries(imported.dailyPassiveMinutes || {})) {
-    mergedPassiveDaily[date] = Math.max(mergedPassiveDaily[date] || 0, minutes);
-  }
-
-  const totalMinutes = Object.values(mergedDaily).reduce((sum, m) => sum + m, 0);
-  const lastActiveDate = local.lastActiveDate > (imported.lastActiveDate || '')
-    ? local.lastActiveDate
-    : (imported.lastActiveDate || local.lastActiveDate);
-  const currentStreak = local.lastActiveDate >= (imported.lastActiveDate || '')
-    ? local.currentStreak
-    : (imported.currentStreak || local.currentStreak);
-
-  return { totalMinutes, dailyMinutes: mergedDaily, lastActiveDate, currentStreak, hourlyMinutes: mergedHourly, readingDailyMinutes: mergedReadingDaily, dailyActiveMinutes: mergedActiveDaily, dailyPassiveMinutes: mergedPassiveDaily };
 }

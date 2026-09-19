@@ -4,6 +4,8 @@ import { loadPendingEntries } from '../pending-entries';
 import { computeTodayProgress } from './activity-progress';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
+import { tracker } from '../time-tracker';
+import { statsSnapshotRevision } from './stats-snapshot';
 import { stableUserId } from '../auth-helpers';
 import { loadUserState, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
@@ -39,6 +41,10 @@ export async function handleStatsSyncMessage(
     }
 
     case 'GET_STATS': {
+      await context.recoveryReady;
+      const revision = statsSnapshotRevision();
+      const liveSessionId = tracker.getCurrentSession()?.id ?? null;
+      if (revision === null) return { success: false, error: 'Stats updating' };
       void context.fetchAndCacheServerStats();
       const stats = await context.loadStats();
       const settings = await context.loadSettings();
@@ -88,11 +94,13 @@ export async function handleStatsSyncMessage(
       if (cached) {
         const serverTz = cached.timezone;
         const tzMatch = !serverTz || serverTz === browserTz;
-        if (cached.today_seconds !== undefined && tzMatch)
-          todayMinutes = Math.max(todayMinutes, Math.round(cached.today_seconds / 60));
+        const cacheDay = cached.cachedAt === undefined ? '' : getLocalDateString(new Date(cached.cachedAt), dsh);
+        const sameDay = cacheDay === todayStr;
+        if (cached.today_seconds !== undefined && tzMatch && sameDay)
+          todayMinutes = Math.max(todayMinutes, cached.today_seconds / 60);
         const serverWeekSec = cached.calendar_week_seconds ?? cached.week_seconds;
-        if (serverWeekSec !== undefined)
-          weekMinutes = Math.max(weekMinutes, Math.round(serverWeekSec / 60));
+        if (serverWeekSec !== undefined && cacheDay >= mondayStr && cacheDay <= todayStr)
+          weekMinutes = Math.max(weekMinutes, serverWeekSec / 60);
         if (cached.streak !== undefined) {
           const dayStart = getLogicalNow(dsh);
           dayStart.setHours(dsh, 0, 0, 0);
@@ -112,6 +120,10 @@ export async function handleStatsSyncMessage(
             merged[date] = Math.max(merged[date] || 0, minutes);
           }
           rawDailyMinutes = merged;
+          todayMinutes = Math.max(todayMinutes, merged[todayStr] || 0);
+          weekMinutes = Math.max(weekMinutes, Object.entries(merged)
+            .filter(([day]) => day >= mondayStr && day <= todayStr)
+            .reduce((sum, [, minutes]) => sum + minutes, 0));
         }
       }
 
@@ -120,9 +132,18 @@ export async function handleStatsSyncMessage(
       const todayByActivity = progress ? progress.byActivity : (stats.dailyMinutesByActivity?.[todayStr] ?? {});
       const todayActiveMinutes = progress ? progress.activeMinutes : (stats.dailyActiveMinutes?.[todayStr] ?? 0);
 
+      if (revision !== statsSnapshotRevision()
+          || liveSessionId !== (tracker.getCurrentSession()?.id ?? null)
+          || todayStr !== getLocalDateString(new Date(), dsh)) {
+        return { success: false, error: 'Stats changed' };
+      }
+
       return {
         success: true,
         data: {
+          liveSessionId,
+          dayKey: todayStr,
+          dayStartHour: dsh,
           totalMinutes,
           weekMinutes,
           todayMinutes,

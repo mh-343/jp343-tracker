@@ -1,9 +1,10 @@
-import { tracker, generateProjectId, isReading, sensorEntryFields, attentionEntryFields } from '../lib/time-tracker';
-import { buildSensorParams } from '../lib/background/sensor-params';
+import { tracker, generateProjectId, sensorEntryFields, attentionEntryFields } from '../lib/time-tracker';
+import { createEntrySync } from '../lib/background/entry-sync';
+import { syncDiagnosticsAllowed as isDiagnosticsAllowed, acknowledgeSyncCounts } from '../lib/background/sync-queue';
 import { maybeFireStreakRiskNotification } from '../lib/background/streak-notification';
 import { withStorageLock } from '../lib/storage-lock';
-import { shouldSkipYoutubeMusic } from '../lib/youtube-music';
-import { isAuthFailure, stableUserId } from '../lib/auth-helpers';
+import { withStatsUpdate } from '../lib/background/stats-snapshot';
+import { stableUserId } from '../lib/auth-helpers';
 import {
   initSettingsSyncCallbacks,
   syncSettingsToServer,
@@ -12,20 +13,21 @@ import {
 } from '../lib/background/settings-sync';
 import { loadPendingEntries } from '../lib/pending-entries';
 import { migrateHourlyMinutes } from '../lib/background/hourly-stats';
-import { initStatsCallbacks, loadStats, updateStats, subtractFromStats, seedDailyMinutesByActivity } from '../lib/background/stats-managers';
+import { initStatsCallbacks, loadStats, subtractFromStats, seedDailyMinutesByActivity } from '../lib/background/stats-managers';
 import {
   initBadgeService,
   scheduleStatusBadgeUpdate,
-  updateBadge,
 } from '../lib/badge-service';
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
 import { handleShortcutCommand } from '../lib/background/shortcut-commands';
+import { initMpchcPoller } from '../lib/background/mpchc-poller';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
 import { fetchAndCacheServerStats, initServerStatsCache } from '../lib/server-stats-cache';
 import { setServerCacheStartupBarrier } from '../lib/server-cache';
 import { initServerDelete, reconcileConfirmedDeletes } from '../lib/background/server-delete';
+import { initServerSessionReconcile } from '../lib/background/server-session-reconcile';
 import { flushCustomSiteRenames } from '../lib/background/custom-site-names';
 import { attemptRecovery, clearReloginHint } from '../lib/background/auth-recovery';
 import { clearVoteStateCache, retryQueuedVotes } from '../lib/background/difficulty-messages';
@@ -49,7 +51,7 @@ import {
 } from '../lib/background/channel-sync';
 import { syncReaderRegistration, getReaderState, drainCompletionPushes, adoptReaderOwner } from '../lib/background/reader-sync';
 import { READER_SOURCE_LIST } from '../lib/reader-sources';
-import { findMergeTarget, applyMergeUpdate } from '../lib/background/pending-merge';
+import { storePendingEntry } from '../lib/background/pending-store';
 import { syncCustomSitesRegistration } from '../lib/background/custom-sites';
 import { reinjectTrackedTabs } from '../lib/background/reinject';
 import { initPermissionListeners, finalizeRevokedCustomSession } from '../lib/background/permission-listeners';
@@ -59,9 +61,6 @@ import type {
   TrackingSession,
   JP343UserState,
   ExtensionSettings,
-  DirectSyncResult,
-  BatchEntryResult,
-  BatchSyncResponse,
   Platform,
   ExtensionDiagnostics,
   PlatformHealth,
@@ -116,18 +115,6 @@ export default defineBackground(() => {
     }, DIAGNOSTICS_FLUSH_DELAY_MS);
   }
 
-  async function isDiagnosticsAllowed(): Promise<boolean> {
-    const settings = await loadSettings();
-    if (!settings.diagnosticsEnabled) return false;
-    try {
-      const perms = await browser.permissions.getAll() as { data_collection?: string[] };
-      if (perms.data_collection && !perms.data_collection.includes('technicalAndInteraction')) {
-        return false;
-      }
-    } catch { /* Chrome/older Firefox: no data_collection field, proceed */ }
-    return true;
-  }
-
   function recordDiagnosticEvent(code: string, platform?: Platform): void {
     isDiagnosticsAllowed().then(allowed => {
       if (!allowed) return;
@@ -174,7 +161,7 @@ export default defineBackground(() => {
   async function maybeSendDiagnostics(): Promise<void> {
     try {
       const allowed = await isDiagnosticsAllowed();
-      if (!allowed) return;
+      if (!allowed) { await acknowledgeSyncCounts({}); return; }
 
       const diagnostics = await getOrLoadDiagnostics();
       const lastSent = diagnostics.lastReportSent
@@ -182,9 +169,6 @@ export default defineBackground(() => {
         : 0;
 
       if (Date.now() - lastSent < DIAGNOSTICS_SEND_INTERVAL_MS) return;
-
-      const hasPlatformData = Object.keys(diagnostics.platformHealth).length > 0;
-      if (!hasPlatformData) return;
 
       const ok = await sendDiagnosticsReport(diagnostics);
       if (ok) {
@@ -388,6 +372,7 @@ export default defineBackground(() => {
 
   initSettingsSyncCallbacks({ log, loadSettings, saveSettings, pullChannelsFromServer, onAuthFailure, onAuthSuccess });
   initStatsCallbacks({ log, loadSettings });
+  initServerSessionReconcile({ log, loadSettings });
   initServerStatsCache({ onAuthFailure, onAuthSuccess });
   initServerDelete({ log, loadSettings });
   setServerCacheStartupBarrier(reconcileConfirmedDeletes());
@@ -404,59 +389,39 @@ export default defineBackground(() => {
   })().catch(() => {});
 
   async function savePendingEntry(entry: PendingEntry, bypassMusicSkip = false): Promise<SavePendingResult> {
-    const result = await withStorageLock<SavePendingResult>(async () => {
-      try {
-        const pending = await loadPendingEntries();
-        if (pending.some(e => e.id === entry.id)) return 'duplicate';
-
-        const settings = await loadSettings();
-        if (!bypassMusicSkip && shouldSkipYoutubeMusic(entry, settings)) return 'skipped';
-        if (settings.mergeSameDaySessions) {
-          const dsh = settings.dayStartHour || 0;
-          const mergeTarget = findMergeTarget(pending, entry, dsh);
-          if (mergeTarget) {
-            applyMergeUpdate(mergeTarget, entry);
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
-            log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
-            return 'merged';
-          }
-        }
-
-        pending.push(entry);
-        await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
-        log('[JP343] Entry saved. Pending:', pending.length);
-        updateBadge();
-        return 'saved';
-      } catch (error) {
-        log('[JP343] Failed to save entry:', error);
-        return 'error';
-      }
-    });
-    if (result === 'saved' || result === 'merged') await updateStats(entry);
+    const result = await withStatsUpdate(() => storePendingEntry(entry, bypassMusicSkip, { loadSettings, log }));
     await triggerSync();
     return result;
   }
 
-  let syncInProgress = false;
-
-  async function triggerSync(): Promise<void> {
-    if (syncInProgress) return;
-    try {
-      const userState: JP343UserState | null = (
-        await browser.storage.local.get(STORAGE_KEYS.USER)
-      )[STORAGE_KEYS.USER] ?? null;
-      if (!userState?.isLoggedIn) return;
-      syncInProgress = true;
-      log('[JP343] Sync started');
-      const result = await syncEntriesDirect();
-      log('[JP343] Sync result:', result.succeeded, 'synced,', result.failed, 'failed');
+  const syncEntriesDirect = createEntrySync({
+    recover: attemptRecovery,
+    onAuthenticated: () => { void drainCompletionPushes(); },
+    completedProjects: async () => {
+      const completed = new Set<string>();
+      for (const source of READER_SOURCE_LIST) {
+        const state = await getReaderState(source);
+        for (const [id, done] of Object.entries(state.completedVolumes ?? {})) {
+          if (done) completed.add(`ext_${source.platform}_${id}`);
+        }
+      }
+      return completed;
+    },
+    onSuccess: channelIds => {
+      void clearReloginHint();
+      void retryQueuedVotes(channelIds);
+      void fetchAndCacheServerStats(true);
+    },
+    onSettled: () => {
+      scheduleStatusBadgeUpdate();
       fetchAndCacheServerSessions().catch(() => {});
       flushCustomSiteRenames({ saveSessionState }).catch(() => {});
-    } catch (error) {
-      log('[JP343] Sync error:', error);
-    } finally {
-      syncInProgress = false;
     }
+  });
+
+  async function triggerSync(): Promise<void> {
+    try { await syncEntriesDirect(); }
+    catch (error) { log('[JP343] Sync error:', error); }
   }
 
   function createAlarmSafe(name: string, options: { periodInMinutes: number }): void {
@@ -535,286 +500,6 @@ export default defineBackground(() => {
     }
   });
 
-  function buildEntryParams(entry: PendingEntry, completedPids: Set<string>): Record<string, string> {
-    // send-time override: completed volumes always report 1
-    const completed = completedPids.has(entry.project_id) ? true : entry.readingCompleted;
-    return {
-      project_id: entry.project_id,
-      duration_seconds: String(Math.round(entry.duration_min * 60)),
-      chars: String(Math.round(entry.chars ?? 0)),
-      source: 'extension',
-      session_id: entry.id,
-      type: entry.activityType ?? 'watching',
-      notes: '',
-      project_title: entry.project,
-      project_url: entry.url,
-      project_thumbnail: entry.thumbnail || '',
-      channel_id: entry.channelId || '',
-      channel_name: entry.channelName || '',
-      channel_url: entry.channelUrl || '',
-      video_title: entry.project,
-      resource_url: entry.url,
-      thumbnail: entry.thumbnail || '',
-      platform: entry.platform,
-      date: entry.date.replace('T', ' ').replace(/\.\d+Z$/, '').slice(0, 19),
-      ...(entry.mergeResync ? { merge_resync: '1' } : {}),
-      ...(entry.readingCurrentPage != null ? { reading_current_page: String(entry.readingCurrentPage) } : {}),
-      ...(completed != null ? { reading_completed: completed ? '1' : '0' } : {}),
-      // exact values: imported backups are not field-validated
-      ...(entry.langSignal === 'ja'
-        ? {
-            lang_signal: 'ja',
-            ...(entry.langSignalSrc === 'script' || entry.langSignalSrc === 'declared'
-              ? { lang_signal_src: entry.langSignalSrc }
-              : {})
-          }
-        : {}),
-      ...(typeof entry.isPassive === 'boolean' ? { is_passive: entry.isPassive ? '1' : '0' } : {}),
-      ...buildSensorParams(entry)
-    };
-  }
-
-  async function syncEntriesDirect(retried = false): Promise<DirectSyncResult> {
-    let userState: JP343UserState | null = (
-      await browser.storage.local.get(STORAGE_KEYS.USER)
-    )[STORAGE_KEYS.USER] ?? null;
-
-    if (!userState?.isLoggedIn) {
-      return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: !userState };
-    }
-
-    // R1: never fire log_time without a token. Obtain one first; otherwise queue
-    // the entries untouched (no failure mark, no syncAttempts bump, no strike).
-    if (!userState.extApiToken) {
-      const rec = await attemptRecovery(userState);
-      if (rec.status === 'healed' && rec.userState?.extApiToken) {
-        userState = rec.userState;
-      } else {
-        return { attempted: 0, succeeded: 0, failed: 0, noAuth: true, nonceMissing: true };
-      }
-    }
-
-    const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
-    const extVersion = browser.runtime.getManifest().version;
-
-    void drainCompletionPushes();
-
-    const MAX_BATCH_SIZE = 50;
-    const MAX_SYNC_ATTEMPTS = 10;
-
-    const pending = await loadPendingEntries();
-    const unsynced = pending.filter(e => !e.synced && e.syncAttempts < MAX_SYNC_ATTEMPTS);
-    if (unsynced.length === 0) {
-      return { attempted: 0, succeeded: 0, failed: 0, noAuth: false, nonceMissing: false };
-    }
-    const batch = unsynced.slice(0, MAX_BATCH_SIZE);
-
-    let succeeded = 0;
-    let failed = 0;
-
-    // R3: token held but rejected (site reset the token, or cookie expired).
-    // Heal via nonce_refresh and retry once with a rotated token; otherwise queue
-    // the batch (no failure mark, no strike). Cookie expiry sets the reconnect hint
-    // inside attemptRecovery and never wipes credentials.
-    const handleTokenRejected = async (): Promise<DirectSyncResult> => {
-      const previousToken = userState!.extApiToken;
-      const rec = await attemptRecovery(userState);
-      if (
-        rec.status === 'healed' &&
-        rec.userState?.extApiToken &&
-        rec.userState.extApiToken !== previousToken &&
-        !retried
-      ) {
-        return syncEntriesDirect(true);
-      }
-      return { attempted: batch.length, succeeded, failed: batch.length - succeeded, noAuth: true, nonceMissing: false };
-    };
-
-    // reading entries report current finished-state
-    const completedPids = new Set<string>();
-    if (batch.some(isReading)) {
-      for (const source of READER_SOURCE_LIST) {
-        const rs = await getReaderState(source);
-        for (const id of Object.keys(rs.completedVolumes ?? {})) {
-          if (rs.completedVolumes[id]) completedPids.add(`ext_${source.platform}_${id}`);
-        }
-      }
-    }
-
-    // Batch sync: send all entries in one request (token auth)
-    try {
-      const batchParams = new URLSearchParams({
-        action: 'jp343_extension_log_time_batch',
-        ext_api_token: userState.extApiToken!,
-        ext_version: extVersion,
-        entries: JSON.stringify(batch.map(e => buildEntryParams(e, completedPids)))
-      });
-      const controller = new AbortController();
-      const batchTimeout = setTimeout(() => controller.abort(), 20000);
-      let response: Response;
-      try {
-        response = await fetch(ajaxUrl, {
-          method: 'POST',
-          credentials: 'include',
-          signal: controller.signal,
-          body: batchParams
-        });
-      } finally {
-        clearTimeout(batchTimeout);
-      }
-      if (!response.ok) {
-        log('[JP343] Batch sync HTTP error', response.status, ', falling back to sequential');
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const responseText = await response.text();
-      log('[JP343] Batch sync response:', response.status, responseText.slice(0, 200));
-
-      // WP returns "0" for unknown actions — fall through to sequential
-      if (responseText === '0') {
-        log('[JP343] Batch endpoint not available, falling back to sequential');
-      } else {
-        let batchResult: { success: boolean; data?: BatchSyncResponse & { code?: string } };
-        try {
-          batchResult = JSON.parse(responseText);
-        } catch {
-          log('[JP343] Batch response not JSON, falling back to sequential');
-          batchResult = { success: false };
-        }
-
-        if (batchResult.success && batchResult.data?.results) {
-          const resultMap = new Map<string, BatchEntryResult>();
-          for (const r of batchResult.data.results) {
-            if (r.session_id) resultMap.set(r.session_id, r);
-          }
-          const unsyncedMap = new Map(batch.map(e => [e.id, e]));
-
-          await withStorageLock(async () => {
-            const current = await loadPendingEntries();
-            const updated = current.map(e => {
-              const entryResult = resultMap.get(e.id);
-              if (!entryResult) return e;
-              const original = unsyncedMap.get(e.id);
-              if (original && e.duration_min !== original.duration_min) return e;
-              if (entryResult.success) {
-                return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: entryResult.entry_id ?? null, mergeResync: false };
-              }
-              return { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: entryResult.error || 'Server error' };
-            });
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-          });
-
-          succeeded = (batchResult.data.synced || 0) + (batchResult.data.duplicates || 0);
-          failed = batchResult.data.failed || 0;
-          await onAuthSuccess();
-          scheduleStatusBadgeUpdate();
-          void retryQueuedVotes(batch.filter(e => resultMap.get(e.id)?.success).map(e => e.channelId));
-          if (succeeded > 0) void fetchAndCacheServerStats(true);
-          return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
-        }
-
-        if (isAuthFailure(batchResult)) {
-          return handleTokenRejected();
-        }
-
-        // Other batch error — fall through to sequential
-        log('[JP343] Batch sync failed, falling back to sequential');
-      }
-    } catch (error) {
-      log('[JP343] Batch sync network error, falling back to sequential:', error);
-    }
-
-    // Sequential fallback (batch unavailable or failed)
-    for (const entry of batch) {
-      try {
-        const params: Record<string, string> = {
-          action: 'jp343_extension_log_time',
-          user_id: String(userState.userId || 0),
-          ext_api_token: userState.extApiToken!,
-          ext_version: extVersion,
-          ...buildEntryParams(entry, completedPids)
-        };
-
-        const controller = new AbortController();
-        const seqTimeout = setTimeout(() => controller.abort(), 15000);
-        let response: Response;
-        try {
-          response = await fetch(ajaxUrl, {
-            method: 'POST',
-            credentials: 'include',
-            signal: controller.signal,
-            body: new URLSearchParams(params)
-          });
-        } finally {
-          clearTimeout(seqTimeout);
-        }
-        if (!response.ok) {
-          log('[JP343] Sync HTTP error', response.status, 'for', entry.project);
-          failed++;
-          continue;
-        }
-
-        const responseText = await response.text();
-        log('[JP343] Sync response for', entry.project, ':', response.status);
-
-        let result: { success: boolean; data?: { code?: string; message?: string; entry_id?: number } };
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          log('[JP343] Sync response is not JSON');
-          failed++;
-          continue;
-        }
-
-        if (result.success) {
-          await withStorageLock(async () => {
-            const current = await loadPendingEntries();
-            const updated = current.map(e => {
-              if (e.id !== entry.id) return e;
-              if (e.duration_min !== entry.duration_min) return e;
-              return { ...e, synced: true, syncedAt: new Date().toISOString(), lastSyncError: null, serverEntryId: result.data?.entry_id ?? null, mergeResync: false };
-            });
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-          });
-          succeeded++;
-          await onAuthSuccess();
-          void retryQueuedVotes([entry.channelId]);
-          log('[JP343] Direct sync succeeded:', entry.project);
-        } else {
-          if (isAuthFailure(result)) {
-            return handleTokenRejected();
-          }
-          await withStorageLock(async () => {
-            const current = await loadPendingEntries();
-            const updated = current.map(e =>
-              e.id === entry.id
-                ? { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: result.data?.message || 'Server error' }
-                : e
-            );
-            await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-          });
-          failed++;
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Network error';
-        await withStorageLock(async () => {
-          const current = await loadPendingEntries();
-          const updated = current.map(e =>
-            e.id === entry.id
-              ? { ...e, syncAttempts: e.syncAttempts + 1, lastSyncError: errorMsg }
-              : e
-          );
-          await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: updated });
-        });
-        failed++;
-        log('[JP343] Direct sync error:', entry.id, error);
-      }
-    }
-
-    if (succeeded > 0) void fetchAndCacheServerStats(true);
-    scheduleStatusBadgeUpdate();
-    return { attempted: batch.length, succeeded, failed, noAuth: false, nonceMissing: false };
-  }
-
   async function saveSessionState(session: TrackingSession | null): Promise<void> {
     try {
       await browser.storage.local.set({ [STORAGE_KEYS.SESSION]: session });
@@ -845,6 +530,7 @@ export default defineBackground(() => {
   });
 
   initPermissionListeners({ log, savePendingEntry, saveSessionState });
+  initMpchcPoller({ savePendingEntry, createAlarmSafe });
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 

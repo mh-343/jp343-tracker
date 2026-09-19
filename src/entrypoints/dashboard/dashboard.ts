@@ -2,7 +2,7 @@ import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } fr
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
 import { normalizeUserId } from '../../lib/auth-helpers';
-import { fetchServerStats, fetchServerSessions } from './api';
+import { fetchServerStats, fetchServerSessions, fetchReadingStats } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
 import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setLocalAttentionMinutes, setGoalMinutes, setDayStartHour, setAttentionDisplay, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats, refreshDashboardScope, isScopeStillCurrent, resetAccountScopedState } from './stats';
@@ -13,7 +13,7 @@ import { renderFooter } from './footer';
 import { loadNews } from './news';
 import { setupSettings } from './settings';
 import { renderAnkiCard } from './anki-card';
-import { renderReadingCard } from './reading-card';
+import { renderReadingCard, setServerReadingStats } from './reading-card';
 import { renderStretchGoals } from './stretch-goals';
 import { refreshActivityGoals, setupActivityGoals } from './activity-goals';
 import { applyDashboardBackground } from '../../lib/background-image';
@@ -58,6 +58,7 @@ async function loadData(): Promise<DashboardData> {
 let isRefreshing = false;
 let refreshPending = false;
 let initialLoadDone = false;
+let readingStatsFetched = false;
 
 async function refresh(): Promise<void> {
   if (isRefreshing) {
@@ -72,6 +73,8 @@ async function refresh(): Promise<void> {
     if (scopeChanged) {
       clearRawCache();
       resetAccountScopedState();
+      setServerReadingStats(null);
+      readingStatsFetched = false;
     }
     setLocalDailyMinutes({ ...data.stats.dailyMinutes });
     setLocalHourlyMinutes({ ...(data.stats.hourlyMinutes || {}) });
@@ -137,6 +140,14 @@ async function refresh(): Promise<void> {
         }
       } else {
         renderSessions(data.entries);
+      }
+      if ((activeState.nonce || activeState.extApiToken) && !readingStatsFetched) {
+        const readingStats = await fetchReadingStats(activeState);
+        if (readingStats && await isScopeStillCurrent(scope)) {
+          readingStatsFetched = true;
+          setServerReadingStats(readingStats);
+          void renderReadingCard();
+        }
       }
       renderTierBadge(activeState);
       renderAuthUI(activeState);

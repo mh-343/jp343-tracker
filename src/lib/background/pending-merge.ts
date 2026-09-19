@@ -1,6 +1,7 @@
 import type { PendingEntry } from '../../types';
 import { getLocalDateString } from '../format-utils';
 import { readerForPlatform } from '../reader-sources';
+import { resetEntrySync } from '../sync-policy';
 
 export function findMergeTarget(
   pending: PendingEntry[],
@@ -18,9 +19,13 @@ export function findMergeTarget(
 }
 
 export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry): void {
+  const wasSent = mergeTarget.synced || mergeTarget.syncState?.everSent || mergeTarget.syncAttempts > 0 || mergeTarget.serverEntryId != null;
   const source = readerForPlatform(entry.platform);
   if (source && entry.project && !source.fallbackNameRe.test(entry.project)) {
     mergeTarget.project = entry.project;
+  }
+  if (entry.platform === 'mpchc') {
+    mergeTarget.mergedSessionIds = [...(mergeTarget.mergedSessionIds ?? []), entry.id];
   }
   mergeTarget.duration_min += entry.duration_min;
   if (entry.chars) mergeTarget.chars = (mergeTarget.chars ?? 0) + entry.chars;
@@ -45,11 +50,11 @@ export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry)
   }
   if (!mergeTarget.trackingMode && entry.trackingMode) mergeTarget.trackingMode = entry.trackingMode;
   if (!mergeTarget.sensorVersion && entry.sensorVersion) mergeTarget.sensorVersion = entry.sensorVersion;
-  if (mergeTarget.synced) {
+  if (wasSent) {
     mergeTarget.synced = false;
     mergeTarget.syncedAt = null;
-    mergeTarget.syncAttempts = 0;
-    mergeTarget.lastSyncError = null;
     mergeTarget.mergeResync = true;
   }
+  resetEntrySync(mergeTarget);
+  if (wasSent && mergeTarget.syncState) mergeTarget.syncState.everSent = true;
 }

@@ -178,8 +178,18 @@ export default defineContentScript({
       const check = () => {
         const userState = getUserState();
 
-        if (userState.ajaxUrl || Date.now() - startTime > maxWait) {
+        if (userState.ajaxUrl) {
           reportUserState();
+          return;
+        }
+
+        if (Date.now() - startTime > maxWait) {
+          // Absence is not a logout signal
+          if (document.documentElement.hasAttribute('data-jp343-user')) {
+            reportUserState();
+          } else {
+            log('[JP343 Bridge] No user state after timeout; staying silent');
+          }
           return;
         }
 

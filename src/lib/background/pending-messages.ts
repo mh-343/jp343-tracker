@@ -2,6 +2,7 @@ import type { ExtensionMessage, PendingEntry, CachedServerSession, Platform, Act
 import { STORAGE_KEYS } from '../../types';
 import { updateBadge } from '../badge-service';
 import { loadPendingEntries } from '../pending-entries';
+import { readSyncPending } from './sync-queue';
 import { fetchAndCacheServerSessions } from '../server-sessions';
 import { withStorageLock } from '../storage-lock';
 import { getLocalDateString, getWeekDates } from '../format-utils';
@@ -12,6 +13,7 @@ import { bulkRetagUntagged, retagPendingEntry, retagServerEntry } from './attent
 import { stableUserId } from '../auth-helpers';
 import { buildOwnedCache, loadUserState, readOwnedServerSessions, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
+import { resetEntrySync } from '../sync-policy';
 
 // Caller must hold the storage lock
 async function applyDeleteToStatsCache(
@@ -56,17 +58,22 @@ async function stashAndSubtract(
 async function deletePendingById(
   entryId: string,
   entrySnapshot: PendingEntry | undefined,
-  context: BackgroundMessageContext
-): Promise<{ success: boolean; data: { remaining: number } }> {
-  const { deletedEntry, remaining } = await withStorageLock(async () => {
-    const pending = await loadPendingEntries();
+  context: BackgroundMessageContext,
+  blockedOnly = false
+): Promise<{ success: boolean; data?: { remaining: number }; error?: string }> {
+  const { deletedEntry, remaining, rejected } = await withStorageLock(async () => {
+    const pending = await readSyncPending();
     const deletedEntry = pending.find(e => e.id === entryId);
+    if (blockedOnly && (!deletedEntry || deletedEntry.synced || deletedEntry.syncState?.status !== 'blocked' || deletedEntry.serverEntryId != null)) {
+      return { deletedEntry: undefined, remaining: pending.length, rejected: true };
+    }
     await stashAndSubtract(deletedEntry ?? entrySnapshot, context);
     const filtered = pending.filter(e => e.id !== entryId);
     await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: filtered });
     updateBadge();
-    return { deletedEntry, remaining: filtered.length };
+    return { deletedEntry, remaining: filtered.length, rejected: false };
   });
+  if (rejected) return { success: false, error: 'Session changed. Review it again before removing.' };
   if (deletedEntry) await context.subtractFromStats(deletedEntry);
   return { success: true, data: { remaining } };
 }
@@ -118,6 +125,11 @@ export async function handlePendingMessage(
       return { success: false, error: 'No entryId provided' };
     }
 
+    case 'REMOVE_BLOCKED_SYNC_ENTRY': {
+      if (typeof message.entryId !== 'string') return { success: false, error: 'Invalid session' };
+      return deletePendingById(message.entryId, undefined, context, true);
+    }
+
     case 'DELETE_SERVER_ENTRY': {
       if (typeof message.serverEntryId !== 'number' || !message.entrySnapshot) {
         return { success: false, error: 'No serverEntryId provided' };
@@ -149,6 +161,7 @@ export async function handlePendingMessage(
           lastSyncError: null,
           serverEntryId: null
         };
+        delete entry.syncState;
         let result: SavePendingResult = 'error';
         try {
           result = await context.savePendingEntry(entry, true);
@@ -181,7 +194,7 @@ export async function handlePendingMessage(
 
     case 'CLEAR_SYNCED_ENTRIES': {
       return withStorageLock(async () => {
-        const pending = await loadPendingEntries();
+        const pending = await readSyncPending();
         const unsynced = pending.filter(e => !e.synced);
         await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: unsynced });
         updateBadge();
@@ -192,10 +205,19 @@ export async function handlePendingMessage(
     case 'UPDATE_PENDING_ENTRY_TITLE': {
       if ('entryId' in message && 'title' in message && typeof message.entryId === 'string' && typeof message.title === 'string' && message.title) {
         return withStorageLock(async () => {
-          const pending = await loadPendingEntries();
+          const pending = await readSyncPending();
           const updated = pending.map(e => {
             if (e.id === message.entryId) {
-              return { ...e, project: message.title as string, syncAttempts: 0, lastSyncError: null };
+              const wasSent = e.synced || e.syncState?.everSent || e.syncAttempts > 0 || e.serverEntryId != null;
+              const updated = { ...e, project: message.title as string };
+              if (wasSent) {
+                updated.synced = false;
+                updated.syncedAt = null;
+                updated.mergeResync = true;
+              }
+              resetEntrySync(updated);
+              if (wasSent && updated.syncState) updated.syncState.everSent = true;
+              return updated;
             }
             return e;
           });
