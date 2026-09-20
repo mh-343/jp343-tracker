@@ -12,14 +12,17 @@ function decodeFile(value: string): string {
 
 export function parseMpchcVariables(html: string): MpchcSnapshot {
   const fields: Record<string, string> = {};
-  const pattern = /<p\b[^>]*\bid\s*=\s*["'](file|state|position)["'][^>]*>([\s\S]*?)<\/p\s*>/gi;
+  const pattern = /<p\b[^>]*\bid\s*=\s*["'](file|state|position|duration)["'][^>]*>([\s\S]*?)<\/p\s*>/gi;
   for (const match of html.matchAll(pattern)) fields[match[1].toLowerCase()] = match[2];
-  if (!/^[012]$/.test(fields.state?.trim() ?? '') || !/^\d+$/.test(fields.position?.trim() ?? '') || fields.file === undefined) {
+  if (!/^(-1|[012])$/.test(fields.state?.trim() ?? '') || !/^\d+$/.test(fields.position?.trim() ?? '') || fields.file === undefined) {
     throw new Error('Invalid player response');
   }
   const position = Number(fields.position);
   if (!Number.isSafeInteger(position)) throw new Error('Invalid player position');
-  return { file: decodeFile(fields.file), state: Number(fields.state) as 0 | 1 | 2, position };
+  // duration is optional, 0 means unknown
+  const rawDuration = fields.duration?.trim() ?? '';
+  const duration = /^\d+$/.test(rawDuration) && Number.isSafeInteger(Number(rawDuration)) ? Number(rawDuration) : 0;
+  return { file: decodeFile(fields.file), state: Number(fields.state) as -1 | 0 | 1 | 2, position, duration };
 }
 
 export async function readMpchc(): Promise<{ snapshot: MpchcSnapshot | null; status: 'unreachable' | 'error' }> {

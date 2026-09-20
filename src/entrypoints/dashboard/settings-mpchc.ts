@@ -3,8 +3,8 @@ import { MPCHC_ORIGINS } from '../../lib/mpchc';
 import { createToggleRow } from './settings-helpers';
 
 const STATUS_TEXT: Record<MpchcStatus, string> = {
-  off: 'Off. Enable to track Japanese videos in MPC-HC.',
-  idle: 'Connected. Play a Japanese video to start tracking.',
+  off: 'Off. Enable to track what you play in MPC-HC.',
+  idle: 'Connected. Play a video in MPC-HC to start tracking.',
   playing: 'Connected · Tracking playback.',
   paused: 'Connected · Paused. No time is being counted.',
   unreachable: 'Open MPC-HC and enable its Web Interface. Connection checks continue automatically.',
@@ -88,4 +88,18 @@ export function buildMpchcPanel(container: HTMLElement): void {
   void browser.runtime.sendMessage({ type: 'GET_MPCHC_STATUS' }).then(response => render(response as MpchcResponse)).catch(() => {
     status.textContent = 'Could not read player settings. Try switching tracking on again.';
   }).finally(() => { if (toggle) toggle.disabled = false; });
+
+  // live status while the panel is on screen
+  let probing = false;
+  const refresh = setInterval(async () => {
+    if (!section.isConnected) { clearInterval(refresh); return; }
+    if (!enabled || probing || toggle?.disabled || section.offsetParent === null || document.visibilityState !== 'visible') return;
+    probing = true;
+    try {
+      render(await browser.runtime.sendMessage({ type: 'MPCHC_PROBE' }) as MpchcResponse);
+    } catch { /* keep the last status */ } finally {
+      probing = false;
+    }
+  }, 5000);
+  window.addEventListener('pagehide', () => clearInterval(refresh));
 }

@@ -308,6 +308,13 @@ body {
   margin-top: 4px;
 }
 
+.player-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
 /* Buttons */
 .button-row {
   display: flex;

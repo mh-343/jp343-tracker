@@ -1,5 +1,6 @@
 import { tracker } from './time-tracker';
 import type { ExtensionSettings } from '../types';
+import { getMpchcState } from './background/mpchc-poller';
 
 const badgeApi = browser.action ?? browser.browserAction;
 
@@ -12,13 +13,17 @@ export function initBadgeService(loadSettings: () => Promise<ExtensionSettings>)
   loadSettingsFn = loadSettings;
 }
 
-function getCurrentStatus(): TrackingStatus {
-  if (tracker.isAdPlaying()) return 'ad';
+async function getCurrentStatus(): Promise<{ status: TrackingStatus; source: 'browser' | 'player' }> {
+  if (tracker.isAdPlaying()) return { status: 'ad', source: 'browser' };
   const session = tracker.getCurrentSession();
-  if (!session) return 'idle';
-  if (session.isPaused) return 'paused';
-  if (session.isActive) return 'recording';
-  return 'idle';
+  if (session?.isPaused) return { status: 'paused', source: 'browser' };
+  if (session?.isActive) return { status: 'recording', source: 'browser' };
+  if (session) return { status: 'idle', source: 'browser' };
+  const player = await getMpchcState();
+  if (!player.session) return { status: 'idle', source: 'player' };
+  if (player.status === 'playing') return { status: 'recording', source: 'player' };
+  if (player.status === 'paused') return { status: 'paused', source: 'player' };
+  return { status: 'idle', source: 'player' };
 }
 
 export function scheduleStatusBadgeUpdate(): void {
@@ -41,20 +46,21 @@ export async function updateStatusBadge(): Promise<void> {
     return;
   }
 
-  const status = getCurrentStatus();
+  const { status, source } = await getCurrentStatus();
+  const suffix = source === 'player' ? ' (MPC-HC)' : '';
 
   try {
     switch (status) {
       case 'recording':
         badgeApi.setBadgeText({ text: '●' });
         badgeApi.setBadgeBackgroundColor({ color: '#22c55e' });
-        badgeApi.setTitle({ title: 'jp343 - Recording...' });
+        badgeApi.setTitle({ title: `jp343 - Recording...${suffix}` });
         break;
 
       case 'paused':
         badgeApi.setBadgeText({ text: '❚❚' });
         badgeApi.setBadgeBackgroundColor({ color: '#f59e0b' });
-        badgeApi.setTitle({ title: 'jp343 - Paused' });
+        badgeApi.setTitle({ title: `jp343 - Paused${suffix}` });
         break;
 
       case 'ad':

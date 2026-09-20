@@ -15,23 +15,7 @@ import { rebuildChannelsPanel } from './settings-channels';
 import { hasReaderPermission, requestReaderPermission } from './reader-permission';
 import type { ReaderSource } from '../../lib/reader-sources';
 import { READER_SOURCES, readerOriginHost } from '../../lib/reader-sources';
-
-const PLATFORM_LABELS: Record<Platform, string> = {
-  youtube: 'YouTube',
-  netflix: 'Netflix',
-  crunchyroll: 'Crunchyroll',
-  primevideo: 'Prime Video',
-  disneyplus: 'Disney+',
-  cijapanese: 'CI Japanese',
-  nihongojikan: 'Nihongo no Jikan',
-  spotify: 'Spotify',
-  twitch: 'Twitch',
-  asbplayer: 'asbplayer',
-  mpchc: 'MPC-HC',
-  mokuro: 'Mokuro',
-  ttu: 'ttu reader',
-  generic: 'Generic'
-};
+import { PLATFORM_LABELS } from '../../lib/platform-labels';
 
 const CONTENT_TYPE_LABELS: Record<SpotifyContentType, string> = {
   music: 'Music',

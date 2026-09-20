@@ -1,4 +1,5 @@
 import type { PendingEntry, Platform, ActivityType } from '../../types';
+import { PLATFORM_ICONS } from '../../lib/platform-labels';
 import { activityAllowsPassive } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { armConfirmButton } from './delete-confirm';
@@ -17,23 +18,6 @@ let bulkTagExpanded = false;
 let bulkTagBusy = false;
 const INITIAL_SERVER_SESSIONS = 5;
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
-
-const platformIcons: Record<string, string> = {
-  youtube: '▶',
-  netflix: 'N',
-  crunchyroll: 'C',
-  primevideo: 'P',
-  disneyplus: 'D',
-  cijapanese: '漢',
-  nihongojikan: '時',
-  spotify: '♪',
-  twitch: 'T',
-  asbplayer: 'A',
-  mpchc: '▶',
-  mokuro: '本',
-  ttu: '📗',
-  generic: '⏵'
-};
 
 function requestRefresh(): void {
   document.dispatchEvent(new CustomEvent('jp343:refresh'));
@@ -518,7 +502,7 @@ export function renderSessions(entries: PendingEntry[]): void {
     } else {
       const ph = document.createElement('div');
       ph.className = 'session-thumb-placeholder';
-      ph.textContent = platformIcons[entry.platform] || '⏵';
+      ph.textContent = PLATFORM_ICONS[entry.platform] || '⏵';
       item.appendChild(ph);
     }
 
@@ -658,7 +642,7 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
   } else {
     const ph = document.createElement('div');
     ph.className = 'session-thumb-placeholder';
-    ph.textContent = (session.platform && platformIcons[session.platform]) || session.icon || '⏵';
+    ph.textContent = (session.platform && PLATFORM_ICONS[session.platform as Platform]) || session.icon || '⏵';
     item.appendChild(ph);
   }
 

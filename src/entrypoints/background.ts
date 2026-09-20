@@ -530,7 +530,7 @@ export default defineBackground(() => {
   });
 
   initPermissionListeners({ log, savePendingEntry, saveSessionState });
-  initMpchcPoller({ savePendingEntry, createAlarmSafe });
+  initMpchcPoller({ savePendingEntry, createAlarmSafe, onStatusChange: scheduleStatusBadgeUpdate });
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 

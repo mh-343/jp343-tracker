@@ -12,6 +12,7 @@ import { getReaderState } from './reader-sync';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../reader-sources';
 import { getCustomSitesState, allowedCustomSiteHost } from './custom-sites';
+import { getPlayerLive } from './mpchc-live';
 import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
 
@@ -573,7 +574,7 @@ export async function handleTrackingMessage(
 
       return {
         success: true,
-        data: { session, duration, durationMs, isAd, skippedChannel, skippedMusic }
+        data: { session, duration, durationMs, isAd, skippedChannel, skippedMusic, player: await getPlayerLive() }
       };
     }
 

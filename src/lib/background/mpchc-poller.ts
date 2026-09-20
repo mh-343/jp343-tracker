@@ -4,7 +4,7 @@ import type { MpchcState } from '../mpchc';
 import { emptyMpchcState, MPCHC_ORIGINS } from '../mpchc';
 import { withStorageLock } from '../storage-lock';
 import { readMpchc } from './mpchc-connect';
-import { advanceMpchcSession, mpchcEntry, startMpchcSession, MPCHC_PERIOD_MINUTES } from './mpchc-session';
+import { advanceMpchcSession, isMpchcEnded, mpchcEntry, startMpchcSession, MPCHC_PERIOD_MINUTES } from './mpchc-session';
 
 export const MPCHC_ALARM = 'jp343-mpchc-probe';
 const BACKOFF_FAILURES = 8;
@@ -12,6 +12,7 @@ const BACKOFF_FAILURES = 8;
 interface MpchcDeps {
   savePendingEntry: (entry: PendingEntry) => Promise<SavePendingResult>;
   createAlarmSafe: (name: string, options: { periodInMinutes: number }) => void;
+  onStatusChange?: () => void;
 }
 
 let deps: MpchcDeps;
@@ -46,13 +47,17 @@ async function gate(state: MpchcState): Promise<boolean> {
   return true;
 }
 
-function activePeriod(): number {
+export function mpchcPeriodMinutes(): number {
   return import.meta.env.FIREFOX ? 1 : MPCHC_PERIOD_MINUTES;
+}
+
+function liveKey(state: MpchcState): string {
+  return `${state.status}|${state.session?.id ?? ''}`;
 }
 
 async function arm(state: MpchcState, allowed: boolean): Promise<void> {
   if (!allowed) { await browser.alarms.clear(MPCHC_ALARM); return; }
-  const periodInMinutes = state.failures >= BACKOFF_FAILURES && !state.session ? 5 : activePeriod();
+  const periodInMinutes = state.failures >= BACKOFF_FAILURES && !state.session ? 5 : mpchcPeriodMinutes();
   const alarm = await browser.alarms.get(MPCHC_ALARM);
   if (alarm?.periodInMinutes !== periodInMinutes) deps.createAlarmSafe(MPCHC_ALARM, { periodInMinutes });
 }
@@ -75,26 +80,29 @@ async function finalize(state: MpchcState): Promise<void> {
 
 async function poll(): Promise<void> {
   const state = await getMpchcState();
+  const before = liveKey(state);
   const allowed = await gate(state);
   await arm(state, allowed);
   await drain(state);
   if (!allowed) {
     await finalize(state);
     await persist(state);
+    if (liveKey(state) !== before) deps.onStatusChange?.();
     return;
   }
   const { snapshot, status } = await readMpchc();
   const now = Date.now();
   state.failures = snapshot ? 0 : Math.min(BACKOFF_FAILURES, state.failures + 1);
-  state.status = snapshot ? (snapshot.state === 2 ? 'playing' : snapshot.state === 1 ? 'paused' : 'idle') : status;
+  state.status = snapshot ? (snapshot.state === 2 ? 'playing' : snapshot.state === 1 && !isMpchcEnded(snapshot) ? 'paused' : 'idle') : status;
   if (state.session && snapshot?.file && snapshot.file !== state.session.file) await finalize(state);
   if (state.session) {
-    if (advanceMpchcSession(state.session, snapshot, now, activePeriod())) await finalize(state);
+    if (advanceMpchcSession(state.session, snapshot, now, mpchcPeriodMinutes())) await finalize(state);
   } else if (snapshot?.state === 2 && snapshot.file) {
     state.session = startMpchcSession(snapshot, now);
   }
   await persist(state);
   await arm(state, true);
+  if (liveKey(state) !== before) deps.onStatusChange?.();
 }
 
 export function pollMpchc(): Promise<void> {
@@ -114,6 +122,7 @@ export async function setMpchcEnabled(enabled: boolean): Promise<MpchcState> {
     await arm(state, allowed);
     await drain(state);
     if (!allowed) await finalize(state);
+    deps.onStatusChange?.();
   });
   if (enabled) await pollMpchc();
   return getMpchcState();

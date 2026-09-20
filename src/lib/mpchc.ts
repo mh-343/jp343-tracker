@@ -3,10 +3,12 @@ export const MPCHC_ORIGINS = [
   'http://127.0.0.1:13579/*',
 ];
 
+// -1 is the player's "no media" state
 export interface MpchcSnapshot {
   file: string;
-  state: 0 | 1 | 2;
+  state: -1 | 0 | 1 | 2;
   position: number;
+  duration: number;
 }
 
 export interface MpchcSession {
@@ -17,7 +19,6 @@ export interface MpchcSession {
   lastPollAt: number;
   lastPosition: number;
   lastPlaying: boolean;
-  idleSince: number | null;
 }
 
 export type MpchcStatus = 'off' | 'idle' | 'playing' | 'paused' | 'unreachable' | 'error' | 'permission_needed' | 'unsupported';
@@ -32,4 +33,19 @@ export interface MpchcState {
 
 export function emptyMpchcState(): MpchcState {
   return { enabled: false, session: null, status: 'off', failures: 0, outbox: null };
+}
+
+export interface PlayerLiveSession {
+  id: string;
+  file: string;
+  startedAt: number;
+  accumulatedMs: number;
+  lastPollAt: number;
+  lastPlaying: boolean;
+}
+
+export interface PlayerLive {
+  status: MpchcStatus;
+  periodMs: number;
+  session: PlayerLiveSession | null;
 }

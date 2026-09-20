@@ -3,7 +3,12 @@ import type { MpchcSession, MpchcSnapshot } from '../mpchc';
 import { generateProjectId } from '../time-tracker';
 
 export const MPCHC_PERIOD_MINUTES = 0.5;
-export const MPCHC_IDLE_MS = 4 * 60_000;
+// paused this close to the end counts as finished
+export const MPCHC_END_TOLERANCE_MS = 1_000;
+
+export function isMpchcEnded(snapshot: MpchcSnapshot | null): boolean {
+  return snapshot?.state === 1 && snapshot.duration > 0 && snapshot.position >= snapshot.duration - MPCHC_END_TOLERANCE_MS;
+}
 
 export async function mpchcEntry(session: MpchcSession): Promise<PendingEntry | null> {
   if (session.accumulatedMs < 60_000) return null;
@@ -28,7 +33,7 @@ export function startMpchcSession(snapshot: MpchcSnapshot, now: number): MpchcSe
   return {
     id: `ext_${crypto.randomUUID()}`, file: snapshot.file, startedAt: now,
     accumulatedMs: 0, lastPollAt: now, lastPosition: snapshot.position,
-    lastPlaying: true, idleSince: null,
+    lastPlaying: true,
   };
 }
 
@@ -40,7 +45,6 @@ export function advanceMpchcSession(session: MpchcSession, snapshot: MpchcSnapsh
   session.lastPlaying = playing;
   session.lastPollAt = now;
   if (snapshot) session.lastPosition = snapshot.position;
-  if (playing || snapshot?.state === 1) session.idleSince = null;
-  else session.idleSince ??= now;
-  return session.idleSince !== null && now - session.idleSince >= MPCHC_IDLE_MS;
+  // over when stopped, closed, unreachable or paused at the end
+  return !playing && (snapshot?.state !== 1 || isMpchcEnded(snapshot));
 }

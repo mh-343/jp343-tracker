@@ -1,13 +1,15 @@
 // JP343 Extension - Popup UI
 
 import { STORAGE_KEYS, activityAllowsPassive, EMPTY_DAILY_GOALS } from '../../types';
-import type { TrackingSession, Platform, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
+import type { TrackingSession, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
 import { formatDuration, formatDurationMs, formatGoalMinutes, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
 import { renderPendingList } from './pending-list';
 import { createSyncIssues } from './sync-issues';
 import { createTodayLive, type LiveDisplay } from './today-live';
+import { createPlayerCard } from './player-card';
+import { PLATFORM_ICONS } from '../../lib/platform-labels';
 import { computeActivityGoalRows, type ActivityGoalRow } from '../../lib/activity-goals';
 import { appendActivityGoalLines } from './activity-goals-tooltip';
 
@@ -72,23 +74,6 @@ const elements = {
   resizeGrabber: document.getElementById('resizeGrabber') as HTMLElement
 };
 
-const platformIcons: Record<Platform, string> = {
-  youtube: '▶',
-  netflix: 'N',
-  crunchyroll: 'C',
-  primevideo: 'P',
-  disneyplus: 'D',
-  cijapanese: '漢',
-  nihongojikan: '時',
-  spotify: '♪',
-  twitch: 'T',
-  asbplayer: 'A',
-  mpchc: '▶',
-  mokuro: '本',
-  ttu: '📗',
-  generic: '⏵'
-};
-
 let currentSession: TrackingSession | null = null;
 let updateInterval: ReturnType<typeof setInterval> | null = null;
 let isEnabled = true;
@@ -106,6 +91,7 @@ let baseDurationMs = 0;
 let baseTimestamp = 0;
 let sessionTicking = false;
 let lastDisplayedSecond = -1;
+const playerCard = createPlayerCard(document.getElementById('playerSession') as HTMLElement);
 
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
   if (toastTimeout) {
@@ -425,7 +411,7 @@ function updateManualTrackDisplay(): void {
   } else {
     elements.manualTrackMode.style.display = 'none';
     if (!currentSession) {
-      elements.noSession.style.display = 'block';
+      elements.noSession.style.display = playerCard.visible() ? 'none' : 'block';
       const noSessionTitle = document.getElementById('noSessionTitle');
       const noSessionHint = document.getElementById('noSessionHint');
       if (activeTabInfo.isStreamingSite && noSessionTitle && noSessionHint) {
@@ -433,7 +419,7 @@ function updateManualTrackDisplay(): void {
         noSessionHint.textContent = 'Start a video to auto-track';
       } else if (noSessionTitle && noSessionHint) {
         noSessionTitle.textContent = 'No active session';
-        noSessionHint.textContent = 'Visit a supported streaming site to start tracking';
+        noSessionHint.textContent = playerCard.placeholderHint() ?? 'Visit a supported streaming site to start tracking';
       }
     }
   }
@@ -731,8 +717,9 @@ function updateStatus(session: TrackingSession | null, isAd: boolean): void {
     elements.statusDot.className = 'status-dot ad';
     elements.statusText.textContent = 'Ad';
   } else if (!session) {
-    elements.statusDot.className = 'status-dot';
-    elements.statusText.textContent = 'Idle';
+    const header = playerCard.headerStatus();
+    elements.statusDot.className = header?.className ?? 'status-dot';
+    elements.statusText.textContent = header?.text ?? 'Idle';
   } else if (session.isPaused) {
     elements.statusDot.className = 'status-dot paused';
     elements.statusText.textContent = 'Paused';
@@ -762,8 +749,10 @@ function updateSessionDisplay(
   isAd: boolean
 ): void {
   if (!session) {
-    elements.noSession.style.display = 'block';
+    elements.noSession.style.display = playerCard.visible() ? 'none' : 'block';
     elements.activeSession.style.display = 'none';
+    const hint = document.getElementById('noSessionHint');
+    if (hint && !activeTabInfo) hint.textContent = playerCard.placeholderHint() ?? 'Visit a supported streaming site to start tracking';
     return;
   }
 
@@ -779,7 +768,7 @@ function updateSessionDisplay(
     elements.thumbnail.appendChild(img);
   } else {
     elements.thumbnail.className = 'session-thumbnail placeholder';
-    elements.platformIcon.textContent = platformIcons[session.platform] || '⏵';
+    elements.platformIcon.textContent = PLATFORM_ICONS[session.platform] || '⏵';
   }
 
   elements.sessionTitle.textContent = session.title;
@@ -847,7 +836,7 @@ async function fetchPendingEntries(): Promise<void> {
     if (response.success && response.data?.entries) {
       renderPendingList(response.data.entries, {
         listEl: elements.pendingList,
-        platformIcons,
+        platformIcons: PLATFORM_ICONS,
         getDayStartHour: () => _popupDayStartHour,
         showAttention: _popupShowAttention,
         onEntriesChanged: updatePendingDisplay
@@ -867,7 +856,7 @@ async function fetchCurrentState(): Promise<void> {
     if (seq !== fetchSeq) return;
 
     if (response.success && response.data) {
-      const { session, durationMs, isAd, skippedChannel, skippedMusic } = response.data;
+      const { session, durationMs, isAd, skippedChannel, skippedMusic, player } = response.data;
       lastSkippedChannel = skippedChannel || null;
       popupSkippedMusic = skippedMusic || null;
 
@@ -894,6 +883,8 @@ async function fetchCurrentState(): Promise<void> {
         attention: currentSession.attention,
         attentionOverride: currentSession.attentionOverride
       } : null);
+      playerCard.update(player ?? null, !!session);
+      todayLive.setPlayerSession(playerCard.liveInput());
       updateStatus(session, isAd);
       updateSessionDisplay(session, isAd);
       tickTimerDisplay();
@@ -1071,6 +1062,7 @@ async function fetchAndRenderStats(): Promise<void> {
       elements.statStreak.textContent = `${streak || 0}d`;
       todayLive.setBase({
         liveSessionId: response.data.liveSessionId,
+        livePlayerSessionId: response.data.livePlayerSessionId ?? null,
         dayKey: response.data.dayKey,
         dayStartHour: response.data.dayStartHour,
         todayMinutes: todayMinutes || 0,
@@ -1168,6 +1160,7 @@ fetchPendingEntries();
 
 updateInterval = setInterval(() => {
   tickTimerDisplay();
+  playerCard.tick();
   fetchCurrentState();
 }, 1000);
 const pendingInterval = setInterval(fetchPendingEntries, 5000);

@@ -5,6 +5,7 @@ import { computeTodayProgress } from './activity-progress';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { tracker } from '../time-tracker';
+import { getMpchcState } from './mpchc-poller';
 import { statsSnapshotRevision } from './stats-snapshot';
 import { stableUserId } from '../auth-helpers';
 import { loadUserState, readOwnedServerStats } from '../server-cache';
@@ -44,6 +45,7 @@ export async function handleStatsSyncMessage(
       await context.recoveryReady;
       const revision = statsSnapshotRevision();
       const liveSessionId = tracker.getCurrentSession()?.id ?? null;
+      const livePlayerSessionId = (await getMpchcState()).session?.id ?? null;
       if (revision === null) return { success: false, error: 'Stats updating' };
       void context.fetchAndCacheServerStats();
       const stats = await context.loadStats();
@@ -134,6 +136,7 @@ export async function handleStatsSyncMessage(
 
       if (revision !== statsSnapshotRevision()
           || liveSessionId !== (tracker.getCurrentSession()?.id ?? null)
+          || livePlayerSessionId !== ((await getMpchcState()).session?.id ?? null)
           || todayStr !== getLocalDateString(new Date(), dsh)) {
         return { success: false, error: 'Stats changed' };
       }
@@ -142,6 +145,7 @@ export async function handleStatsSyncMessage(
         success: true,
         data: {
           liveSessionId,
+          livePlayerSessionId,
           dayKey: todayStr,
           dayStartHour: dsh,
           totalMinutes,
