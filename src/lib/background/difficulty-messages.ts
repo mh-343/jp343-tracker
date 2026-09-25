@@ -372,6 +372,8 @@ interface VotePayload {
   videoId: string | null;
   choice: string;
   shownLevel: number;
+  shownSource?: string;
+  promptV?: number;
 }
 
 interface QueuedVote extends VotePayload {
@@ -413,6 +415,8 @@ async function postVoteToServer(user: JP343UserState, vote: VotePayload): Promis
   if (vote.videoId) params.set('video_id', vote.videoId);
   params.set('choice', vote.choice);
   params.set('shown_level', String(vote.shownLevel));
+  if (vote.shownSource) params.set('shown_source', vote.shownSource);
+  if (Number.isInteger(vote.promptV)) params.set('prompt_v', String(vote.promptV));
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VOTE_FETCH_TIMEOUT_MS);

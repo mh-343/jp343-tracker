@@ -1,7 +1,7 @@
 import { STORAGE_KEYS } from '../../types';
 import {
   VIDEO_CARD_SELECTORS, CARD_TITLE_SELECTORS, WATCH_TITLE_SELECTORS,
-  extractVideoIdFromUrl, extractVideoIdFromElement, fetchOembedTitle
+  extractVideoIdFromUrl, extractVideoIdFromElement, fetchOembedTitle, isPlaylistLockup, isWatchPath
 } from '../../lib/youtube-utils';
 import { createDebugLogger } from '../../lib/debug-logger';
 import { claimContentScript } from '../../lib/content-guard';
@@ -318,6 +318,12 @@ export default defineContentScript({
       const exceeded = makeRewriteBudget();
       const obs = new MutationObserver(() => {
         if (contextLost()) return;
+        if (isPlaylistLockup(card)) {
+          removeObserver(obs);
+          cardObservers.delete(titleEl);
+          card.removeAttribute(REPLACED_ATTR);
+          return;
+        }
         const currentVideoId = extractVideoIdFromElement(card);
         if (currentVideoId !== videoId) {
           removeObserver(obs);
@@ -460,6 +466,7 @@ export default defineContentScript({
       const cards = document.querySelectorAll(VIDEO_CARD_SELECTORS);
 
       for (const card of Array.from(cards)) {
+        if (isPlaylistLockup(card)) continue;
         const existingId = card.getAttribute(REPLACED_ATTR);
         const videoId = extractVideoIdFromElement(card);
         if (!videoId) continue;
@@ -484,6 +491,9 @@ export default defineContentScript({
         const capturedTitleEl = titleEl;
         resolveTitle(videoId, false).then(title => {
           if (!title || !enabled) return;
+          if (isPlaylistLockup(card)) return;
+          if (extractVideoIdFromElement(card) !== videoId) return;
+          if (!card.contains(capturedTitleEl)) return;
           if (card.getAttribute(REPLACED_ATTR) === videoId) return;
           replaceCardTitle(card, capturedTitleEl, videoId, title);
         });
@@ -556,7 +566,7 @@ export default defineContentScript({
       const path = window.location.pathname;
       const videoId = extractVideoIdFromUrl();
 
-      if ((path.startsWith('/watch') || path.startsWith('/shorts/')) && videoId) {
+      if ((isWatchPath(path) || path.startsWith('/shorts/')) && videoId) {
         const delayTimer = setTimeout(() => replaceWatchTitle(videoId), 150);
         timeoutIds.push(delayTimer);
       }

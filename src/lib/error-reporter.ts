@@ -16,6 +16,7 @@ const FLUSH_INTERVAL_MS = 60_000;
 
 const URL_RE = /https?:\/\/[^\s)]+/g;
 const EXT_ID_RE = /([a-z]{32})/g;
+const BENIGN_STORAGE_ERROR_RE = /FILE_ERROR_NO_SPACE|QuotaExceededError|QUOTA_BYTES/i;
 
 let queue: QueuedError[] = [];
 let flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -40,6 +41,8 @@ export function reportError(
   platform?: string
 ): void {
   if (queue.length >= MAX_QUEUE) return;
+  // disk-full / quota: user environment
+  if (BENIGN_STORAGE_ERROR_RE.test(message) || BENIGN_STORAGE_ERROR_RE.test(stack)) return;
   queue.push({
     message: scrub(message || 'Unknown error', 500),
     source: scrub(source || '', 200),

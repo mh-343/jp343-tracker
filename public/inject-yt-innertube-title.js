@@ -10,6 +10,8 @@
     if (path.startsWith('/shorts/')) {
       var m = path.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
       videoId = m ? m[1] : null;
+    } else if (/^\/live\/[A-Za-z0-9_-]{11}(?:\/|$)/.test(path)) {
+      videoId = path.match(/^\/live\/([A-Za-z0-9_-]{11})/)[1];
     } else {
       videoId = new URLSearchParams(window.location.search).get('v') || null;
     }

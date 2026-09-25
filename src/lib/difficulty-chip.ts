@@ -152,7 +152,7 @@ const VOTE_OPTIONS: VoteOption[] = [
   { key: 'nothing', label: 'Nothing', colorClass: 'jp343-dc-nothing', title: 'Barely anything, even with effort' },
   { key: 'little', label: 'A little', colorClass: 'jp343-dc-little', title: 'Single words and fragments' },
   { key: 'most', label: 'Most', colorClass: 'jp343-dc-most', title: 'Followed the content, missed some details' },
-  { key: 'all', label: 'All', colorClass: 'jp343-dc-all', title: 'Practically everything, comfortably' }
+  { key: 'all', label: 'Almost all', colorClass: 'jp343-dc-all', title: 'Followed everything, a few unknown words are fine' }
 ];
 
 function clampLevel(value: number): number {

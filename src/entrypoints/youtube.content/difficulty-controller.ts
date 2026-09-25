@@ -7,6 +7,7 @@ import type { ChipVoteContext, ChipOwnVote } from '../../lib/difficulty-chip';
 import { parseTitleLevel } from '../../lib/difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../../lib/difficulty-seeds';
 import { estimateLocalBand, LOCAL_METHOD_VERSION } from '../../lib/difficulty-local/estimator';
+import { isWatchPath } from '../../lib/youtube-utils';
 import { acquireYoutubeTranscript } from './transcript';
 import { readLocalBandCache } from './difficulty-cache';
 import type { LocalBandState } from './difficulty-cache';
@@ -45,6 +46,15 @@ let voteStateRequested: string | null = null;
 // mirrors server-side JP343_DIFFICULTY_VIEW_MIN_S
 const LOCAL_VOTE_GATE_MS = 60_000;
 const localWatchGate = new Set<string>();
+// bump when the vote question wording changes
+const DIFFICULTY_PROMPT_VERSION = 2;
+const SHOWN_SOURCE_WIRE = new Map<string, string>([
+  ['title tag', 'title'],
+  ['video estimate', 'video'],
+  ['local estimate', 'local'],
+  ['local estimate (in band)', 'local_band'],
+  ['channel estimate', 'channel']
+]);
 
 export function initDifficulty(d: DifficultyDeps): void {
   deps = d;
@@ -172,7 +182,8 @@ function ensureVoteState(videoId: string | null, channelInfo: { id: string | nul
 
 function voteContextFor(
   videoId: string | null,
-  channelInfo: { id: string | null; name: string | null; url: string | null }
+  channelInfo: { id: string | null; name: string | null; url: string | null },
+  source: string
 ): ChipVoteContext | undefined {
   // local-only never hits the server
   if (!difficultyVotingEnabled || difficultyLocalOnly) return undefined;
@@ -193,7 +204,9 @@ function voteContextFor(
         channelUrl: channelInfo.url,
         videoId,
         choice,
-        shownLevel
+        shownLevel,
+        shownSource: SHOWN_SOURCE_WIRE.get(source),
+        promptV: DIFFICULTY_PROMPT_VERSION
       });
       const result = response as { success?: boolean; message?: string } | undefined;
       if (result?.success) {
@@ -210,7 +223,7 @@ function voteContextFor(
 export function pollLocalVoteGate(): void {
   if (!deps) return;
   if (!difficultyEnabled || !difficultyVotingEnabled || difficultyLocalOnly) return;
-  if (!window.location.pathname.includes('/watch')) return;
+  if (!isWatchPath(window.location.pathname)) return;
   const channelInfo = deps.getChannelInfo();
   const channelKey = channelKeyOf(channelInfo);
   if (!channelKey || !channelInfo.id || localWatchGate.has(channelKey)) return;
@@ -228,11 +241,11 @@ export function pollLocalVoteGate(): void {
 
 export function updateDifficultyChip(): void {
   if (!deps) return;
-  if (!difficultyEnabled || !window.location.pathname.includes('/watch')) { hideDifficultyChip(); return; }
+  if (!difficultyEnabled || !isWatchPath(window.location.pathname)) { hideDifficultyChip(); return; }
   const videoId = deps.getVideoId();
   const channelInfo = deps.getChannelInfo();
   const show = (seed: DifficultySeed, source: string): void => {
-    showDifficultyChip(seed, source, voteContextFor(videoId, channelInfo));
+    showDifficultyChip(seed, source, voteContextFor(videoId, channelInfo, source));
   };
   const fromTitle = parseTitleLevel(deps.getVideoTitle());
   if (fromTitle) { show(fromTitle, 'title tag'); return; }

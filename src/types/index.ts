@@ -385,7 +385,7 @@ export type ExtensionMessage =
   | { type: 'GET_DIFFICULTY_MAP' }
   | { type: 'SAVE_LOCAL_DIFFICULTY_BAND'; videoId: string; seed: DifficultySeed | null; source: string | null; methodVersion: string; channelKey: string | null; estimateState?: SensorEstimateState; speechRatio?: number | null }
   | { type: 'GET_VOTE_STATE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null }
-  | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number }
+  | { type: 'SUBMIT_DIFFICULTY_VOTE'; channelId: string | null; channelName: string | null; channelUrl: string | null; videoId: string | null; choice: string; shownLevel: number; shownSource?: string; promptV?: number }
   | { type: 'CUSTOM_SITES_GET' }
   | { type: 'CUSTOM_SITE_ADD'; host: string }
   | { type: 'CUSTOM_SITE_REMOVE'; id: string }

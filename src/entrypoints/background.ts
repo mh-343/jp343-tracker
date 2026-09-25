@@ -476,7 +476,7 @@ export default defineBackground(() => {
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: cleaned });
           log('[JP343] Cleanup: ' + (pending.length - cleaned.length) + ' old synced entries removed');
         }
-      });
+      }).catch(() => {});
     }
     if (alarm.name === 'jp343-check') {
       const session = tracker.getCurrentSession();

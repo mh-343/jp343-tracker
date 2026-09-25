@@ -35,15 +35,43 @@ export const WATCH_TITLE_SELECTORS: readonly string[] = [
   'ytm-slim-video-metadata-section-renderer h2'
 ];
 
+// youtube.com/live/<id> stays in the address bar
+const LIVE_PATH_RE = /^\/live\/([A-Za-z0-9_-]{11})(?:\/|$)/;
+
 export function extractVideoIdFromUrl(url?: string): string | null {
   try {
     const href = url ?? window.location.href;
     const parsed = new URL(href, 'https://www.youtube.com');
     const shortsMatch = parsed.pathname.match(/\/shorts\/([a-zA-Z0-9_-]+)/);
     if (shortsMatch) return shortsMatch[1];
+    const liveMatch = parsed.pathname.match(LIVE_PATH_RE);
+    if (liveMatch) return liveMatch[1];
     return parsed.searchParams.get('v');
   } catch {
     return null;
+  }
+}
+
+export function isWatchPath(pathname: string): boolean {
+  return pathname.includes('/watch') || LIVE_PATH_RE.test(pathname);
+}
+
+export function isWatchUrl(href: string): boolean {
+  try {
+    return isWatchPath(new URL(href).pathname);
+  } catch {
+    return false;
+  }
+}
+
+// server parses the video id from watch?v=
+export function canonicalWatchUrl(href: string): string {
+  try {
+    const parsed = new URL(href);
+    const liveMatch = parsed.pathname.match(LIVE_PATH_RE);
+    return liveMatch ? `${parsed.origin}/watch?v=${liveMatch[1]}` : href;
+  } catch {
+    return href;
   }
 }
 
@@ -64,6 +92,13 @@ export function extractVideoIdFromElement(element: Element): string | null {
   } catch {
     return null;
   }
+}
+
+export function isPlaylistLockup(element: Element): boolean {
+  if (element.querySelector('a[href*="/playlist?list="]')) return true;
+  return !!element.querySelector(
+    'yt-collection-thumbnail-view-model,.yt-collection-thumbnail-view-model,yt-collections-stack,.collections-stack-view-model'
+  );
 }
 
 export function getCardTitleText(element: Element): string | null {

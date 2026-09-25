@@ -3,7 +3,7 @@
 import type { VideoState, WhitelistedChannel, BlockedChannel, ExtensionSettings } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/debug-logger';
-import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS } from '../../lib/youtube-utils';
+import { extractVideoIdFromUrl, WATCH_TITLE_SELECTORS, isChannelInList, isWatchPath, isWatchUrl, canonicalWatchUrl } from '../../lib/youtube-utils';
 import { isJapaneseContent, isJapaneseLanguageCode, isLikelyJapaneseVideo } from '../../lib/language-detection';
 import { showTrackingToast, hideTrackingToast, isToastActive } from '../../lib/tracking-toast';
 import { hideDifficultyChip, isDifficultyChipMounted } from '../../lib/difficulty-chip';
@@ -43,7 +43,6 @@ export default defineContentScript({
     let originalTitleResponsePending = false;
     let useOriginalTitles = false;
     let trackJapaneseOnly = false;
-    let hideNonJapanese = false;
     let whitelistedChannels: WhitelistedChannel[] = [];
     let blockedChannels: BlockedChannel[] = [];
     const DEDUP_WINDOW_MS = 200;
@@ -78,14 +77,14 @@ export default defineContentScript({
       window.removeEventListener('jp343-original-title', handleOriginalTitleResponse);
     }
     window.addEventListener('pagehide', () => {
-      if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+      if (lastVideoUrl && isWatchUrl(lastVideoUrl)) {
         flushDelta();
         sendVideoEnded();
       }
       cleanup();
     });
     window.addEventListener('pageshow', (e) => {
-      if (e.persisted && isExtensionContextValid() && window.location.pathname.includes('/watch')) {
+      if (e.persisted && isExtensionContextValid() && isWatchPath(window.location.pathname)) {
         tryInitialVideoAttach();
       }
     });
@@ -189,7 +188,6 @@ export default defineContentScript({
         const prev = useOriginalTitles;
         useOriginalTitles = response.data.settings.useOriginalTitles ?? false;
         trackJapaneseOnly = response.data.settings.trackJapaneseOnly ?? true;
-        hideNonJapanese = response.data.settings.hideNonJapanese ?? false;
         whitelistedChannels = response.data.settings.whitelistedChannels ?? [];
         blockedChannels = response.data.settings.blockedChannels ?? [];
         if (useOriginalTitles !== prev) onOriginalTitleSettingChanged();
@@ -207,7 +205,6 @@ export default defineContentScript({
         const prev = useOriginalTitles;
         useOriginalTitles = changes[STORAGE_KEYS.SETTINGS].newValue.useOriginalTitles ?? false;
         trackJapaneseOnly = changes[STORAGE_KEYS.SETTINGS].newValue.trackJapaneseOnly ?? true;
-        hideNonJapanese = changes[STORAGE_KEYS.SETTINGS].newValue.hideNonJapanese ?? false;
         whitelistedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.whitelistedChannels ?? [];
         blockedChannels = changes[STORAGE_KEYS.SETTINGS].newValue.blockedChannels ?? [];
         const settingsValue = changes[STORAGE_KEYS.SETTINGS].newValue as ExtensionSettings;
@@ -272,7 +269,7 @@ export default defineContentScript({
         playerClasses: player?.className || null,
         playerHasAdShowing: player?.classList.contains('ad-showing') ?? false,
         url: window.location.href,
-        videoIdFromUrl: new URL(window.location.href).searchParams.get('v'),
+        videoIdFromUrl: extractVideoIdFromUrl(),
         adSelectors: adSelectorResults,
         adTexts: adTexts,
         adClassElements: adClassElements,
@@ -632,13 +629,13 @@ export default defineContentScript({
     }
 
     function checkTrackingToast(): void {
-      if (!hideNonJapanese || !trackJapaneseOnly) { hideTrackingToast(); return; }
+      if (!trackJapaneseOnly) { hideTrackingToast(); return; }
       if (originalTitleResponsePending && originalTitleVideoId === getVideoId()) return;
       const state = getCurrentVideoState();
 
       if (state?.channelId) {
-        if (whitelistedChannels.some(c => c.channelId === state.channelId)) { hideTrackingToast(); return; }
-        if (blockedChannels.some(c => c.channelId === state.channelId)) { hideTrackingToast(); return; }
+        if (isChannelInList(whitelistedChannels, state.channelId, state.channelUrl)) { hideTrackingToast(); return; }
+        if (isChannelInList(blockedChannels, state.channelId, state.channelUrl)) { hideTrackingToast(); return; }
       }
 
       if (isToastActive()) return;
@@ -699,7 +696,7 @@ export default defineContentScript({
       if (!video) return null;
 
       const videoId = getVideoId();
-      if (!videoId && !window.location.pathname.includes('/watch')) {
+      if (!videoId && !isWatchPath(window.location.pathname)) {
         return null;
       }
 
@@ -711,7 +708,7 @@ export default defineContentScript({
         currentTime: video.currentTime,
         duration: video.duration || 0,
         title: (useOriginalTitles && originalTitle) || getVideoTitle(),
-        url: window.location.href,
+        url: canonicalWatchUrl(window.location.href),
         platform: 'youtube',
         isAd: isAdPlaying(),
         thumbnailUrl: videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null,
@@ -996,7 +993,7 @@ export default defineContentScript({
           newUrl: currentUrl
         });
 
-        if (lastVideoUrl && lastVideoUrl.includes('/watch')) {
+        if (lastVideoUrl && isWatchUrl(lastVideoUrl)) {
           log('[JP343] URL change - ending previous session');
           flushDelta();
           sendVideoEnded();
@@ -1115,7 +1112,7 @@ export default defineContentScript({
       }
     }
 
-    if (window.location.pathname.includes('/watch')) {
+    if (isWatchPath(window.location.pathname)) {
       tryInitialVideoAttach();
     }
 
@@ -1126,7 +1123,7 @@ export default defineContentScript({
         return;
       }
       if (currentVideoElement && currentVideoElement.isConnected) return;
-      if (!window.location.pathname.includes('/watch')) return;
+      if (!isWatchPath(window.location.pathname)) return;
 
       const video = findVideoElement();
       if (video) {
@@ -1139,7 +1136,7 @@ export default defineContentScript({
     intervalIds.push(videoPollingId);
 
     const chipKeepAliveId = setInterval(() => {
-      if (!window.location.pathname.includes('/watch')) return;
+      if (!isWatchPath(window.location.pathname)) return;
       if (!isDifficultyChipMounted()) updateDifficultyChip();
     }, 4000);
     intervalIds.push(chipKeepAliveId);
@@ -1189,7 +1186,7 @@ export default defineContentScript({
 
     debugLog('INIT', 'YouTube Content Script fully initialized', {
       url: window.location.href,
-      isWatchPage: window.location.pathname.includes('/watch')
+      isWatchPage: isWatchPath(window.location.pathname)
     });
   }
 });
