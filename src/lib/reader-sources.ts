@@ -1,5 +1,6 @@
 import type { Platform } from '../types';
 import { STORAGE_KEYS } from '../types';
+import { PLATFORM_LABELS } from './platform-labels';
 
 export interface ReaderSource {
   id: string;
@@ -18,7 +19,7 @@ export const READER_SOURCES: Record<'mokuro' | 'ttu', ReaderSource> = {
   mokuro: {
     id: 'mokuro',
     platform: 'mokuro',
-    label: 'Mokuro',
+    label: PLATFORM_LABELS.mokuro,
     icon: '本',
     origins: ['*://reader.mokuro.app/*'],
     scriptId: 'mokuro-reader',
@@ -30,13 +31,14 @@ export const READER_SOURCES: Record<'mokuro' | 'ttu', ReaderSource> = {
   ttu: {
     id: 'ttu',
     platform: 'ttu',
-    label: 'ttu reader',
+    label: PLATFORM_LABELS.ttu,
     icon: '📗',
     origins: ['*://reader.ttsu.app/*', '*://ttu-ebook.web.app/*'],
     scriptId: 'ttu-reader',
     scriptFile: 'content-scripts/ttu.js',
     stateKey: STORAGE_KEYS.TTU,
-    fallbackNameRe: /^ttu reader [0-9a-f]{8}$/i,
+    // old fallback names: "ttu reader"
+    fallbackNameRe: /^tts?u reader [0-9a-f]{8}$/i,
     entryUrl: 'https://reader.ttsu.app/'
   }
 };

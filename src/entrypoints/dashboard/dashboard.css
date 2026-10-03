@@ -1079,7 +1079,6 @@
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.05);
       font-size: 9px;
-      text-transform: uppercase;
       letter-spacing: 0.3px;
       font-weight: 600;
     }
@@ -2887,3 +2886,10 @@
 
 .session-platform.platform-mpchc { background: #315f85; color: #fff; }
 [data-theme="light"] .session-platform.platform-mpchc { background: #dceaf5; color: #254e70; }
+
+.session-platform.platform-reader { background: rgba(45, 212, 191, 0.12); color: #2dd4bf; }
+.session-platform.platform-podcast { background: rgba(255, 180, 84, 0.12); color: #ffb454; }
+.session-platform.platform-local_audio { background: rgba(212, 165, 116, 0.12); color: #d4a574; }
+[data-theme="light"] .session-platform.platform-reader { background: rgba(45, 212, 191, 0.10); color: #0f766e; }
+[data-theme="light"] .session-platform.platform-podcast { background: rgba(255, 180, 84, 0.12); color: #a85a00; }
+[data-theme="light"] .session-platform.platform-local_audio { background: rgba(212, 165, 116, 0.14); color: #8a5a2b; }

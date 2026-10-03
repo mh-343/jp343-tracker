@@ -1,6 +1,10 @@
 import type { Platform } from '../types';
 
-export const PLATFORM_LABELS: Record<Platform, string> = {
+// Website-only ids seen in server sessions
+export type SitePlatform = 'reader' | 'podcast' | 'local_audio';
+export type DisplayPlatform = Platform | SitePlatform;
+
+export const PLATFORM_LABELS: Record<DisplayPlatform, string> = {
   youtube: 'YouTube',
   netflix: 'Netflix',
   crunchyroll: 'Crunchyroll',
@@ -13,11 +17,18 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   asbplayer: 'asbplayer',
   mpchc: 'MPC-HC',
   mokuro: 'Mokuro',
-  ttu: 'ttu reader',
-  generic: 'Generic'
+  ttu: 'ttsu reader',
+  generic: 'Custom sites',
+  reader: 'jp343 Reader',
+  podcast: 'Podcast',
+  local_audio: 'Local audio'
 };
 
-export const PLATFORM_ICONS: Record<Platform, string> = {
+export function platformLabel(id: string): string {
+  return PLATFORM_LABELS[id as DisplayPlatform] || id;
+}
+
+export const PLATFORM_ICONS: Record<DisplayPlatform, string> = {
   youtube: '▶',
   netflix: 'N',
   crunchyroll: 'C',
@@ -31,5 +42,8 @@ export const PLATFORM_ICONS: Record<Platform, string> = {
   mpchc: '▶',
   mokuro: '本',
   ttu: '📗',
-  generic: '⏵'
+  generic: '⏵',
+  reader: '読',
+  podcast: '🎙',
+  local_audio: '🎧'
 };

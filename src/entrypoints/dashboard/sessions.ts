@@ -1,5 +1,5 @@
 import type { PendingEntry, Platform, ActivityType } from '../../types';
-import { PLATFORM_ICONS } from '../../lib/platform-labels';
+import { PLATFORM_ICONS, platformLabel, type DisplayPlatform } from '../../lib/platform-labels';
 import { activityAllowsPassive } from '../../types';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { armConfirmButton } from './delete-confirm';
@@ -524,7 +524,7 @@ export function renderSessions(entries: PendingEntry[]): void {
 
     const platform = document.createElement('span');
     platform.className = `session-platform platform-${entry.platform}`;
-    platform.textContent = entry.platform;
+    platform.textContent = platformLabel(entry.platform);
     meta.appendChild(platform);
 
     if (entry.activityType && entry.activityType !== 'watching' && !(entry.platform === 'spotify' && entry.activityType === 'listening')) {
@@ -642,7 +642,7 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
   } else {
     const ph = document.createElement('div');
     ph.className = 'session-thumb-placeholder';
-    ph.textContent = (session.platform && PLATFORM_ICONS[session.platform as Platform]) || session.icon || '⏵';
+    ph.textContent = (session.platform && PLATFORM_ICONS[session.platform as DisplayPlatform]) || session.icon || '⏵';
     item.appendChild(ph);
   }
 
@@ -676,7 +676,7 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
       platform.textContent = actType;
     } else {
       platform.className = `session-platform platform-${session.platform}`;
-      platform.textContent = session.platform;
+      platform.textContent = platformLabel(session.platform);
     }
     meta.appendChild(platform);
   }

@@ -1,6 +1,6 @@
 import type { PendingEntry, Platform } from '../../types';
 import { formatDuration, formatSessionStart, earliestIsoDate, getLocalDateString, isValidImageUrl } from '../../lib/format-utils';
-import { PLATFORM_LABELS } from '../../lib/platform-labels';
+import { platformLabel } from '../../lib/platform-labels';
 
 export interface PendingListDeps {
   listEl: HTMLElement;
@@ -230,8 +230,8 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
 
   const meta = document.createElement('div');
   meta.className = 'pending-entry-meta';
-  const platformLabel = entry.platform === 'generic' && entry.activityType ? entry.activityType : PLATFORM_LABELS[entry.platform] || entry.platform;
-  meta.append(`${platformLabel} · `);
+  const sourceText = entry.platform === 'generic' && entry.activityType ? entry.activityType : platformLabel(entry.platform);
+  meta.append(`${sourceText} · `);
   const strong = document.createElement('strong');
   strong.textContent = formatDuration(group.totalMinutes);
   meta.appendChild(strong);
