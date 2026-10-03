@@ -460,7 +460,7 @@ export default defineBackground(() => {
       flushErrors().catch(() => {});
     }
     if (alarm.name === 'jp343-streak-risk-check') {
-      maybeFireStreakRiskNotification(loadSettings, loadStats).catch(() => {});
+      maybeFireStreakRiskNotification(loadSettings, loadStats, () => fetchAndCacheServerStats(true)).catch(() => {});
     }
     if (alarm.name === 'jp343-difficulty-contrib-flush') {
       flushDifficultyContrib().catch(() => {});

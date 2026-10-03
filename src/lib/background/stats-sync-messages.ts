@@ -1,7 +1,7 @@
 import type { ExtensionMessage, DailyGoalsWire } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { loadPendingEntries } from '../pending-entries';
-import { computeTodayProgress } from './activity-progress';
+import { computeTodayProgress, isFromLogicalToday } from './activity-progress';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { tracker } from '../time-tracker';
@@ -103,13 +103,8 @@ export async function handleStatsSyncMessage(
         const serverWeekSec = cached.calendar_week_seconds ?? cached.week_seconds;
         if (serverWeekSec !== undefined && cacheDay >= mondayStr && cacheDay <= todayStr)
           weekMinutes = Math.max(weekMinutes, serverWeekSec / 60);
-        if (cached.streak !== undefined) {
-          const dayStart = getLogicalNow(dsh);
-          dayStart.setHours(dsh, 0, 0, 0);
-          // trust cache only if fetched today
-          if (cached.cachedAt !== undefined && cached.cachedAt >= dayStart.getTime()) {
-            streak = Math.max(streak, cached.streak);
-          }
+        if (cached.streak !== undefined && isFromLogicalToday(cached.cachedAt, dsh)) {
+          streak = Math.max(streak, cached.streak);
         }
         if (cached.total_seconds !== undefined) {
           const serverMinutes = Math.round(cached.total_seconds / 60);

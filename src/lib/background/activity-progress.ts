@@ -14,6 +14,13 @@ export interface TodayProgress {
   activeMinutes: number;
 }
 
+export function isFromLogicalToday(cachedAt: number | undefined, dayStartHour: number): boolean {
+  if (cachedAt === undefined) return false;
+  const dayStart = getLogicalNow(dayStartHour);
+  dayStart.setHours(dayStartHour, 0, 0, 0);
+  return cachedAt >= dayStart.getTime();
+}
+
 // null: caller uses the local map
 export function computeTodayProgress(
   cached: TodayServerBase | null,
@@ -24,9 +31,7 @@ export function computeTodayProgress(
 ): TodayProgress | null {
   if (!cached) return null;
 
-  const dayStart = getLogicalNow(dayStartHour);
-  dayStart.setHours(dayStartHour, 0, 0, 0);
-  const fresh = cached.cachedAt !== undefined && cached.cachedAt >= dayStart.getTime();
+  const fresh = isFromLogicalToday(cached.cachedAt, dayStartHour);
   const tzMatch = !cached.timezone || cached.timezone === browserTz;
   if (!fresh || !tzMatch) return null;
 
