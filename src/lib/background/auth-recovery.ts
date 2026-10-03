@@ -1,8 +1,9 @@
-import type { AuthTransition, ChannelSyncState, ExtensionSettings, JP343UserState } from '../../types';
+import type { AuthTransition, ExtensionSettings, JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
 import { mergeAuthState, normalizeAjaxUrl, stableUserId } from '../auth-helpers';
 import { buildCacheInvalidationPatch, readServerCacheEpoch } from '../server-cache';
+import { freshChannelSyncState } from './channel-sync';
 
 const DEFAULT_AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 const RECOVERY_COOLDOWN_MS = 60_000;
@@ -24,17 +25,6 @@ interface NonceRefreshData {
 
 function resolveAjaxUrl(userState: JP343UserState): string {
   return normalizeAjaxUrl(userState.ajaxUrl) ?? DEFAULT_AJAX_URL;
-}
-
-function freshChannelSyncState(ownerUserId: number): ChannelSyncState {
-  return {
-    initialized: false,
-    ownerUserId,
-    serverVersion: 0,
-    serverSnapshot: { blocked: [], whitelisted: [] },
-    pendingOps: [],
-    lastPullAt: null
-  };
 }
 
 export interface AuthCommitResult {

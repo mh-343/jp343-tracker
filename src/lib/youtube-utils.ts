@@ -1,3 +1,5 @@
+import { sameChannel } from './channel-identity';
+
 export const VIDEO_CARD_SELECTORS = [
   'ytd-rich-item-renderer',
   'ytd-video-renderer',
@@ -145,27 +147,14 @@ export function getChannelUrlFromElement(element: Element): string | null {
   return link?.href || null;
 }
 
-function extractHandleFromUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const m = url.match(/\/@([^/?#]+)/);
-  return m ? m[1].toLowerCase() : null;
-}
-
 // Check if a channel is in a list, handling @handle vs UC-ID format differences
 export function isChannelInList(
   list: Array<{ channelId: string; channelUrl?: string | null }>,
   channelId: string,
   channelUrl?: string | null
 ): boolean {
-  if (list.some(c => c.channelId === channelId)) return true;
-  const handle = extractHandleFromUrl(channelUrl);
-  if (handle) {
-    return list.some(c =>
-      c.channelId === `@${handle}` ||
-      extractHandleFromUrl(c.channelUrl) === handle
-    );
-  }
-  return false;
+  const live = { channelId, channelUrl };
+  return list.some(c => sameChannel(c, live));
 }
 
 function parseChannelUrl(pathname: string): { channelId: string; channelUrl: string } | null {

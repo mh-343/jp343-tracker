@@ -13,13 +13,16 @@ import { isChannelInList } from '../youtube-utils';
 import { stableUserId } from '../auth-helpers';
 import { loadUserState } from '../server-cache';
 
-const DEFAULT_SYNC_STATE: ChannelSyncState = {
-  initialized: false,
-  serverVersion: 0,
-  serverSnapshot: { blocked: [], whitelisted: [] },
-  pendingOps: [],
-  lastPullAt: null,
-};
+export function freshChannelSyncState(ownerUserId: number | null): ChannelSyncState {
+  return {
+    initialized: false,
+    ownerUserId,
+    serverVersion: 0,
+    serverSnapshot: { blocked: [], whitelisted: [] },
+    pendingOps: [],
+    lastPullAt: null,
+  };
+}
 
 let logFn: (...args: unknown[]) => void = () => {};
 let onSettingsWrittenFn: ((settings: ExtensionSettings) => void) | null = null;
@@ -39,11 +42,13 @@ export function initChannelSyncCallbacks(callbacks: {
 }
 
 async function loadSyncState(): Promise<ChannelSyncState> {
-  const result = await browser.storage.local.get(STORAGE_KEYS.CHANNEL_SYNC);
-  const stored = { ...DEFAULT_SYNC_STATE, ...(result[STORAGE_KEYS.CHANNEL_SYNC] || {}) };
   const owner = stableUserId(await loadUserState());
-  if (owner === null) return { ...DEFAULT_SYNC_STATE, ownerUserId: null };
-  if (stored.ownerUserId !== owner) return { ...DEFAULT_SYNC_STATE, ownerUserId: owner };
+  if (owner === null) return freshChannelSyncState(null);
+  const result = await browser.storage.local.get(STORAGE_KEYS.CHANNEL_SYNC);
+  const stored: ChannelSyncState = { ...freshChannelSyncState(owner), ...(result[STORAGE_KEYS.CHANNEL_SYNC] || {}) };
+  if (stored.ownerUserId !== owner) return freshChannelSyncState(owner);
+  // older builds marked initialized without a pull
+  if (stored.initialized && stored.lastPullAt === null) stored.initialized = false;
   return stored;
 }
 
@@ -93,7 +98,7 @@ function applyOps(
         });
         break;
       case 'unblock':
-        blockedAliases.forEach(k => blocked.delete(k));
+        blocked.delete(op.channelId);
         break;
       case 'whitelist':
         blockedAliases.forEach(k => blocked.delete(k));
@@ -106,7 +111,7 @@ function applyOps(
         });
         break;
       case 'unwhitelist':
-        whitelistedAliases.forEach(k => whitelisted.delete(k));
+        whitelisted.delete(op.channelId);
         break;
     }
   }
@@ -121,13 +126,12 @@ function opReflected(
   op: ChannelOp,
   snapshot: { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] }
 ): boolean {
-  const inBlocked = isChannelInList(snapshot.blocked, op.channelId, op.channelUrl);
-  const inWhitelisted = isChannelInList(snapshot.whitelisted, op.channelId, op.channelUrl);
+  // removals are exact: the server deletes one id
   switch (op.action) {
-    case 'block': return inBlocked;
-    case 'unblock': return !inBlocked;
-    case 'whitelist': return inWhitelisted;
-    case 'unwhitelist': return !inWhitelisted;
+    case 'block': return isChannelInList(snapshot.blocked, op.channelId, op.channelUrl);
+    case 'unblock': return !snapshot.blocked.some(c => c.channelId === op.channelId);
+    case 'whitelist': return isChannelInList(snapshot.whitelisted, op.channelId, op.channelUrl);
+    case 'unwhitelist': return !snapshot.whitelisted.some(c => c.channelId === op.channelId);
     default: return true;
   }
 }
@@ -176,8 +180,12 @@ function deduplicateSnapshot(snapshot: { blocked: BlockedChannel[]; whitelisted:
   return { blocked: dedup(snapshot.blocked), whitelisted: dedup(snapshot.whitelisted) };
 }
 
-async function updateSettingsFromView(state: ChannelSyncState, expectedOwner: number | null): Promise<void> {
-  const view = applyOps(state.serverSnapshot, state.pendingOps);
+type ChannelLists = { blocked: BlockedChannel[]; whitelisted: WhitelistedChannel[] };
+
+async function writeChannelLists(
+  compute: (settings: ExtensionSettings) => ChannelLists,
+  expectedOwner: number | null
+): Promise<void> {
   const result = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
   const settings: ExtensionSettings = result[STORAGE_KEYS.SETTINGS];
   if (!settings) return;
@@ -185,10 +193,42 @@ async function updateSettingsFromView(state: ChannelSyncState, expectedOwner: nu
     logFn('[JP343] Channel view write discarded: owner changed');
     return;
   }
+  const view = compute(settings);
   settings.blockedChannels = view.blocked;
   settings.whitelistedChannels = view.whitelisted;
   await browser.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
   onSettingsWrittenFn?.(settings);
+}
+
+async function updateSettingsFromView(state: ChannelSyncState, expectedOwner: number | null): Promise<void> {
+  await writeChannelLists(() => applyOps(state.serverSnapshot, state.pendingOps), expectedOwner);
+}
+
+// before the first pull the settings lists are the only state
+async function applyOpToSettings(op: ChannelOp, expectedOwner: number | null): Promise<void> {
+  await writeChannelLists(settings => applyOps({
+    blocked: settings.blockedChannels || [],
+    whitelisted: settings.whitelistedChannels || [],
+  }, [op]), expectedOwner);
+}
+
+function seedOpsFromLocal(state: ChannelSyncState, settings: ExtensionSettings): void {
+  const timestamp = new Date().toISOString();
+  const known = [...state.serverSnapshot.blocked, ...state.serverSnapshot.whitelisted];
+  const seed = (local: { channelId: string; channelName: string; channelUrl: string | null }, action: ChannelOp['action']) => {
+    if (isChannelInList(known, local.channelId, local.channelUrl)) return;
+    if (isChannelInList(state.pendingOps, local.channelId, local.channelUrl)) return;
+    state.pendingOps.push({
+      opId: crypto.randomUUID(),
+      action,
+      channelId: local.channelId,
+      channelName: local.channelName,
+      channelUrl: local.channelUrl,
+      timestamp,
+    });
+  };
+  for (const local of settings.blockedChannels || []) seed(local, 'block');
+  for (const local of settings.whitelistedChannels || []) seed(local, 'whitelist');
 }
 
 async function getUserState(): Promise<JP343UserState | null> {
@@ -243,10 +283,6 @@ export async function applyChannelOp(
 ): Promise<void> {
   await withStorageLock(async () => {
     const state = await loadSyncState();
-    if (!state.initialized) {
-      logFn('[JP343] Channel sync not initialized, op queued for after pull');
-    }
-
     const fullOp: ChannelOp = {
       ...op,
       opId: crypto.randomUUID(),
@@ -255,8 +291,13 @@ export async function applyChannelOp(
 
     state.pendingOps.push(fullOp);
     await saveSyncState(state);
-    await updateSettingsFromView(state, state.ownerUserId ?? null);
-    logFn('[JP343] Channel op queued:', fullOp.action, fullOp.channelId);
+    if (state.initialized) {
+      await updateSettingsFromView(state, state.ownerUserId ?? null);
+      logFn('[JP343] Channel op queued:', fullOp.action, fullOp.channelId);
+    } else {
+      await applyOpToSettings(fullOp, state.ownerUserId ?? null);
+      logFn('[JP343] Channel op applied locally, sync not initialized:', fullOp.action, fullOp.channelId);
+    }
   });
 
   scheduleFlush();
@@ -265,13 +306,6 @@ export async function applyChannelOp(
 export async function pullFromServer(): Promise<void> {
   const userState = await getUserState();
   if (!userState) {
-    await withStorageLock(async () => {
-      const state = await loadSyncState();
-      if (!state.initialized) {
-        state.initialized = true;
-        await saveSyncState(state);
-      }
-    });
     logFn('[JP343] Channel pull skipped: not logged in');
     return;
   }
@@ -291,12 +325,17 @@ export async function pullFromServer(): Promise<void> {
     return;
   }
 
-  await withStorageLock(async () => {
+  const shouldFlush = await withStorageLock(async () => {
     if (stableUserId(await loadUserState()) !== pullOwner) {
       logFn('[JP343] Channel pull discarded: owner changed');
-      return;
+      return false;
     }
     const state = await loadSyncState();
+    if (state.serverVersion !== baseVersion) {
+      logFn('[JP343] Channel pull discarded: stale response');
+      return false;
+    }
+    const firstPull = !state.initialized;
     state.serverSnapshot = deduplicateSnapshot({
       blocked: data.blocked || [],
       whitelisted: data.whitelisted || [],
@@ -304,11 +343,18 @@ export async function pullFromServer(): Promise<void> {
     state.serverVersion = data.version || 0;
     state.initialized = true;
     state.lastPullAt = new Date().toISOString();
+    if (firstPull) {
+      const settingsResult = await browser.storage.local.get(STORAGE_KEYS.SETTINGS);
+      const settings = settingsResult[STORAGE_KEYS.SETTINGS] as ExtensionSettings | undefined;
+      if (settings) seedOpsFromLocal(state, settings);
+    }
 
     await saveSyncState(state);
     await updateSettingsFromView(state, pullOwner);
-    logFn('[JP343] Channel pull complete, version:', state.serverVersion);
+    logFn('[JP343] Channel pull complete, version:', state.serverVersion, 'pending ops:', state.pendingOps.length);
+    return state.pendingOps.length > 0;
   });
+  if (shouldFlush) scheduleFlush();
 }
 
 export async function flushOpsToServer(): Promise<void> {
@@ -429,13 +475,7 @@ export async function migrateToChannelSync(): Promise<void> {
 
     const userState = await getUserState();
     if (!userState) {
-      state.initialized = true;
-      state.serverSnapshot = {
-        blocked: settings.blockedChannels || [],
-        whitelisted: settings.whitelistedChannels || [],
-      };
-      await saveSyncState(state);
-      logFn('[JP343] Channel sync migration: not logged in, using local as snapshot');
+      logFn('[JP343] Channel sync migration skipped: not logged in');
       return;
     }
 
@@ -458,33 +498,7 @@ export async function migrateToChannelSync(): Promise<void> {
       state.serverVersion = result.data.version || 0;
       state.initialized = true;
       state.lastPullAt = new Date().toISOString();
-
-      const serverBlocked = state.serverSnapshot.blocked;
-      const serverWhitelisted = state.serverSnapshot.whitelisted;
-
-      for (const local of (settings.blockedChannels || [])) {
-        if (isChannelInList(serverBlocked, local.channelId, local.channelUrl)) continue;
-        state.pendingOps.push({
-          opId: crypto.randomUUID(),
-          action: 'block',
-          channelId: local.channelId,
-          channelName: local.channelName,
-          channelUrl: local.channelUrl,
-          timestamp: local.blockedAt || new Date().toISOString(),
-        });
-      }
-
-      for (const local of (settings.whitelistedChannels || [])) {
-        if (isChannelInList(serverWhitelisted, local.channelId, local.channelUrl)) continue;
-        state.pendingOps.push({
-          opId: crypto.randomUUID(),
-          action: 'whitelist',
-          channelId: local.channelId,
-          channelName: local.channelName,
-          channelUrl: local.channelUrl,
-          timestamp: local.whitelistedAt || new Date().toISOString(),
-        });
-      }
+      seedOpsFromLocal(state, settings);
 
       await saveSyncState(state);
       await updateSettingsFromView(state, migrateOwner);

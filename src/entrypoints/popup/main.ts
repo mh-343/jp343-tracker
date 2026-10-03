@@ -10,6 +10,7 @@ import { createSyncIssues } from './sync-issues';
 import { createTodayLive, type LiveDisplay } from './today-live';
 import { createPlayerCard } from './player-card';
 import { PLATFORM_ICONS } from '../../lib/platform-labels';
+import { sameChannel } from '../../lib/channel-identity';
 import { computeActivityGoalRows, type ActivityGoalRow } from '../../lib/activity-goals';
 import { appendActivityGoalLines } from './activity-goals-tooltip';
 
@@ -486,12 +487,12 @@ elements.toggleEnabled.addEventListener('click', async () => {
 
 // --- CHANNEL BLOCKING ---
 
-function isChannelBlocked(channelId: string): boolean {
-  return blockedChannels.some(c => c.channelId === channelId);
+function storedChannels<T extends { channelId: string; channelUrl: string | null }>(list: T[], channelId: string, channelUrl: string | null): T[] {
+  return list.filter(c => sameChannel(c, { channelId, channelUrl }));
 }
 
-function isChannelWhitelisted(channelId: string): boolean {
-  return whitelistedChannels.some(c => c.channelId === channelId);
+function currentChannelUrl(): string | null {
+  return currentSession?.channelUrl || lastSkippedChannel?.channelUrl || null;
 }
 
 function updateChannelDisplay(
@@ -505,11 +506,11 @@ function updateChannelDisplay(
     elements.currentChannelName.textContent = session.channelName || session.channelId;
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
     const allowed = session.platform === 'youtube' && trackJapaneseOnly
-      && isChannelWhitelisted(session.channelId);
+      && storedChannels(whitelistedChannels, session.channelId, session.channelUrl).length > 0;
 
     elements.btnBlockChannel.style.display = allowed ? 'none' : '';
     if (!allowed) {
-      const blocked = isChannelBlocked(session.channelId);
+      const blocked = storedChannels(blockedChannels, session.channelId, session.channelUrl).length > 0;
       elements.btnBlockChannel.textContent = blocked ? 'Blocked' : 'Block';
       elements.btnBlockChannel.classList.toggle('blocked', blocked);
     }
@@ -524,7 +525,7 @@ function updateChannelDisplay(
     elements.channelLabel.textContent = 'Channel';
     elements.currentChannelName.textContent = skippedChannel.channelName || skippedChannel.channelId;
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
-    const blocked = isChannelBlocked(skippedChannel.channelId);
+    const blocked = storedChannels(blockedChannels, skippedChannel.channelId, skippedChannel.channelUrl).length > 0;
     if (blocked) {
       elements.btnBlockChannel.style.display = '';
       elements.btnBlockChannel.textContent = 'Blocked';
@@ -533,7 +534,7 @@ function updateChannelDisplay(
     } else {
       elements.btnBlockChannel.style.display = 'none';
       elements.btnAllowChannel.style.display = '';
-      const allowed = isChannelWhitelisted(skippedChannel.channelId);
+      const allowed = storedChannels(whitelistedChannels, skippedChannel.channelId, skippedChannel.channelUrl).length > 0;
       elements.btnAllowChannel.textContent = allowed ? 'Allowed' : 'Allow';
       elements.btnAllowChannel.classList.toggle('allowed', allowed);
     }
@@ -559,7 +560,7 @@ async function blockChannel(): Promise<void> {
   try {
     await browser.runtime.sendMessage({ type: 'BLOCK_CHANNEL', channel });
     blockedChannels.push(channel);
-    whitelistedChannels = whitelistedChannels.filter(c => c.channelId !== channel.channelId);
+    whitelistedChannels = whitelistedChannels.filter(c => !sameChannel(c, channel));
     updateChannelDisplay(currentSession, lastSkippedChannel);
     log('[JP343 Popup] Channel blocked:', channel.channelName);
   } catch (error) {
@@ -581,7 +582,7 @@ async function unblockChannel(channelId: string): Promise<void> {
 async function allowChannel(): Promise<void> {
   if (!currentChannelId) return;
   const channelName = currentSession?.channelName || elements.currentChannelName.textContent || currentChannelId;
-  const channelUrl = currentSession?.channelUrl || lastSkippedChannel?.channelUrl || null;
+  const channelUrl = currentChannelUrl();
   const channel: WhitelistedChannel = {
     channelId: currentChannelId,
     channelName: channelName,
@@ -591,7 +592,7 @@ async function allowChannel(): Promise<void> {
   try {
     await browser.runtime.sendMessage({ type: 'WHITELIST_CHANNEL', channel });
     whitelistedChannels.push(channel);
-    blockedChannels = blockedChannels.filter(c => c.channelId !== channel.channelId);
+    blockedChannels = blockedChannels.filter(c => !sameChannel(c, channel));
     updateChannelDisplay(currentSession, lastSkippedChannel);
     log('[JP343 Popup] Channel whitelisted:', channel.channelName);
   } catch (error) {
@@ -612,20 +613,22 @@ async function unallowChannel(channelId: string): Promise<void> {
 
 elements.btnBlockChannel.addEventListener('click', async () => {
   if (!currentChannelId) return;
-  if (isChannelBlocked(currentChannelId)) {
-    await unblockChannel(currentChannelId);
-  } else {
+  const stored = storedChannels(blockedChannels, currentChannelId, currentChannelUrl());
+  if (stored.length === 0) {
     await blockChannel();
+    return;
   }
+  for (const entry of stored) await unblockChannel(entry.channelId);
 });
 
 elements.btnAllowChannel.addEventListener('click', async () => {
   if (!currentChannelId) return;
-  if (isChannelWhitelisted(currentChannelId)) {
-    await unallowChannel(currentChannelId);
-  } else {
+  const stored = storedChannels(whitelistedChannels, currentChannelId, currentChannelUrl());
+  if (stored.length === 0) {
     await allowChannel();
+    return;
   }
+  for (const entry of stored) await unallowChannel(entry.channelId);
 });
 
 // --- TITLE EDITING ---

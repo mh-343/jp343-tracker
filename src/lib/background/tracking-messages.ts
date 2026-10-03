@@ -8,6 +8,7 @@ import { applyAttentionSample } from './attention-machine';
 import { scheduleStatusBadgeUpdate } from '../badge-service';
 import { detectJapaneseEvidence, isJapaneseContent } from '../language-detection';
 import { fetchOembedTitle, isChannelInList } from '../youtube-utils';
+import { sameChannel } from '../channel-identity';
 import { getReaderState } from './reader-sync';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../reader-sources';
@@ -482,7 +483,7 @@ export async function handleTrackingMessage(
           if (settings.trackJapaneseOnly) {
             const lastSkipped = context.getLastSkippedChannel();
             const chId = message.state.channelId;
-            if (lastSkipped && chId && (lastSkipped.channelId === chId || (lastSkipped.channelUrl && message.state.channelUrl && lastSkipped.channelUrl === message.state.channelUrl))) {
+            if (lastSkipped && chId && sameChannel(lastSkipped, { channelId: chId, channelUrl: message.state.channelUrl })) {
               const isWhitelisted = isChannelInList(settings.whitelistedChannels, chId, message.state.channelUrl);
               if (!isWhitelisted) {
                 const reEvalEvidence = await checkJapaneseVideo(message.state);

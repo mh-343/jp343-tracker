@@ -6,6 +6,8 @@ import {
   updateStatusBadge,
 } from '../badge-service';
 import { detectJapaneseEvidence } from '../language-detection';
+import { sameChannel } from '../channel-identity';
+import { isChannelInList } from '../youtube-utils';
 import { hasUsableAuth, stableUserId } from '../auth-helpers';
 import { fetchAndCacheServerSessions } from '../server-sessions';
 import { flushCustomSiteRenames } from './custom-site-names';
@@ -114,7 +116,7 @@ export async function handleSettingsMessage(
         context.log('[JP343] Channel blocked:', message.channel.channelName);
 
         const currentSession = tracker.getCurrentSession();
-        if (currentSession && currentSession.channelId === message.channel.channelId) {
+        if (currentSession && sameChannel(currentSession, message.channel)) {
           context.log('[JP343] Active session stopped for blocked channel:', message.channel.channelName);
           tracker.stopSession();
           await context.saveSessionState(null);
@@ -156,6 +158,7 @@ export async function handleSettingsMessage(
 
     case 'UNWHITELIST_CHANNEL': {
       if ('channelId' in message && message.channelId) {
+        const before = await context.loadSettings();
         await context.applyChannelOp({
           action: 'unwhitelist',
           channelId: message.channelId,
@@ -167,7 +170,12 @@ export async function handleSettingsMessage(
         const settings = await context.loadSettings();
         if (settings.trackJapaneseOnly) {
           const currentSession = tracker.getCurrentSession();
-          if (currentSession && currentSession.channelId === message.channelId) {
+          // only a session the removed rows allowed
+          const wasAllowed = !!currentSession
+            && isChannelInList(before.whitelistedChannels, currentSession.channelId ?? '', currentSession.channelUrl);
+          const stillAllowed = !!currentSession
+            && isChannelInList(settings.whitelistedChannels, currentSession.channelId ?? '', currentSession.channelUrl);
+          if (currentSession && wasAllowed && !stillAllowed) {
             const evidence = detectJapaneseEvidence({
               title: currentSession.title,
               channelName: currentSession.channelName,
@@ -184,7 +192,7 @@ export async function handleSettingsMessage(
                 context.log('[JP343] Session saved on un-whitelist:', entry.project, entry.duration_min, 'min');
               }
               context.setLastSkippedChannel({
-                channelId: message.channelId,
+                channelId: currentSession.channelId || message.channelId,
                 channelName: currentSession.channelName || message.channelId,
                 channelUrl: currentSession.channelUrl || null
               });
