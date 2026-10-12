@@ -51,7 +51,9 @@ function moveVolumeState(state: ReaderState, to: string, froms: Set<string>, mov
     delete state.completedVolumes[from];
     moves.set(PREFIX + from, PREFIX + to);
   }
-  state.pendingCompletionPushes = [...new Set(state.pendingCompletionPushes.map(pid => moves.get(pid) ?? pid))];
+  const rekey = (pids: string[]) => [...new Set(pids.map(pid => moves.get(pid) ?? pid))];
+  state.pendingCompletionPushes = rekey(state.pendingCompletionPushes);
+  if (state.completionBackfill) state.completionBackfill.pending = rekey(state.completionBackfill.pending);
 }
 
 // books with a text hash leave their old title id

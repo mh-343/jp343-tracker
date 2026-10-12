@@ -1,9 +1,10 @@
-import type { ReaderState, ReaderVolumeSnapshot, PendingEntry } from '../../types';
+import type { ReaderState, ReaderVolumeSnapshot, PendingEntry, JP343UserState } from '../../types';
 import { DEFAULT_READER_STATE, SENSOR_VERSION } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST } from '../reader-sources';
 import { loadUserState } from '../server-cache';
+import { stableUserId } from '../auth-helpers';
 import { generateProjectId } from '../time-tracker';
 import { getLocalDateString } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
@@ -25,7 +26,10 @@ async function loadReaderState(source: ReaderSource): Promise<ReaderState> {
     ...DEFAULT_READER_STATE,
     ...stored,
     completedVolumes: { ...(stored.completedVolumes ?? {}) },
-    pendingCompletionPushes: [...(stored.pendingCompletionPushes ?? [])]
+    pendingCompletionPushes: [...(stored.pendingCompletionPushes ?? [])],
+    completionBackfill: stored.completionBackfill
+      ? { ...stored.completionBackfill, pending: [...stored.completionBackfill.pending] }
+      : null
   };
 }
 
@@ -41,10 +45,24 @@ export async function getReaderState(source: ReaderSource): Promise<ReaderState>
 type CompletionResult = 'done' | 'drop' | 'retry' | 'stop';
 // rate limit or login: later pushes would fail too
 const STOP_CODES = ['E200', 'E001', 'invalid_token'];
+// stay below the server limit of 60 per minute
+const BURST_MAX = 50;
+const BURST_QUIET_MS = 65000;
+let burstCount = 0;
+let lastPushAt = 0;
 
-async function pushReadingCompletion(projectId: string): Promise<CompletionResult> {
-  const userState = await loadUserState();
+function takePushSlot(): boolean {
+  const now = Date.now();
+  if (now - lastPushAt >= BURST_QUIET_MS || now < lastPushAt) burstCount = 0;
+  if (burstCount >= BURST_MAX) return false;
+  burstCount++;
+  lastPushAt = now;
+  return true;
+}
+
+async function pushReadingCompletion(userState: JP343UserState | null, projectId: string): Promise<CompletionResult> {
   if (!userState?.isLoggedIn || !userState.extApiToken) return 'stop';
+  if (!takePushSlot()) return 'stop';
   const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
   const body = new URLSearchParams({
     action: 'jp343_extension_reading_mark_completed',
@@ -65,25 +83,56 @@ async function pushReadingCompletion(projectId: string): Promise<CompletionResul
   }
 }
 
-async function drainAll(): Promise<void> {
-  for (const source of READER_SOURCE_LIST) {
+// older versions saw some volumes done but never sent them
+async function startCompletionBackfill(source: ReaderSource, userId: number): Promise<void> {
+  await withStorageLock(async () => {
     const state = await loadReaderState(source);
-    if (!state.pendingCompletionPushes.length) continue;
-    const settled: string[] = [];
-    let stopped = false;
-    for (const pid of state.pendingCompletionPushes) {
-      const result = await pushReadingCompletion(pid);
-      if (result === 'done' || result === 'drop') settled.push(pid);
-      if (result === 'stop') { stopped = true; break; }
+    if (state.ownerId !== null && state.ownerId !== userId) return;
+    if (state.completionBackfillDone?.includes(userId) || state.completionBackfill?.userId === userId) return;
+    const pending = Object.keys(state.completedVolumes)
+      .filter(id => state.completedVolumes[id])
+      .map(id => generateProjectId(source.platform, '', id));
+    state.ownerId = userId;
+    state.pendingCompletionPushes = [...new Set([...state.pendingCompletionPushes, ...pending])];
+    state.completionBackfill = pending.length ? { userId, pending } : null;
+    if (!pending.length) state.completionBackfillDone = [...(state.completionBackfillDone ?? []), userId];
+    await saveReaderState(source, state);
+  });
+}
+
+async function settleCompletionPush(source: ReaderSource, pid: string, userId: number | null): Promise<void> {
+  await withStorageLock(async () => {
+    const state = await loadReaderState(source);
+    state.pendingCompletionPushes = state.pendingCompletionPushes.filter(p => p !== pid);
+    const backfill = state.completionBackfill;
+    if (backfill && backfill.userId === userId) {
+      backfill.pending = backfill.pending.filter(p => p !== pid);
+      if (!backfill.pending.length) {
+        state.completionBackfillDone = [...new Set([...(state.completionBackfillDone ?? []), backfill.userId])];
+        state.completionBackfill = null;
+      }
     }
-    if (settled.length) {
-      await withStorageLock(async () => {
-        const s = await loadReaderState(source);
-        s.pendingCompletionPushes = s.pendingCompletionPushes.filter(p => !settled.includes(p));
-        await saveReaderState(source, s);
-      });
+    await saveReaderState(source, state);
+  });
+}
+
+async function drainAll(): Promise<void> {
+  const userState = await loadUserState();
+  const userId = stableUserId(userState);
+  for (const source of READER_SOURCE_LIST) {
+    if (userId !== null && userState?.isLoggedIn && userState.extApiToken) await startCompletionBackfill(source, userId);
+    const state = await loadReaderState(source);
+    const old = new Set(state.completionBackfill?.pending ?? []);
+    // fresh completions go before the re-send
+    const queue = [
+      ...state.pendingCompletionPushes.filter(pid => !old.has(pid)),
+      ...state.pendingCompletionPushes.filter(pid => old.has(pid))
+    ];
+    for (const pid of queue) {
+      const result = await pushReadingCompletion(userState, pid);
+      if (result === 'stop') return;
+      if (result !== 'retry') await settleCompletionPush(source, pid, userId);
     }
-    if (stopped) return;
   }
 }
 
@@ -131,6 +180,7 @@ export async function adoptReaderOwner(userId: number): Promise<void> {
         state.pendingCompletionPushes = [];
         state.contentIds = {};
         state.takeovers = {};
+        state.completionBackfill = null;
       }
       state.ownerId = userId;
       await saveReaderState(source, state);

@@ -550,6 +550,9 @@ export interface ReaderState {
   contentIds?: Record<string, string>;
   // ttsu: content id -> old id, until the server took it
   takeovers?: Record<string, string>;
+  // one re-send of all completions per account
+  completionBackfill?: { userId: number; pending: string[] } | null;
+  completionBackfillDone?: number[];
 }
 
 export const DEFAULT_READER_STATE: ReaderState = {
