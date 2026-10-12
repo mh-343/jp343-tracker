@@ -51,7 +51,7 @@ import {
   handleChannelFlushAlarm,
   migrateToChannelSync,
 } from '../lib/background/channel-sync';
-import { syncReaderRegistration, getReaderState, drainCompletionPushes, adoptReaderOwner } from '../lib/background/reader-sync';
+import { syncReaderRegistration, getReaderState, drainCompletionPushes, adoptReaderOwner, readerTakeovers, confirmReaderTakeovers } from '../lib/background/reader-sync';
 import { READER_SOURCE_LIST } from '../lib/reader-sources';
 import { storePendingEntry } from '../lib/background/pending-store';
 import { syncCustomSitesRegistration } from '../lib/background/custom-sites';
@@ -409,6 +409,8 @@ export default defineBackground(() => {
       }
       return completed;
     },
+    takeovers: readerTakeovers,
+    onTakeoverAccepted: projectIds => { void confirmReaderTakeovers(projectIds); },
     onSuccess: channelIds => {
       void clearReloginHint();
       void retryQueuedVotes(channelIds);

@@ -11,6 +11,8 @@ interface EntrySyncDeps {
   recover: (user?: JP343UserState | null) => Promise<AuthRecoveryResult>;
   onAuthenticated?: () => void;
   completedProjects: () => Promise<Set<string>>;
+  takeovers: () => Promise<Map<string, string>>;
+  onTakeoverAccepted: (projectIds: string[]) => void;
   onSuccess: (channelIds: (string | null)[]) => void;
   onSettled: () => void;
 }
@@ -24,8 +26,10 @@ interface WireResponse {
 
 const emptyResult = (): DirectSyncResult => ({ attempted: 0, succeeded: 0, failed: 0, noAuth: false, nonceMissing: false });
 
-async function postEntries(context: ServerRequestContext, attempts: SyncAttempt[], single: boolean, completed: Set<string>): Promise<WireResponse> {
-  const entries = attempts.map(a => buildEntryParams(a.entry, completed));
+async function postEntries(
+  context: ServerRequestContext, attempts: SyncAttempt[], single: boolean, completed: Set<string>, takeovers: Map<string, string>
+): Promise<WireResponse> {
+  const entries = attempts.map(a => buildEntryParams(a.entry, completed, takeovers));
   const params = new URLSearchParams({
     action: single ? 'jp343_extension_log_time' : 'jp343_extension_log_time_batch',
     ext_api_token: context.credential,
@@ -92,13 +96,14 @@ export function createEntrySync(deps: EntrySyncDeps): () => Promise<DirectSyncRe
     let reserved = await reserveSyncAttempts(context);
     if (!reserved.attempts.length) return { ...emptyResult(), deferredUntil: reserved.deferredUntil };
     const completed = await deps.completedProjects();
+    const takeovers = await deps.takeovers();
     const result = emptyResult();
     let recovered = false;
 
     async function request(attempts: SyncAttempt[], single: boolean): Promise<{ outcomes: Map<string, SyncOutcome>; response?: WireResponse }> {
       if (!context || !await isContextStillCurrent(context)) return { outcomes: new Map() };
       try {
-        const response = await postEntries(context, attempts, single, completed);
+        const response = await postEntries(context, attempts, single, completed, takeovers);
         const outcomes = single
           ? new Map([[attempts[0].entry.id, responseOutcome(response)]])
           : batchOutcomes(response, attempts);
@@ -136,6 +141,14 @@ export function createEntrySync(deps: EntrySyncDeps): () => Promise<DirectSyncRe
       result.succeeded += applied.succeeded;
       result.failed += applied.failed;
       if (applied.succeeded) deps.onSuccess(attempts.filter(a => received.outcomes.get(a.entry.id)?.kind === 'success').map(a => a.entry.channelId));
+      // sent with legacy_project_id and accepted, duplicate too
+      const taken = [...new Set(attempts
+        .filter(a => received.outcomes.get(a.entry.id)?.kind === 'success' && takeovers.has(a.entry.project_id))
+        .map(a => a.entry.project_id))];
+      if (taken.length) {
+        for (const pid of taken) takeovers.delete(pid);
+        deps.onTakeoverAccepted(taken);
+      }
     }
 
     if (!reserved.single) {

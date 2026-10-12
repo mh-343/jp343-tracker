@@ -7,6 +7,8 @@ import { loadUserState } from '../server-cache';
 import { generateProjectId } from '../time-tracker';
 import { getLocalDateString } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
+import { isValidCharPosition } from '../entry-payload';
+import { adoptTtuIds, rekeyPendingTtu } from './ttu-identity';
 
 const WALLCLOCK_SLACK_MIN = 1;
 const DAILY_CAP_MIN = 720;
@@ -35,9 +37,14 @@ export async function getReaderState(source: ReaderSource): Promise<ReaderState>
   return loadReaderState(source);
 }
 
-async function pushReadingCompletion(projectId: string): Promise<boolean> {
+// errors come as HTTP 200 with success false
+type CompletionResult = 'done' | 'drop' | 'retry' | 'stop';
+// rate limit or login: later pushes would fail too
+const STOP_CODES = ['E200', 'E001', 'invalid_token'];
+
+async function pushReadingCompletion(projectId: string): Promise<CompletionResult> {
   const userState = await loadUserState();
-  if (!userState?.isLoggedIn || !userState.extApiToken) return false;
+  if (!userState?.isLoggedIn || !userState.extApiToken) return 'stop';
   const ajaxUrl = userState.ajaxUrl || 'https://jp343.com/wp-admin/admin-ajax.php';
   const body = new URLSearchParams({
     action: 'jp343_extension_reading_mark_completed',
@@ -47,29 +54,70 @@ async function pushReadingCompletion(projectId: string): Promise<boolean> {
   });
   try {
     const r = await fetch(ajaxUrl, { method: 'POST', credentials: 'include', body, signal: AbortSignal.timeout(15000) });
-    return r.ok;
+    if (!r.ok) return 'stop';
+    const reply = await r.json().catch(() => null) as { success?: boolean; data?: { code?: string } } | null;
+    if (reply?.success === true) return 'done';
+    const code = reply?.data?.code;
+    if (code === 'E400') return 'drop';
+    return !code || STOP_CODES.includes(code) ? 'stop' : 'retry';
   } catch {
-    return false;
+    return 'stop';
   }
 }
 
-// retry unconfirmed pushes; drop accepted ones
-export async function drainCompletionPushes(): Promise<void> {
+async function drainAll(): Promise<void> {
   for (const source of READER_SOURCE_LIST) {
     const state = await loadReaderState(source);
     if (!state.pendingCompletionPushes.length) continue;
-    const done: string[] = [];
+    const settled: string[] = [];
+    let stopped = false;
     for (const pid of state.pendingCompletionPushes) {
-      if (await pushReadingCompletion(pid)) done.push(pid);
+      const result = await pushReadingCompletion(pid);
+      if (result === 'done' || result === 'drop') settled.push(pid);
+      if (result === 'stop') { stopped = true; break; }
     }
-    if (done.length) {
+    if (settled.length) {
       await withStorageLock(async () => {
         const s = await loadReaderState(source);
-        s.pendingCompletionPushes = s.pendingCompletionPushes.filter(p => !done.includes(p));
+        s.pendingCompletionPushes = s.pendingCompletionPushes.filter(p => !settled.includes(p));
         await saveReaderState(source, s);
       });
     }
+    if (stopped) return;
   }
+}
+
+let draining: Promise<void> | null = null;
+
+// retry unconfirmed pushes; one drain at a time
+export function drainCompletionPushes(): Promise<void> {
+  draining ??= drainAll().finally(() => { draining = null; });
+  return draining;
+}
+
+// project id -> old project id, until the server took it
+export async function readerTakeovers(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const source of READER_SOURCE_LIST) {
+    const state = await loadReaderState(source);
+    for (const [id, legacy] of Object.entries(state.takeovers ?? {})) {
+      out.set(generateProjectId(source.platform, '', id), generateProjectId(source.platform, '', legacy));
+    }
+  }
+  return out;
+}
+
+export async function confirmReaderTakeovers(projectIds: string[]): Promise<void> {
+  await withStorageLock(async () => {
+    for (const source of READER_SOURCE_LIST) {
+      const state = await loadReaderState(source);
+      const prefix = `ext_${source.platform}_`;
+      const taken = projectIds.filter(pid => pid.startsWith(prefix) && state.takeovers?.[pid.slice(prefix.length)]);
+      if (!taken.length || !state.takeovers) continue;
+      for (const pid of taken) delete state.takeovers[pid.slice(prefix.length)];
+      await saveReaderState(source, state);
+    }
+  });
 }
 
 // clear tracking when a different account takes over
@@ -81,6 +129,8 @@ export async function adoptReaderOwner(userId: number): Promise<void> {
         state.baselines = {};
         state.completedVolumes = {};
         state.pendingCompletionPushes = [];
+        state.contentIds = {};
+        state.takeovers = {};
       }
       state.ownerId = userId;
       await saveReaderState(source, state);
@@ -170,6 +220,24 @@ function volumeName(source: ReaderSource, vol: ReaderVolumeSnapshot, id: string)
   return vol.volumeTitle || vol.seriesTitle || `${source.label} ${id.slice(0, 8)}`;
 }
 
+function readingFields(source: ReaderSource, vol: ReaderVolumeSnapshot): Partial<PendingEntry> {
+  if (source.platform === 'ttu') {
+    return isValidCharPosition(vol.readingOffset, vol.readingTotal)
+      ? { readingUnit: 'char', readingOffset: vol.readingOffset, readingTotal: vol.readingTotal }
+      : {};
+  }
+  const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
+  const seriesUuid = text(vol.seriesUuid);
+  const seriesTitle = text(vol.seriesTitle);
+  const volumeTitle = text(vol.volumeTitle);
+  return {
+    readingCurrentPage: vol.currentPage,
+    ...(seriesUuid ? { seriesUuid } : {}),
+    ...(seriesTitle ? { seriesTitle } : {}),
+    ...(volumeTitle ? { volumeTitle } : {})
+  };
+}
+
 function pruneDays(creditedByDay: Record<string, number>): Record<string, number> {
   const days = Object.keys(creditedByDay).sort();
   if (days.length <= DAY_RETENTION) return creditedByDay;
@@ -195,20 +263,25 @@ export async function ingestReaderSnapshot(
     const state = await loadReaderState(source);
     if (!state.enabled) return;
 
+    let snapshot = volumes;
+    if (source.platform === 'ttu') {
+      const adopted = adoptTtuIds(state, volumes);
+      await rekeyPendingTtu(adopted.moves);
+      snapshot = adopted.volumes;
+    }
+
     let creditedTotal = 0;
 
-    for (const id of Object.keys(volumes)) {
-      const vol = volumes[id];
+    for (const id of Object.keys(snapshot)) {
+      const vol = snapshot[id];
       if (vol.deleted || !id) continue;
 
       const baseline = state.baselines[id];
+      // first sight counts too; no duration needed
       if (vol.completed && !state.completedVolumes[id]) {
         state.completedVolumes[id] = true;
-        // only tracked volumes; first-sight has no time
-        if (baseline) {
-          const pid = generateProjectId(source.platform, '', id);
-          if (!state.pendingCompletionPushes.includes(pid)) state.pendingCompletionPushes.push(pid);
-        }
+        const pid = generateProjectId(source.platform, '', id);
+        if (!state.pendingCompletionPushes.includes(pid)) state.pendingCompletionPushes.push(pid);
       }
       // First sight or reset: rebase only
       if (!baseline || vol.effectiveMin < baseline.lastEffectiveMin || vol.chars < baseline.lastChars) {
@@ -250,7 +323,7 @@ export async function ingestReaderSnapshot(
           channelUrl: null,
           activityType: 'reading',
           chars: charsDelta,
-          readingCurrentPage: vol.currentPage,
+          ...readingFields(source, vol),
           readingCompleted: vol.completed,
           trackingMode: settings.trackJapaneseOnly ? 'jp_only' : 'all',
           sensorVersion: SENSOR_VERSION

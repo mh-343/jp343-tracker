@@ -150,6 +150,12 @@ export interface PendingEntry {
   chars?: number;
   readingCurrentPage?: number;
   readingCompleted?: boolean;
+  readingUnit?: 'char';
+  readingOffset?: number;
+  readingTotal?: number;
+  seriesUuid?: string;
+  seriesTitle?: string;
+  volumeTitle?: string;
   langSignal?: 'ja';
   langSignalSrc?: LangSignalSource;
   asrState?: AsrState;
@@ -514,6 +520,11 @@ export interface ReaderVolumeSnapshot {
   seriesUuid: string | null;
   completed: boolean;
   deleted: boolean;
+  // char position, ttsu only
+  readingOffset?: number;
+  readingTotal?: number;
+  // old title ids of a ttsu book, oldest first
+  legacyIds?: string[];
 }
 
 export interface ReaderBaseline {
@@ -535,6 +546,10 @@ export interface ReaderState {
   pendingCompletionPushes: string[];
   // account this tracking belongs to; switch clears it
   ownerId: number | null;
+  // ttsu: old title id -> content id
+  contentIds?: Record<string, string>;
+  // ttsu: content id -> old id, until the server took it
+  takeovers?: Record<string, string>;
 }
 
 export const DEFAULT_READER_STATE: ReaderState = {

@@ -18,6 +18,23 @@ export function findMergeTarget(
   );
 }
 
+// furthest page and char position win, done stays done
+function mergeReadingState(target: PendingEntry, entry: PendingEntry): void {
+  if (entry.readingCurrentPage != null && (target.readingCurrentPage == null || entry.readingCurrentPage > target.readingCurrentPage)) {
+    target.readingCurrentPage = entry.readingCurrentPage;
+  }
+  if (entry.readingCompleted) target.readingCompleted = true;
+  if (entry.readingUnit === 'char' && entry.readingOffset != null
+      && (target.readingUnit !== 'char' || target.readingOffset == null || entry.readingOffset >= target.readingOffset)) {
+    target.readingUnit = 'char';
+    target.readingOffset = entry.readingOffset;
+    target.readingTotal = entry.readingTotal;
+  }
+  if (entry.seriesUuid) target.seriesUuid = entry.seriesUuid;
+  if (entry.seriesTitle) target.seriesTitle = entry.seriesTitle;
+  if (entry.volumeTitle) target.volumeTitle = entry.volumeTitle;
+}
+
 export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry): void {
   const wasSent = mergeTarget.synced || mergeTarget.syncState?.everSent || mergeTarget.syncAttempts > 0 || mergeTarget.serverEntryId != null;
   const source = readerForPlatform(entry.platform);
@@ -29,6 +46,7 @@ export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry)
   }
   mergeTarget.duration_min += entry.duration_min;
   if (entry.chars) mergeTarget.chars = (mergeTarget.chars ?? 0) + entry.chars;
+  mergeReadingState(mergeTarget, entry);
   if (!mergeTarget.thumbnail && entry.thumbnail) {
     mergeTarget.thumbnail = entry.thumbnail;
   }

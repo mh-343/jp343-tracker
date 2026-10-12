@@ -1,5 +1,6 @@
+import type { ReaderState, ReaderVolumeSnapshot } from '../../types';
 import { startReaderContentLoop } from '../../lib/reader-content';
-import { buildTtuSnapshot } from './ttu-parsers';
+import { buildTtuSnapshot, openBookId } from './ttu-parsers';
 
 export default defineContentScript({
   matches: ['*://reader.ttsu.app/*', '*://ttu-ebook.web.app/*'],
@@ -23,12 +24,35 @@ export default defineContentScript({
     const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
     log('[JP343] ttu content script loaded');
 
+    const contentHashes = new Map<number, string | null>();
+    let building: Promise<Record<string, ReaderVolumeSnapshot>> | null = null;
+
+    async function knownContentIds(): Promise<Record<string, string>> {
+      try {
+        const reply = await browser.runtime.sendMessage({ type: 'READER_GET_STATE', source: 'ttu' }) as
+          { data?: { readerState?: Partial<ReaderState> } } | undefined;
+        return reply?.data?.readerState?.contentIds ?? {};
+      } catch {
+        return {};
+      }
+    }
+
+    async function buildSnapshot(): Promise<Record<string, ReaderVolumeSnapshot>> {
+      try {
+        if (!browser.runtime?.id) return {};
+      } catch {
+        return {};
+      }
+      return buildTtuSnapshot({ known: await knownContentIds(), hashes: contentHashes, openDataId: openBookId(location.href) });
+    }
+
     startReaderContentLoop({
       source: 'ttu',
       log,
       intervalIds,
       signal: ac.signal,
-      buildSnapshot: buildTtuSnapshot
+      // first run reads every book once
+      buildSnapshot: () => (building ??= buildSnapshot().finally(() => { building = null; }))
     });
   }
 });
