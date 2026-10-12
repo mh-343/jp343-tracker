@@ -5,6 +5,7 @@ import { clampLevel } from '../difficulty-seeds';
 import type { DifficultySeed, ChannelBounds } from '../difficulty-seeds';
 import { withStorageLock } from '../storage-lock';
 import { queueDifficultyContrib } from './difficulty-contrib';
+import { wireChannelName } from '../entry-payload';
 
 const HOTSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/hotset';
 const VIDEOSET_URL = 'https://jp343.com/wp-json/jp343/v1/difficulty/videoset';
@@ -336,7 +337,7 @@ export async function handleGetVoteState(
   params.set('ext_api_token', user.extApiToken);
   params.set('platform', 'youtube');
   if (message.channelId) params.set('channel_id', message.channelId);
-  if (message.channelName) params.set('channel_name', message.channelName);
+  if (message.channelName) params.set('channel_name', wireChannelName(message.channelName));
   if (message.channelUrl) params.set('channel_url', message.channelUrl);
   if (videoId) params.set('video_id', videoId);
 
@@ -410,7 +411,7 @@ async function postVoteToServer(user: JP343UserState, vote: VotePayload): Promis
   params.set('ext_api_token', user.extApiToken);
   params.set('platform', 'youtube');
   if (vote.channelId) params.set('channel_id', vote.channelId);
-  if (vote.channelName) params.set('channel_name', vote.channelName);
+  if (vote.channelName) params.set('channel_name', wireChannelName(vote.channelName));
   if (vote.channelUrl) params.set('channel_url', vote.channelUrl);
   if (vote.videoId) params.set('video_id', vote.videoId);
   params.set('choice', vote.choice);

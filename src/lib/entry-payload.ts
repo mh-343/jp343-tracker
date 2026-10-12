@@ -1,6 +1,17 @@
 import type { PendingEntry } from '../types';
 import { buildSensorParams } from './background/sensor-params';
 
+// 255 column, headroom for "&lt;"
+const MAX_CHANNEL_NAME_CHARS = 200;
+
+function capChars(text: string, max: number): string {
+  return text.length <= max ? text : Array.from(text).slice(0, max).join('');
+}
+
+export function wireChannelName(name: string | null | undefined): string {
+  return name ? capChars(name, MAX_CHANNEL_NAME_CHARS) : '';
+}
+
 export function buildEntryParams(entry: PendingEntry, completedPids: Set<string> = new Set()): Record<string, string> {
   const completed = completedPids.has(entry.project_id) ? true : entry.readingCompleted;
   return {
@@ -15,7 +26,7 @@ export function buildEntryParams(entry: PendingEntry, completedPids: Set<string>
     project_url: entry.url,
     project_thumbnail: entry.thumbnail || '',
     channel_id: entry.channelId || '',
-    channel_name: entry.channelName || '',
+    channel_name: wireChannelName(entry.channelName),
     channel_url: entry.channelUrl || '',
     video_title: entry.project,
     resource_url: entry.url,
