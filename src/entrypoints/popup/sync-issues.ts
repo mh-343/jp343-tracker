@@ -15,9 +15,15 @@ function issueText(entry: PendingEntry, status: SyncStatus): string {
   }
   if (!status.signedIn || status.relogin || entry.syncState?.failureKind === 'auth') return 'Sign in to sync.';
   const next = Math.max(status.nextDispatchAt, entry.syncState?.nextAttemptAt ?? 0);
-  return next > Date.now()
-    ? `Waiting to retry in about ${Math.max(1, Math.ceil((next - Date.now()) / 60_000))} min.`
+  const waiting = next > Date.now()
+    ? `Waiting to retry in about ${minutesUntil(next)} min.`
     : 'Waiting to retry automatically.';
+  const detail = entry.syncState?.errorDetail;
+  return typeof detail === 'string' && detail ? `${waiting} Last error: ${detail}` : waiting;
+}
+
+function minutesUntil(time: number): number {
+  return Math.max(1, Math.ceil((time - Date.now()) / 60_000));
 }
 
 export function createSyncIssues(root: HTMLElement, dayStartHour: () => number): { refresh: () => Promise<void> } {
@@ -42,17 +48,21 @@ export function createSyncIssues(root: HTMLElement, dayStartHour: () => number):
     busy = true;
     message = 'Working…';
     render();
+    let retried = false;
     try {
       const response = await browser.runtime.sendMessage(request) as SyncReply;
       if (!response?.success) throw new Error(response?.error || 'Please try again.');
-      message = request.type === 'RETRY_PENDING_SYNC'
-        ? 'Retry requested. Any server wait still applies.' : 'Moved to Recently deleted in the dashboard.';
+      retried = request.type === 'RETRY_PENDING_SYNC';
+      message = retried ? 'Retry requested.' : 'Moved to Recently deleted in the dashboard.';
     } catch (error) {
       message = error instanceof Error ? error.message : 'Please try again.';
     } finally {
       busy = false;
       signature = '';
       await refresh();
+      if (retried && status && status.serverWaitUntil > Date.now()) {
+        message = `Retry requested. jp343.com asked for a pause, next try in about ${minutesUntil(status.serverWaitUntil)} min.`;
+      }
       render();
     }
   }

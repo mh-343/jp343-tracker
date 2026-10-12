@@ -179,6 +179,8 @@ export async function applySyncOutcomes(
         sync.nextAttemptAt = Date.now() + retryDelay(sync.failures);
         entry.syncAttempts = Math.min(9, sync.failures);
         entry.lastSyncError = outcome.code;
+        if (outcome.detail) sync.errorDetail = outcome.detail;
+        else delete sync.errorDetail;
         if (outcome.kind === 'blocked' && allowed) countEvent(state, entry.platform, 'sync_entry_blocked');
         failed++;
       }
@@ -194,9 +196,14 @@ export async function retryPendingSync(entryIds?: string[]): Promise<void> {
     const state = await readSyncQueue();
     await normalizeQueue(pending, state, Date.now());
     const ids = entryIds ? new Set(entryIds) : null;
+    let requested = false;
     for (const entry of pending) {
-      if (!entry.synced && entry.syncState?.status === 'retry' && (!ids || ids.has(entry.id))) entry.syncState.nextAttemptAt = 0;
+      if (!entry.synced && entry.syncState?.status === 'retry' && (!ids || ids.has(entry.id))) {
+        entry.syncState.nextAttemptAt = 0;
+        requested = true;
+      }
     }
+    if (requested) state.notBefore = 0;
     await writeQueue(pending, state);
   });
 }

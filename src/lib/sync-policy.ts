@@ -16,6 +16,7 @@ export interface EntrySyncState {
   nextAttemptAt: number;
   errorCode: string | null;
   failureKind: SyncFailureKind | null;
+  errorDetail?: string;
   attemptId?: string;
   everSent?: boolean;
   rescued?: boolean;
@@ -23,7 +24,7 @@ export interface EntrySyncState {
 
 export type SyncOutcome =
   | { kind: 'success'; entryId: number }
-  | { kind: 'retry' | 'blocked' | 'auth'; code: string; failureKind: SyncFailureKind };
+  | { kind: 'retry' | 'blocked' | 'auth'; code: string; failureKind: SyncFailureKind; detail?: string };
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -45,6 +46,11 @@ export function classifySyncResult(value: unknown, batch = false): SyncOutcome {
     return { kind: 'blocked', code, failureKind: 'input' };
   }
   return { kind: 'retry', code: ['E200', 'E300'].includes(code) ? code : 'unknown_response', failureKind: 'server' };
+}
+
+export function syncErrorDetail(error: unknown): string {
+  const text = error instanceof Error ? (error.message ? `${error.name}: ${error.message}` : error.name) : String(error);
+  return Array.from(text.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>').trim()).slice(0, 120).join('');
 }
 
 export function protocolFailure(): SyncOutcome {

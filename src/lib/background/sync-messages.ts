@@ -10,6 +10,7 @@ export interface SyncStatus {
   signedIn: boolean;
   relogin: boolean;
   nextDispatchAt: number;
+  serverWaitUntil: number;
 }
 
 export async function handleSyncMessage(message: ExtensionMessage, context: BackgroundMessageContext): Promise<unknown> {
@@ -36,7 +37,8 @@ export async function handleSyncMessage(message: ExtensionMessage, context: Back
   const data: SyncStatus = {
     entries: pending.filter(e => hasSyncIssue(e) || (relogin && !e.synced)),
     signedIn: !!user?.isLoggedIn, relogin,
-    nextDispatchAt: Math.max(queue.notBefore, queue.serverNotBefore)
+    nextDispatchAt: Math.max(queue.notBefore, queue.serverNotBefore),
+    serverWaitUntil: queue.serverNotBefore
   };
   return { success: true, data };
 }

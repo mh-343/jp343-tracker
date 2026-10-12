@@ -1,6 +1,6 @@
 import type { DirectSyncResult, JP343UserState } from '../../types';
 import { buildEntryParams } from '../entry-payload';
-import { asRecord, classifySyncResult, protocolFailure, retryAfterTime, SYNC_RETRY_BASE_MS } from '../sync-policy';
+import { asRecord, classifySyncResult, protocolFailure, retryAfterTime, syncErrorDetail, SYNC_RETRY_BASE_MS } from '../sync-policy';
 import type { SyncOutcome } from '../sync-policy';
 import { captureServerRequestContext, isContextStillCurrent, loadUserState, type ServerRequestContext } from '../server-cache';
 import type { AuthRecoveryResult } from './auth-recovery';
@@ -118,17 +118,20 @@ export function createEntrySync(deps: EntrySyncDeps): () => Promise<DirectSyncRe
           result.noAuth = true;
         }
         return { outcomes, response };
-      } catch {
-        return { outcomes: new Map(attempts.map(a => [a.entry.id, { kind: 'retry', code: 'network_error', failureKind: 'network' }])) };
+      } catch (error) {
+        const outcome: SyncOutcome = { kind: 'retry', code: 'network_error', failureKind: 'network', detail: syncErrorDetail(error) };
+        return { outcomes: new Map(attempts.map(a => [a.entry.id, outcome])) };
       }
     }
 
     async function commit(attempts: SyncAttempt[], received: Awaited<ReturnType<typeof request>>): Promise<void> {
       if (!context) return;
       result.attempted += attempts.length;
-      const commonFailure = !received.response || received.response.status === 429 || received.response.status >= 500
-        || [...received.outcomes.values()].some(o => o.kind === 'retry' && o.code === 'E200');
-      const waitUntil = Math.max(received.response?.retryAt ?? 0, commonFailure ? Date.now() + SYNC_RETRY_BASE_MS : 0);
+      const response = received.response;
+      // a global pause only when jp343.com asked
+      const serverWait = !!response && (response.status === 429 || response.status >= 500
+        || [...received.outcomes.values()].some(o => o.kind === 'retry' && o.code === 'E200'));
+      const waitUntil = Math.max(response?.retryAt ?? 0, serverWait ? Date.now() + SYNC_RETRY_BASE_MS : 0);
       const applied = await applySyncOutcomes(attempts, received.outcomes, context, waitUntil);
       result.succeeded += applied.succeeded;
       result.failed += applied.failed;
