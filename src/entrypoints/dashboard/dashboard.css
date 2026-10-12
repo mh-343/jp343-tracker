@@ -710,6 +710,31 @@
       cursor: pointer;
     }
     .anki-deck-row input { cursor: pointer; }
+    .gsm-import { margin-top: 16px; }
+    .gsm-import-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .gsm-import-list:empty { display: none; }
+    .gsm-import-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .gsm-import-row:hover .gsm-import-name { text-decoration: underline; }
+    .gsm-import-row input { cursor: pointer; margin-top: 3px; }
+    .gsm-import-row.disabled { cursor: default; opacity: 0.6; }
+    .gsm-import-row.disabled:hover .gsm-import-name { text-decoration: none; }
+    .gsm-import-meta { display: block; font-size: 12px; color: var(--text-secondary); }
+    .gsm-import-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .gsm-import-actions .export-btn:disabled { opacity: 0.5; cursor: default; }
 
     .anki-typesplit { margin-top: 14px; }
     .anki-types {
@@ -2886,6 +2911,8 @@
 
 .session-platform.platform-mpchc { background: #315f85; color: #fff; }
 [data-theme="light"] .session-platform.platform-mpchc { background: #dceaf5; color: #254e70; }
+.session-platform.platform-gsm { background: rgba(234, 179, 8, 0.14); color: #f5dc85; }
+[data-theme="light"] .session-platform.platform-gsm { background: rgba(234, 179, 8, 0.14); color: #854d0e; }
 
 .session-platform.platform-reader { background: rgba(45, 212, 191, 0.12); color: #2dd4bf; }
 .session-platform.platform-podcast { background: rgba(255, 180, 84, 0.12); color: #ffb454; }

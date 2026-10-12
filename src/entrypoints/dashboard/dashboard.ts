@@ -1,7 +1,9 @@
 import type { PendingEntry, ExtensionStats, JP343UserState, TrackingSession } from '../../types';
 import { DEFAULT_STATS, STORAGE_KEYS } from '../../types';
 import { getLocalDateString } from '../../lib/format-utils';
-import { normalizeUserId } from '../../lib/auth-helpers';
+import { isDashboardSignedIn, normalizeUserId } from '../../lib/auth-helpers';
+import { gsmImportViewEntries, toGsmImportStore } from '../../lib/gsm/import';
+import { gsmViewEntries, toGsmLocalStore } from '../../lib/gsm/local-mirror';
 import { fetchServerStats, fetchServerSessions, fetchReadingStats } from './api';
 import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
@@ -39,13 +41,23 @@ async function loadData(): Promise<DashboardData> {
     STORAGE_KEYS.STATS,
     STORAGE_KEYS.USER,
     STORAGE_KEYS.SESSION,
-    STORAGE_KEYS.SETTINGS
+    STORAGE_KEYS.SETTINGS,
+    STORAGE_KEYS.GSM_LOCAL,
+    STORAGE_KEYS.GSM_IMPORT
   ]);
+  const pending: PendingEntry[] = result[STORAGE_KEYS.PENDING] || [];
+  const userState: JP343UserState | null = result[STORAGE_KEYS.USER] || null;
 
   return {
-    entries: result[STORAGE_KEYS.PENDING] || [],
+    entries: isDashboardSignedIn(userState)
+      ? pending
+      : [
+          ...pending,
+          ...gsmViewEntries(toGsmLocalStore(result[STORAGE_KEYS.GSM_LOCAL])),
+          ...gsmImportViewEntries(toGsmImportStore(result[STORAGE_KEYS.GSM_IMPORT])),
+        ],
     stats: result[STORAGE_KEYS.STATS] || DEFAULT_STATS,
-    userState: result[STORAGE_KEYS.USER] || null,
+    userState,
     activeSession: result[STORAGE_KEYS.SESSION] || null,
     goalMinutes: result[STORAGE_KEYS.SETTINGS]?.dailyGoalMinutes ?? 60,
     dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0)),
@@ -86,7 +98,7 @@ async function refresh(): Promise<void> {
     renderGoalBar(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     renderStretchGoals(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     void refreshActivityGoals();
-    const isLoggedIn = data.userState?.isLoggedIn && (!!data.userState?.extApiToken || !!data.userState?.nonce);
+    const isLoggedIn = isDashboardSignedIn(data.userState);
 
     renderHeatmap(data.stats.dailyMinutes);
     renderWeekBars(data.stats.dailyMinutes);
@@ -243,7 +255,9 @@ browser.storage.onChanged.addListener((changes, area) => {
     changes[STORAGE_KEYS.STATS] ||
     changes[STORAGE_KEYS.USER] ||
     changes[STORAGE_KEYS.SETTINGS] ||
-    changes[STORAGE_KEYS.RELOGIN_REQUIRED]
+    changes[STORAGE_KEYS.RELOGIN_REQUIRED] ||
+    changes[STORAGE_KEYS.GSM_LOCAL] ||
+    changes[STORAGE_KEYS.GSM_IMPORT]
   )) {
     if (changes[STORAGE_KEYS.PENDING]) clearRawCache();
     refresh();

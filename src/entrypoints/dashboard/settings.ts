@@ -7,6 +7,7 @@ import { getSettings, getFreshSettings, updateSettings, createToggleRow, setTogg
 import { buildActivityGoalsSection } from './activity-goals-settings';
 import { buildExportImportPanel } from './settings-backup';
 import { buildMpchcPanel } from './settings-mpchc';
+import { buildGsmPanel } from './settings-gsm';
 import { buildAnkiPanel } from './settings-anki';
 import { buildShortcutPanel } from './settings-shortcut';
 import { buildSettingsLayout, NAV_ICONS } from './settings-nav';
@@ -627,6 +628,7 @@ function rebuildSettingsPanel(panel: HTMLElement, settings: ExtensionSettings, h
         buildMpchcPanel(el);
         buildReaderPanel(el, READER_SOURCES.mokuro);
         buildReaderPanel(el, READER_SOURCES.ttu);
+        buildGsmPanel(el);
       }
     },
     {

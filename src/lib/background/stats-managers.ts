@@ -23,9 +23,9 @@ export function initStatsCallbacks(callbacks: StatsManagerDeps): void {
 export async function loadStats(): Promise<ExtensionStats> {
   try {
     const result = await browser.storage.local.get(STORAGE_KEYS.STATS);
-    return result[STORAGE_KEYS.STATS] || { ...DEFAULT_STATS };
+    return result[STORAGE_KEYS.STATS] || structuredClone(DEFAULT_STATS);
   } catch {
-    return { ...DEFAULT_STATS };
+    return structuredClone(DEFAULT_STATS);
   }
 }
 
@@ -36,60 +36,64 @@ function addToActivityMap(stats: ExtensionStats, entry: PendingEntry, entryDate:
   dayMap[entry.activityType] = (dayMap[entry.activityType] || 0) + entry.duration_min;
 }
 
+export const STATS_EPSILON_MIN = 1e-6;
+
+export function applyStatsAddition(stats: ExtensionStats, entry: PendingEntry, dayStartHour: number): ExtensionStats {
+  const entryDate = getLocalDateString(new Date(entry.date), dayStartHour);
+
+  stats.totalMinutes += entry.duration_min;
+  stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
+  addHourlyMinutes(stats, entry);
+
+  if (isReading(entry)) {
+    stats.readingDailyMinutes ??= {};
+    stats.readingDailyMinutes[entryDate] = (stats.readingDailyMinutes[entryDate] || 0) + entry.duration_min;
+  }
+
+  if (typeof entry.isPassive === 'boolean') {
+    const attentionMap = entry.isPassive
+      ? (stats.dailyPassiveMinutes ??= {})
+      : (stats.dailyActiveMinutes ??= {});
+    attentionMap[entryDate] = (attentionMap[entryDate] || 0) + entry.duration_min;
+  }
+
+  addToActivityMap(stats, entry, entryDate);
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+  const cutoffStr = getLocalDateString(cutoff);
+  for (const dateKey of Object.keys(stats.dailyMinutes)) {
+    if (dateKey < cutoffStr) {
+      delete stats.dailyMinutes[dateKey];
+    }
+  }
+  for (const map of [stats.readingDailyMinutes, stats.dailyActiveMinutes, stats.dailyPassiveMinutes]) {
+    if (!map) continue;
+    for (const dateKey of Object.keys(map)) {
+      if (dateKey < cutoffStr) {
+        delete map[dateKey];
+      }
+    }
+  }
+  if (stats.dailyMinutesByActivity) {
+    for (const dateKey of Object.keys(stats.dailyMinutesByActivity)) {
+      if (dateKey < cutoffStr) {
+        delete stats.dailyMinutesByActivity[dateKey];
+      }
+    }
+  }
+
+  stats.currentStreak = recalculateStreak(stats.dailyMinutes, dayStartHour);
+  const dateKeys = Object.keys(stats.dailyMinutes).sort();
+  stats.lastActiveDate = dateKeys.length > 0 ? dateKeys[dateKeys.length - 1] : '';
+  return stats;
+}
+
 export async function updateStats(entry: PendingEntry): Promise<void> {
   await withStorageLock(async () => {
     try {
-      const stats = await loadStats();
       const settings = await deps.loadSettings();
-      const dsh = settings.dayStartHour || 0;
-      const entryDate = getLocalDateString(new Date(entry.date), dsh);
-
-      stats.totalMinutes += entry.duration_min;
-      stats.dailyMinutes[entryDate] = (stats.dailyMinutes[entryDate] || 0) + entry.duration_min;
-      addHourlyMinutes(stats, entry);
-
-      if (isReading(entry)) {
-        stats.readingDailyMinutes ??= {};
-        stats.readingDailyMinutes[entryDate] = (stats.readingDailyMinutes[entryDate] || 0) + entry.duration_min;
-      }
-
-      if (typeof entry.isPassive === 'boolean') {
-        const attentionMap = entry.isPassive
-          ? (stats.dailyPassiveMinutes ??= {})
-          : (stats.dailyActiveMinutes ??= {});
-        attentionMap[entryDate] = (attentionMap[entryDate] || 0) + entry.duration_min;
-      }
-
-      addToActivityMap(stats, entry, entryDate);
-
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 90);
-      const cutoffStr = getLocalDateString(cutoff);
-      for (const dateKey of Object.keys(stats.dailyMinutes)) {
-        if (dateKey < cutoffStr) {
-          delete stats.dailyMinutes[dateKey];
-        }
-      }
-      for (const map of [stats.readingDailyMinutes, stats.dailyActiveMinutes, stats.dailyPassiveMinutes]) {
-        if (!map) continue;
-        for (const dateKey of Object.keys(map)) {
-          if (dateKey < cutoffStr) {
-            delete map[dateKey];
-          }
-        }
-      }
-      if (stats.dailyMinutesByActivity) {
-        for (const dateKey of Object.keys(stats.dailyMinutesByActivity)) {
-          if (dateKey < cutoffStr) {
-            delete stats.dailyMinutesByActivity[dateKey];
-          }
-        }
-      }
-
-      stats.currentStreak = recalculateStreak(stats.dailyMinutes, dsh);
-      const dateKeys = Object.keys(stats.dailyMinutes).sort();
-      stats.lastActiveDate = dateKeys.length > 0 ? dateKeys[dateKeys.length - 1] : '';
-
+      const stats = applyStatsAddition(await loadStats(), entry, settings.dayStartHour || 0);
       await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
       deps.log('[JP343] Stats updated: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
     } catch (error) {
@@ -135,13 +139,13 @@ export function applyStatsSubtraction(
   stats.totalMinutes = Math.max(0, stats.totalMinutes - entry.duration_min);
   if (stats.dailyMinutes[entryDate]) {
     stats.dailyMinutes[entryDate] = Math.max(0, stats.dailyMinutes[entryDate] - entry.duration_min);
-    if (stats.dailyMinutes[entryDate] <= 0) {
+    if (stats.dailyMinutes[entryDate] <= STATS_EPSILON_MIN) {
       delete stats.dailyMinutes[entryDate];
     }
   }
   if (isReading(entry) && stats.readingDailyMinutes?.[entryDate]) {
     stats.readingDailyMinutes[entryDate] = Math.max(0, stats.readingDailyMinutes[entryDate] - entry.duration_min);
-    if (stats.readingDailyMinutes[entryDate] <= 0) {
+    if (stats.readingDailyMinutes[entryDate] <= STATS_EPSILON_MIN) {
       delete stats.readingDailyMinutes[entryDate];
     }
   }
@@ -149,7 +153,7 @@ export function applyStatsSubtraction(
     const attentionMap = entry.isPassive ? stats.dailyPassiveMinutes : stats.dailyActiveMinutes;
     if (attentionMap?.[entryDate]) {
       attentionMap[entryDate] = Math.max(0, attentionMap[entryDate] - entry.duration_min);
-      if (attentionMap[entryDate] <= 0) {
+      if (attentionMap[entryDate] <= STATS_EPSILON_MIN) {
         delete attentionMap[entryDate];
       }
     }
@@ -159,7 +163,7 @@ export function applyStatsSubtraction(
     const current = dayMap?.[entry.activityType];
     if (dayMap && current) {
       const next = Math.max(0, current - entry.duration_min);
-      if (next <= 0) delete dayMap[entry.activityType]; else dayMap[entry.activityType] = next;
+      if (next <= STATS_EPSILON_MIN) delete dayMap[entry.activityType]; else dayMap[entry.activityType] = next;
       if (Object.keys(dayMap).length === 0 && stats.dailyMinutesByActivity) delete stats.dailyMinutesByActivity[entryDate];
     }
   }

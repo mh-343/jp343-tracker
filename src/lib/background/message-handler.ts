@@ -7,6 +7,7 @@ import { handleStatsSyncMessage } from './stats-sync-messages';
 import { handleTrackingMessage } from './tracking-messages';
 import { handleDiagnosticsMessage } from './diagnostics-messages';
 import { handleMpchcMessage } from './mpchc-messages';
+import { handleGsmMessage } from './gsm-messages';
 import { handleSyncMessage } from './sync-messages';
 import { handleAnkiMessage } from './anki-messages';
 import { handleReaderMessage } from './reader-messages';
@@ -19,7 +20,7 @@ function getMessageType(message: unknown): string {
   return typeof candidate.type === 'string' ? candidate.type : 'unknown';
 }
 
-const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY', 'RETAG_ENTRY', 'BULK_RETAG_UNTAGGED', 'SET_MPCHC_ENABLED', 'GET_MPCHC_STATUS', 'MPCHC_PROBE', 'IMPORT_PENDING_BACKUP']);
+const DASHBOARD_ONLY_MESSAGES = new Set(['COMMIT_EXTENSION_AUTH_STATE', 'DELETE_SERVER_ENTRY', 'RETAG_ENTRY', 'BULK_RETAG_UNTAGGED', 'SET_MPCHC_ENABLED', 'GET_MPCHC_STATUS', 'MPCHC_PROBE', 'SET_GSM_ENABLED', 'GET_GSM_STATUS', 'GSM_SYNC_NOW', 'GSM_IMPORT_PREVIEW', 'GSM_IMPORT_START', 'GET_GSM_IMPORT_STATUS', 'IMPORT_PENDING_BACKUP']);
 
 function isDashboardSender(messageSender: Browser.runtime.MessageSender): boolean {
   if (messageSender?.id !== browser.runtime.id) return false;
@@ -122,6 +123,14 @@ export function createBackgroundMessageHandler(
         case 'MPCHC_PROBE':
           await context.recoveryReady;
           return handleMpchcMessage(message);
+
+        case 'SET_GSM_ENABLED':
+        case 'GET_GSM_STATUS':
+        case 'GSM_SYNC_NOW':
+        case 'GSM_IMPORT_PREVIEW':
+        case 'GSM_IMPORT_START':
+        case 'GET_GSM_IMPORT_STATUS':
+          return handleGsmMessage(message);
 
         case 'GET_ANKI_STATE':
         case 'SET_ANKI_ENABLED':

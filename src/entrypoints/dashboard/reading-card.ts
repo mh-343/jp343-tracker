@@ -1,7 +1,10 @@
-import type { ReaderState, PendingEntry, ExtensionStats } from '../../types';
+import type { ReaderState, PendingEntry, ExtensionStats, JP343UserState } from '../../types';
 import { STORAGE_KEYS, DEFAULT_READER_STATE, DEFAULT_SETTINGS, DEFAULT_STATS } from '../../types';
 import { getLocalDateString, formatStatDuration } from '../../lib/format-utils';
 import { isReading } from '../../lib/time-tracker';
+import { isDashboardSignedIn } from '../../lib/auth-helpers';
+import { gsmImportViewEntries, toGsmImportStore } from '../../lib/gsm/import';
+import { gsmViewEntries, toGsmLocalStore } from '../../lib/gsm/local-mirror';
 import type { ReaderSource } from '../../lib/reader-sources';
 import { READER_SOURCE_LIST, readerOriginHost } from '../../lib/reader-sources';
 import { hasReaderPermission, requestReaderPermission } from './reader-permission';
@@ -40,7 +43,7 @@ function isFallbackName(name: string): boolean {
 
 async function loadView(): Promise<ReadingView | null> {
   const keys = [
-    STORAGE_KEYS.PENDING, STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS,
+    STORAGE_KEYS.PENDING, STORAGE_KEYS.STATS, STORAGE_KEYS.SETTINGS, STORAGE_KEYS.USER, STORAGE_KEYS.GSM_LOCAL, STORAGE_KEYS.GSM_IMPORT,
     ...READER_SOURCE_LIST.map(s => s.stateKey)
   ];
   const res = await browser.storage.local.get(keys);
@@ -49,6 +52,10 @@ async function loadView(): Promise<ReadingView | null> {
     return { source, state: { ...DEFAULT_READER_STATE, ...(stored || {}) } };
   });
   const all = (res[STORAGE_KEYS.PENDING] as PendingEntry[] | undefined) || [];
+  if (!isDashboardSignedIn(res[STORAGE_KEYS.USER] as JP343UserState | undefined)) {
+    all.push(...gsmViewEntries(toGsmLocalStore(res[STORAGE_KEYS.GSM_LOCAL])));
+    all.push(...gsmImportViewEntries(toGsmImportStore(res[STORAGE_KEYS.GSM_IMPORT])));
+  }
   const entries = all.filter(isReading);
   const stats = (res[STORAGE_KEYS.STATS] as ExtensionStats | undefined) || DEFAULT_STATS;
   const readingDaily = stats.readingDailyMinutes ?? {};

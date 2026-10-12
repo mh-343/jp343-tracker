@@ -22,6 +22,7 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 - MPC-HC (local video player, opt-in)
 - Mokuro (manga reading, opt-in)
 - ttsu reader (book reading, opt-in)
+- GameSentenceMiner (visual novel and game reading time, opt-in)
 
 ## Features
 
@@ -40,7 +41,7 @@ Browser extension that automatically tracks your Japanese immersion time on stre
 
 - **Storage** for saving sessions and settings locally
 - **Tabs** for the manual tracking feature (reads the active tab's title and URL when you start a session)
-- **Host access** limited to the supported platforms and jp343.com; Mokuro, ttsu reader and Anki access is optional and requested only when you enable those features
+- **Host access** limited to the supported platforms and jp343.com; Mokuro, ttsu reader, MPC-HC, GameSentenceMiner and Anki access is optional and requested only when you enable those features
 
 ## Privacy
 

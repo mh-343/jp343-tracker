@@ -1,6 +1,6 @@
 import type { DifficultySeed } from '../lib/difficulty-seeds';
 
-export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mpchc' | 'mokuro' | 'ttu' | 'generic';
+export type Platform = 'youtube' | 'netflix' | 'crunchyroll' | 'primevideo' | 'disneyplus' | 'cijapanese' | 'nihongojikan' | 'spotify' | 'twitch' | 'asbplayer' | 'mpchc' | 'mokuro' | 'ttu' | 'gsm' | 'generic';
 
 export type ActivityType = 'watching' | 'listening' | 'reading' | 'speaking' | 'other';
 
@@ -52,6 +52,7 @@ export const PLATFORM_ACTIVITY_TYPE: Record<Platform, ActivityType> = {
   mpchc: 'watching',
   mokuro: 'reading',
   ttu: 'reading',
+  gsm: 'reading',
   generic: 'watching',
 };
 
@@ -372,6 +373,12 @@ export type ExtensionMessage =
   | { type: 'GET_MPCHC_STATUS' }
   | { type: 'SET_MPCHC_ENABLED'; enabled: boolean }
   | { type: 'MPCHC_PROBE' }
+  | { type: 'GET_GSM_STATUS' }
+  | { type: 'SET_GSM_ENABLED'; enabled: boolean }
+  | { type: 'GSM_SYNC_NOW' }
+  | { type: 'GSM_IMPORT_PREVIEW' }
+  | { type: 'GSM_IMPORT_START'; games: string[] }
+  | { type: 'GET_GSM_IMPORT_STATUS' }
   | { type: 'GET_ANKI_STATE' }
   | { type: 'SET_ANKI_ENABLED'; enabled: boolean }
   | { type: 'ANKI_SYNC_NOW' }
@@ -603,6 +610,10 @@ export const STORAGE_KEYS = {
   RELOGIN_REQUIRED: 'jp343_relogin_required',
   STREAK_RISK_NOTIF_DATE: 'jp343_streak_risk_notif_date',
   MPCHC: 'jp343_extension_mpchc',
+  GSM: 'jp343_extension_gsm',
+  GSM_LOCAL: 'jp343_extension_gsm_local',
+  GSM_OUTBOX: 'jp343_extension_gsm_outbox',
+  GSM_IMPORT: 'jp343_extension_gsm_import',
   ANKI: 'jp343_extension_anki',
   MOKURO: 'jp343_extension_mokuro',
   TTU: 'jp343_extension_ttu',

@@ -9,6 +9,8 @@ import { getMpchcState } from './mpchc-poller';
 import { statsSnapshotRevision } from './stats-snapshot';
 import { stableUserId } from '../auth-helpers';
 import { loadUserState, readOwnedServerStats } from '../server-cache';
+import { gsmImportMinutesOffServer } from '../gsm/import';
+import { loadGsmImportStore } from './gsm-import';
 import type { BackgroundMessageContext } from './message-context';
 
 interface CachedServerStats {
@@ -109,7 +111,8 @@ export async function handleStatsSyncMessage(
         if (cached.total_seconds !== undefined) {
           const serverMinutes = Math.round(cached.total_seconds / 60);
           const MAX_UNSYNCED_DELTA = 1440;
-          totalMinutes = Math.min(Math.max(totalMinutes, serverMinutes), serverMinutes + MAX_UNSYNCED_DELTA);
+          const importMinutes = owner === null ? 0 : gsmImportMinutesOffServer(await loadGsmImportStore(), owner, cached.cachedAt);
+          totalMinutes = Math.min(Math.max(totalMinutes, serverMinutes), serverMinutes + MAX_UNSYNCED_DELTA + importMinutes);
         }
         if (cached.daily_minutes) {
           const merged: Record<string, number> = { ...rawDailyMinutes };
@@ -156,7 +159,7 @@ export async function handleStatsSyncMessage(
 
     case 'RESET_STATS': {
       await withStorageLock(async () => {
-        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: { ...DEFAULT_STATS } });
+        await browser.storage.local.set({ [STORAGE_KEYS.STATS]: structuredClone(DEFAULT_STATS) });
       });
       context.log('[JP343] Stats reset');
       return { success: true };

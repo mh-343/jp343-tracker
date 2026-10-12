@@ -14,6 +14,7 @@ export default defineConfig({
       const OPTIONAL_ONLY = [
         'http://localhost:13579/*',
         'http://127.0.0.1:13579/*',
+        'http://127.0.0.1:7275/*',
         '*://reader.mokuro.app/*',
         '*://reader.ttsu.app/*',
         '*://ttu-ebook.web.app/*',
@@ -28,6 +29,7 @@ export default defineConfig({
       }
       const matchesOptionalOnly = (m: string): boolean =>
         m.includes(':13579/') ||
+        m.includes(':7275/') ||
         m.includes('reader.mokuro.app') ||
         m.includes('reader.ttsu.app') ||
         m.includes('ttu-ebook.web.app') ||
@@ -103,6 +105,7 @@ export default defineConfig({
           'http://127.0.0.1:8765/*',
           'http://localhost:13579/*',
           'http://127.0.0.1:13579/*',
+          'http://127.0.0.1:7275/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -112,6 +115,7 @@ export default defineConfig({
           'http://127.0.0.1:8765/*',
           'http://localhost:13579/*',
           'http://127.0.0.1:13579/*',
+          'http://127.0.0.1:7275/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -134,7 +138,7 @@ export default defineConfig({
     },
 
     content_security_policy: {
-      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765 http://localhost:13579 http://127.0.0.1:13579; object-src 'self'"
+      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765 http://localhost:13579 http://127.0.0.1:13579 http://127.0.0.1:7275; object-src 'self'"
     },
 
     web_accessible_resources: [

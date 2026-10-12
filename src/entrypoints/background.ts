@@ -21,6 +21,8 @@ import {
 import { createBackgroundMessageHandler } from '../lib/background/message-handler';
 import { handleShortcutCommand } from '../lib/background/shortcut-commands';
 import { initMpchcPoller } from '../lib/background/mpchc-poller';
+import { initGsmImport } from '../lib/background/gsm-import';
+import { initGsmPoller } from '../lib/background/gsm-poller';
 import { syncAnki } from '../lib/background/anki-sync';
 import { initContextMenu } from '../lib/background/context-menu';
 import { fetchAndCacheServerSessions } from '../lib/server-sessions';
@@ -531,6 +533,9 @@ export default defineBackground(() => {
 
   initPermissionListeners({ log, savePendingEntry, saveSessionState });
   initMpchcPoller({ savePendingEntry, createAlarmSafe, onStatusChange: scheduleStatusBadgeUpdate });
+  const gsmDeps = { createAlarmSafe, recover: attemptRecovery, loadSettings, onServerChanged: () => { void fetchAndCacheServerStats(true); } };
+  initGsmPoller(gsmDeps);
+  initGsmImport(gsmDeps);
 
   let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null } | null = null;
 

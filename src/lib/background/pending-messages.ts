@@ -14,6 +14,9 @@ import { stableUserId } from '../auth-helpers';
 import { buildOwnedCache, loadUserState, readOwnedServerSessions, readOwnedServerStats } from '../server-cache';
 import type { BackgroundMessageContext } from './message-context';
 import { resetEntrySync } from '../sync-policy';
+import { isGsmSessionId } from '../gsm/local-mirror';
+import { deleteGsmImportEntry, loadGsmImportViewEntries, restoreGsmImportEntry } from './gsm-import';
+import { deleteGsmLocalSession, loadGsmViewEntries, restoreGsmLocalSession } from './gsm-local';
 
 // Caller must hold the storage lock
 async function applyDeleteToStatsCache(
@@ -87,6 +90,9 @@ export async function handlePendingMessage(
       void fetchAndCacheServerSessions();
       const pending = await loadPendingEntries();
       const owner = stableUserId(await loadUserState());
+      if (owner === null) {
+        return { success: true, data: { entries: [...pending, ...await loadGsmViewEntries(), ...await loadGsmImportViewEntries()] } };
+      }
       const cached = await readOwnedServerSessions(owner);
       const serverSessions: CachedServerSession[] = cached?.value ?? [];
       if (serverSessions.length > 0) {
@@ -120,6 +126,12 @@ export async function handlePendingMessage(
 
     case 'DELETE_PENDING_ENTRY': {
       if ('entryId' in message && typeof message.entryId === 'string') {
+        if (isGsmSessionId(message.entryId)) {
+          const dayStartHour = (await context.loadSettings()).dayStartHour || 0;
+          return await deleteGsmLocalSession(message.entryId, dayStartHour) || await deleteGsmImportEntry(message.entryId, dayStartHour)
+            ? { success: true }
+            : { success: false, error: 'Session not found' };
+        }
         return await deletePendingById(message.entryId, message.entrySnapshot, context);
       }
       return { success: false, error: 'No entryId provided' };
@@ -152,6 +164,15 @@ export async function handlePendingMessage(
             await putDeletedSnapshot(snapshot);
           } catch { /* storage unavailable */ }
           return { success: false, error: 'Entry not found' };
+        }
+        if (isGsmSessionId(snapshot.entry.id)) {
+          const dayStartHour = (await context.loadSettings()).dayStartHour || 0;
+          if (await restoreGsmLocalSession(snapshot.entry.id, dayStartHour)) return { success: true };
+          if (await restoreGsmImportEntry(snapshot.entry.id, dayStartHour)) return { success: true };
+          try {
+            await putDeletedSnapshot(snapshot);
+          } catch { /* storage unavailable */ }
+          return { success: false, error: 'Could not restore entry' };
         }
         const entry: PendingEntry = {
           ...snapshot.entry,

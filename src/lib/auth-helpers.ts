@@ -135,3 +135,8 @@ export function hasUsableAuth(state: JP343UserState | null | undefined): boolean
   if (state?.extApiToken) return true;
   return !!state?.nonce && normalizeAjaxUrl(state.ajaxUrl) !== null;
 }
+
+// dashboard lists come from the server
+export function isDashboardSignedIn(state: JP343UserState | null | undefined): boolean {
+  return !!state?.isLoggedIn && (!!state.extApiToken || !!state.nonce);
+}
