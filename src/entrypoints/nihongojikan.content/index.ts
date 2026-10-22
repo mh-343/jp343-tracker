@@ -3,6 +3,7 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 // nihongo-jikan.com embeds each lesson via a www.youtube.com/embed iframe.
 // This tracker runs inside that iframe (allFrames) and only acts when the
@@ -54,6 +55,7 @@ export default defineContentScript({
 
     let currentVideoElement: HTMLVideoElement | null = null;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let currentSessionId: string | null = null;
     let tracking = false;
@@ -150,6 +152,7 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         log('[JP343] Nihongo no Jikan play:', getTitle());
@@ -159,6 +162,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         sendVideoPlay(video);
@@ -185,11 +189,12 @@ export default defineContentScript({
       video.addEventListener('timeupdate', () => {
         if (video.paused || video.ended || !tracking) return;
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) flushDelta();
         }
       });
@@ -212,6 +217,7 @@ export default defineContentScript({
       }
       if (!video.paused && !video.ended && !tracking) {
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         sendVideoPlay(video);
       }
     }

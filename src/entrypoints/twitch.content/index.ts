@@ -4,6 +4,7 @@ import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
 import { parseChannelLogin, parseVodId, parseTwitchMetaEvent, type TwitchMetaEvent } from './twitch-parsers';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 export default defineContentScript({
   matches: ['*://*.twitch.tv/*'],
@@ -17,6 +18,7 @@ export default defineContentScript({
     let twitchMeta: TwitchMetaEvent | null = null;
     let metaPending = false;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let currentSessionId: string | null = null;
     let tracking = false;
@@ -105,7 +107,10 @@ export default defineContentScript({
       if (ad === adActive) return;
       adActive = ad;
       if (ad) flushDelta();
-      if (currentVideoElement) lastVideoTime = currentVideoElement.currentTime;
+      if (currentVideoElement) {
+        lastVideoTime = currentVideoElement.currentTime;
+        lastTickAt = performance.now();
+      }
       sendMessage(ad ? 'AD_START' : 'AD_END');
     }
 
@@ -215,6 +220,7 @@ export default defineContentScript({
       const state = getCurrentVideoState();
       if (!state) return;
       lastVideoTime = video.currentTime;
+      lastTickAt = performance.now();
       log('[JP343] Twitch play:', state.channelName);
       sendVideoPlay(state);
     }
@@ -226,6 +232,7 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         attemptTrack();
@@ -234,6 +241,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         attemptTrack();
@@ -262,12 +270,13 @@ export default defineContentScript({
         if (video.paused || video.ended || !tracking) return;
         syncAdState();
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
+        lastTickAt = now;
         if (adActive) return;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) flushDelta();
         }
       });

@@ -2,6 +2,7 @@ import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 import { resolveCustomSiteMeta, resolveMetaSource, isWatchableVideo } from './custom-sites-meta';
 import type { CustomSiteMeta } from './custom-sites-meta';
 
@@ -49,6 +50,7 @@ export default defineContentScript({
     let playToken = 0;
     let boundSrc = '';
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     // rejected plays back off for 60s
@@ -130,6 +132,7 @@ export default defineContentScript({
       flushDelta();
       accumulatedDeltaMs = 0;
       lastVideoTime = video.currentTime;
+      lastTickAt = performance.now();
       pendingPlay = true;
       const token = ++playToken;
       sendMessage('VIDEO_PLAY', { state: buildState(video) }).then(response => {
@@ -171,6 +174,7 @@ export default defineContentScript({
         if (video !== boundVideo) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
       });
       video.addEventListener('pause', () => {
         if (video !== boundVideo) return;
@@ -197,17 +201,20 @@ export default defineContentScript({
         if (video !== boundVideo) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
+        const now = performance.now();
         const delta = ct - lastVideoTime;
+        const ms = playbackDeltaMs(delta, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
+        lastTickAt = now;
         if (!currentSessionId && !pendingPlay) {
-          if (delta > 0 && delta <= 10 && isWatchableVideo(video) && Date.now() >= nextPlayAttemptAt) {
+          if (ms > 0 && isWatchableVideo(video) && Date.now() >= nextPlayAttemptAt) {
             startTracking(video);
           }
           return;
         }
         if (delta < 0 && video.loop) { endSession(); return; }
-        if (delta > 0 && delta <= 10) {
-          accumulatedDeltaMs += (delta / (video.playbackRate || 1)) * 1000;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) flushDelta();
         }
       });

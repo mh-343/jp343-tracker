@@ -6,6 +6,7 @@ import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { parseSeasonOnly } from '../../lib/title-parsing';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 interface PrimeVideoMetadata {
   title: string;
@@ -38,6 +39,7 @@ export default defineContentScript({
     let lastCurrentTime = 0;
     let lastSubtitleText = '';
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let currentSessionId: string | null = null;
@@ -495,6 +497,7 @@ export default defineContentScript({
         flushDelta();
         isCurrentlyInAd = true;
         lastVideoTime = 0;
+        lastTickAt = performance.now();
         log('[JP343] Prime Video: Ad started');
         sendMessage('AD_START');
       } else if (!adPlaying && isCurrentlyInAd) {
@@ -618,6 +621,7 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
@@ -719,6 +723,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         if (isCurrentlyInAd) return;
@@ -732,11 +737,12 @@ export default defineContentScript({
         if (isCurrentlyInAd) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) {
             flushDelta();
           }

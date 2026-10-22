@@ -5,6 +5,7 @@ import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from '../../lib/deb
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 interface CrunchyrollMetadata {
   title: string;
@@ -93,6 +94,7 @@ export default defineContentScript({
     let isCurrentlyInAd: boolean = false;
     let pendingVideoId: string | null = null;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let currentSessionId: string | null = null;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -676,6 +678,7 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
@@ -753,6 +756,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         if (isCurrentlyInAd) return;
@@ -766,11 +770,12 @@ export default defineContentScript({
         if (isCurrentlyInAd) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) {
             flushDelta();
           }

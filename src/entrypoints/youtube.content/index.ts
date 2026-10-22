@@ -14,6 +14,7 @@ import type { OriginalTitleDetail } from './sensor-signals';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -47,6 +48,7 @@ export default defineContentScript({
     let blockedChannels: BlockedChannel[] = [];
     const DEDUP_WINDOW_MS = 200;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let currentSessionId: string | null = null;
@@ -779,6 +781,7 @@ export default defineContentScript({
         if (video !== currentVideoElement) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         if (DEBUG_MODE) debugLog('VIDEO_PLAY', '=== VIDEO PLAY EVENT ===', collectUIState());
@@ -864,6 +867,7 @@ export default defineContentScript({
         if (video !== currentVideoElement) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         const state = getCurrentVideoState();
@@ -877,11 +881,12 @@ export default defineContentScript({
         if (isCurrentlyAd) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) {
             flushDelta();
           }
@@ -947,11 +952,13 @@ export default defineContentScript({
         if (isAd && !isCurrentlyAd) {
           flushDelta();
           lastVideoTime = 0;
+          lastTickAt = performance.now();
           isCurrentlyAd = true;
           sendMessage('AD_START');
         } else if (!isAd && isCurrentlyAd) {
           isCurrentlyAd = false;
           lastVideoTime = 0;
+          lastTickAt = performance.now();
           sendMessage('AD_END');
         }
       }, 2000);

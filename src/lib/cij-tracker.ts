@@ -2,6 +2,7 @@ import type { VideoState, Platform } from '../types';
 import { createDebugLogger, setupDebugCommands, DEBUG_MODE } from './debug-logger';
 import { showUpdateNotification } from './update-notification';
 import { sampleAttention } from './attention';
+import { playbackDeltaMs } from './playback-delta';
 
 export interface CijSiteConfig {
   platform: Platform;
@@ -18,6 +19,7 @@ export function createCijTracker(config: CijSiteConfig): void {
   let lastTitle: string = '';
   let lastVideoId: string | null = null;
   let lastVideoTime = 0;
+  let lastTickAt = 0;
   let accumulatedDeltaMs = 0;
   let currentSessionId: string | null = null;
   let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -248,6 +250,7 @@ export function createCijTracker(config: CijSiteConfig): void {
     video.addEventListener('play', () => {
       if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
       lastVideoTime = video.currentTime;
+      lastTickAt = performance.now();
       flushDelta();
       accumulatedDeltaMs = 0;
       if (!isWatchPage()) {
@@ -304,6 +307,7 @@ export function createCijTracker(config: CijSiteConfig): void {
     video.addEventListener('playing', () => {
       if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
       lastVideoTime = video.currentTime;
+      lastTickAt = performance.now();
       flushDelta();
       accumulatedDeltaMs = 0;
       const state = getCurrentVideoState();
@@ -315,11 +319,12 @@ export function createCijTracker(config: CijSiteConfig): void {
     video.addEventListener('timeupdate', () => {
       if (video.paused || video.ended) return;
       const ct = video.currentTime;
-      const d = ct - lastVideoTime;
+      const now = performance.now();
+      const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
       lastVideoTime = ct;
-      if (d > 0 && d <= 10) {
-        const realDelta = d / (video.playbackRate || 1);
-        accumulatedDeltaMs += realDelta * 1000;
+      lastTickAt = now;
+      if (ms > 0) {
+        accumulatedDeltaMs += ms;
         if (accumulatedDeltaMs >= 10_000) {
           flushDelta();
         }

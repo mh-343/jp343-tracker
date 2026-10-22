@@ -2,6 +2,7 @@ import type { VideoState, Platform } from '../../types';
 import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 export default defineContentScript({
   matches: ['*://app.asbplayer.dev/*'],
@@ -33,6 +34,7 @@ export default defineContentScript({
     let currentUrl = location.origin + '/';
     let currentSessionId: string | null = null;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let latestFileName: string | null = null;
@@ -191,6 +193,7 @@ export default defineContentScript({
       flushDelta();
       accumulatedDeltaMs = 0;
       lastVideoTime = video.currentTime;
+      lastTickAt = performance.now();
       sendMessage('VIDEO_PLAY', { state: buildState(video) }).then(response => {
         if (response && typeof response === 'object' && 'sessionId' in response) {
           currentSessionId = (response as { sessionId: string }).sessionId;
@@ -213,6 +216,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
       });
 
       video.addEventListener('pause', () => {
@@ -235,10 +239,12 @@ export default defineContentScript({
       video.addEventListener('timeupdate', () => {
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
-        const delta = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (delta > 0 && delta <= 10) {
-          accumulatedDeltaMs += (delta / (video.playbackRate || 1)) * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) flushDelta();
         }
       });

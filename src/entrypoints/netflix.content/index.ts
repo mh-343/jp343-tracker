@@ -6,6 +6,7 @@ import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
 import { NetflixMetadata, isGenericPageTitle, parseNetflixTitle, parseEpisodeInfo, getVideoId } from './netflix-parsers';
+import { playbackDeltaMs } from '../../lib/playback-delta';
 
 export default defineContentScript({
   matches: ['*://*.netflix.com/*'],
@@ -21,6 +22,7 @@ export default defineContentScript({
     let isCurrentlyInAd: boolean = false;
     let pendingVideoId: string | null = null;
     let lastVideoTime = 0;
+    let lastTickAt = 0;
     let accumulatedDeltaMs = 0;
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     let currentSessionId: string | null = null;
@@ -389,6 +391,7 @@ export default defineContentScript({
         flushDelta();
         isCurrentlyInAd = true;
         lastVideoTime = 0;
+        lastTickAt = performance.now();
         debugLog('AD_STATE', '=== AD STARTED ===', collectUIState());
         log('[JP343] Netflix: Ad started');
         sendMessage('AD_START');
@@ -691,6 +694,7 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         if (!window.location.pathname.includes('/watch/')) {
@@ -799,6 +803,7 @@ export default defineContentScript({
       video.addEventListener('playing', () => {
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; sendDiagnostic('pause_debounced'); }
         lastVideoTime = video.currentTime;
+        lastTickAt = performance.now();
         flushDelta();
         accumulatedDeltaMs = 0;
         const state = getCurrentVideoState();
@@ -837,11 +842,12 @@ export default defineContentScript({
         if (isCurrentlyInAd) return;
         if (video.paused || video.ended) return;
         const ct = video.currentTime;
-        const d = ct - lastVideoTime;
+        const now = performance.now();
+        const ms = playbackDeltaMs(ct - lastVideoTime, now - lastTickAt, video.playbackRate);
         lastVideoTime = ct;
-        if (d > 0 && d <= 10) {
-          const realDelta = d / (video.playbackRate || 1);
-          accumulatedDeltaMs += realDelta * 1000;
+        lastTickAt = now;
+        if (ms > 0) {
+          accumulatedDeltaMs += ms;
           if (accumulatedDeltaMs >= 10_000) {
             flushDelta();
           }
