@@ -122,6 +122,7 @@ export class TimeTracker {
       channelName: videoState.channelName || null,
       channelUrl: videoState.channelUrl || null,
       audioLanguage: videoState.audioLanguage ?? null,
+      originalTitle: videoState.originalTitle ?? null,
       activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
     if (attentionPreference === 'passive' && activityAllowsPassive(this.session.activityType)) {
@@ -173,6 +174,7 @@ export class TimeTracker {
   updateSessionSensorData(videoState: VideoState): void {
     const session = this.session;
     if (!session || session.platform !== 'youtube') return;
+    if (session.originalTitle == null && videoState.originalTitle) session.originalTitle = videoState.originalTitle;
     if (session.asrState == null && videoState.asrState) session.asrState = videoState.asrState;
     if (session.ytCategory == null && videoState.ytCategory) session.ytCategory = videoState.ytCategory;
     if (session.isLive == null && videoState.isLive != null) session.isLive = videoState.isLive;
@@ -189,13 +191,19 @@ export class TimeTracker {
     }
   }
 
-  // never clears, never downgrades
+  // never downgrades
   updateSessionLangSignal(src: LangSignalSource): void {
     if (!this.session) return;
     this.session.langSignal = 'ja';
     if (!this.session.langSignalSrc || src === 'script') {
       this.session.langSignalSrc = src;
     }
+  }
+
+  clearSessionLangSignal(): void {
+    if (!this.session) return;
+    delete this.session.langSignal;
+    delete this.session.langSignalSrc;
   }
 
   onAdStart(): void {

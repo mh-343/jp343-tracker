@@ -108,6 +108,7 @@ export interface TrackingSession {
   channelName: string | null;
   channelUrl: string | null;
   audioLanguage?: string | null;
+  originalTitle?: string | null;
   asrState?: AsrState | null;
   ytCategory?: 'music' | 'other' | null;
   isLive?: boolean | null;

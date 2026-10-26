@@ -178,6 +178,7 @@ export async function handleSettingsMessage(
           if (currentSession && wasAllowed && !stillAllowed) {
             const evidence = detectJapaneseEvidence({
               title: currentSession.title,
+              originalTitle: currentSession.originalTitle,
               channelName: currentSession.channelName,
               audioLanguage: currentSession.audioLanguage
             });

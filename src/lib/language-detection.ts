@@ -66,19 +66,16 @@ function isClearlyNonJapaneseTitle(text: string | null | undefined): boolean {
 }
 
 export function detectJapaneseEvidence(signals: JapaneseVideoSignals): LangSignalSource | null {
-  if (isJapaneseContent(signals.title)) return 'script';
-  if (signals.originalTitle && isJapaneseContent(signals.originalTitle)) return 'script';
+  // shown title can be YouTube's auto-translation
+  const title = signals.originalTitle || signals.title;
+  if (isJapaneseContent(title)) return 'script';
   // hiragana channel name = Japanese
   if (signals.channelName && HIRAGANA_PATTERN.test(signals.channelName)) return 'script';
   if (isPredominantlyJapanese(signals.description)) return 'script';
-  const titleHasKanji = containsKanji(signals.title)
-    || (!!signals.originalTitle && containsKanji(signals.originalTitle));
-  if (titleHasKanji && !!signals.channelName && isJapaneseContent(signals.channelName)) return 'script';
+  if (containsKanji(title) && !!signals.channelName && isJapaneseContent(signals.channelName)) return 'script';
   // audio language is only a guess
-  if (isJapaneseLanguageCode(signals.audioLanguage)) {
-    if (!isClearlyNonJapaneseTitle(signals.title) && !isClearlyNonJapaneseTitle(signals.originalTitle)) {
-      return 'declared';
-    }
+  if (isJapaneseLanguageCode(signals.audioLanguage) && !isClearlyNonJapaneseTitle(title)) {
+    return 'declared';
   }
   return null;
 }

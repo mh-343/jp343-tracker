@@ -466,8 +466,9 @@ export default defineContentScript({
         }
       }
 
-      // m.youtube watch pages show only the @handle as text
-      if (!channelName && videoAuthor && originalTitleVideoId === getVideoId()) {
+      // m.youtube: @handle only; collab: localized "A and B"
+      const collabOwner = !!document.querySelector('#owner yt-avatar-stack-view-model');
+      if ((!channelName || collabOwner) && videoAuthor && originalTitleVideoId === getVideoId()) {
         channelName = videoAuthor;
       }
 
@@ -683,7 +684,7 @@ export default defineContentScript({
       const channelInfo = getChannelInfo();
       const signals = {
         title: getVideoTitle(),
-        originalTitle,
+        originalTitle: originalTitleVideoId === getVideoId() ? originalTitle : null,
         channelName: channelInfo.name,
         audioLanguage: videoAudioLanguage,
         description: videoDescription
@@ -709,7 +710,7 @@ export default defineContentScript({
         isPlaying: !video.paused && !video.ended,
         currentTime: video.currentTime,
         duration: video.duration || 0,
-        title: (useOriginalTitles && originalTitle) || getVideoTitle(),
+        title: (useOriginalTitles && originalTitleVideoId === videoId && originalTitle) || getVideoTitle(),
         url: canonicalWatchUrl(window.location.href),
         platform: 'youtube',
         isAd: isAdPlaying(),
@@ -718,7 +719,7 @@ export default defineContentScript({
         channelId: channelInfo.id,
         channelName: channelInfo.name,
         channelUrl: channelInfo.url,
-        originalTitle: originalTitle || null,
+        originalTitle: (originalTitleVideoId === videoId && originalTitle) || null,
         audioLanguage: videoAudioLanguage,
         description: videoDescription,
         asrState: deriveAsrState(videoAudioLanguage, videoResponseRead),

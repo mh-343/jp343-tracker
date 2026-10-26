@@ -425,6 +425,8 @@ export async function handleTrackingMessage(
         // late metadata can turn a session Japanese
         const lateEvidence = detectJapaneseEvidence(message.state);
         if (lateEvidence) tracker.updateSessionLangSignal(lateEvidence);
+        // player data outranks a translated title
+        else if (message.state.originalTitle) tracker.clearSessionLangSignal();
 
         if (message.state.channelId || message.state.title) {
           if (message.state.channelId && isChannelInList(settings.blockedChannels, message.state.channelId, message.state.channelUrl)) {
