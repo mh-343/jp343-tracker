@@ -78,10 +78,10 @@ export function buildGsmPanel(container: HTMLElement): void {
 
   // keeps enabledAt, unlike switching off and on
   async function updateAllow(state: GsmState): Promise<void> {
-    const stuck = state.enabled && (state.status === 'permission_needed' || state.status === 'unreachable');
+    const stuck = state.enabled && ['permission_needed', 'unreachable', 'unsupported'].includes(state.status);
     const missing = stuck && !(await browser.permissions.contains({ origins: GSM_ORIGINS }));
     allow.hidden = !missing;
-    allowHint.hidden = !missing || state.status !== 'unreachable';
+    allowHint.hidden = !missing || state.status === 'permission_needed';
   }
 
   function render(response: GsmResponse): void {
