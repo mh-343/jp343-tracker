@@ -2,13 +2,14 @@ import type { ExtensionSettings, JP343UserState } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import { stableUserId } from '../auth-helpers';
 import type { GsmGame } from '../gsm/api';
-import { fetchGsmGames, fetchGsmLines, GsmReadError } from '../gsm/api';
+import { fetchGsmLines, GsmReadError, openGsm } from '../gsm/api';
 import { resolveGsmDbIdentity } from '../gsm/db-identity';
 import type { PlannedDay, WireGame } from '../gsm/payload';
 import { addDays, dayRange, localDayKey, mapGsmGames, MAX_CALL_GAMES, planGsmDays, splitGsmCalls, utcString } from '../gsm/payload';
 import { withoutImportOverlaps } from '../gsm/import';
 import { gsmV1Sessions, sha256Hex } from '../gsm/rule';
 import type { GsmState, GsmStatus } from '../gsm/state';
+import { gsmCandidatePorts, gsmOrigin } from '../gsm/state';
 import { captureServerRequestContext, isContextStillCurrent, loadUserState } from '../server-cache';
 import type { ServerRequestContext } from '../server-cache';
 import { withStorageLock } from '../storage-lock';
@@ -152,10 +153,10 @@ function withoutDeleted(days: PlannedDay[], deleted: Set<string>): PlannedDay[] 
 }
 
 // reads GSM and updates the local mirror; null stops the run
-async function readRange(run: GsmRun, first: string, last: string): Promise<GsmRead | null> {
+async function readRange(run: GsmRun, origin: string, first: string, last: string): Promise<GsmRead | null> {
   const today = localDayKey(Date.now());
   // one day of margin on both sides keeps sessions whole
-  const lines = await fetchGsmLines(addDays(first, -1), addDays(last, 1) > today ? today : addDays(last, 1));
+  const lines = await fetchGsmLines(origin, addDays(first, -1), addDays(last, 1) > today ? today : addDays(last, 1));
   const mapped = await mapGsmGames(lines, run.games);
   if (mapped.games.length > MAX_CALL_GAMES) {
     run.status = 'too_many_games';
@@ -187,8 +188,8 @@ async function sendDays(run: GsmRun, read: GsmRead, maxCalls: number): Promise<{
   return { sentThrough, stop: null };
 }
 
-async function syncRange(run: GsmRun, first: string, last: string, maxCalls: number): Promise<{ through: string; stop: RangeStop }> {
-  const read = await readRange(run, first, last);
+async function syncRange(run: GsmRun, origin: string, first: string, last: string, maxCalls: number): Promise<{ through: string; stop: RangeStop }> {
+  const read = await readRange(run, origin, first, last);
   if (!read) return { through: addDays(first, -1), stop: 'failed' };
   if (!run.server) return { through: last, stop: null };
   const result = await sendDays(run, read, maxCalls);
@@ -257,7 +258,7 @@ async function flushOutbox(state: GsmState): Promise<void> {
 }
 
 // cursor walks enabledAt..today in 14-day blocks
-async function fullPass(run: GsmRun, cursorAtStart: string | null, today: string): Promise<{ ok: boolean; wrapped: boolean }> {
+async function fullPass(run: GsmRun, origin: string, cursorAtStart: string | null, today: string): Promise<{ ok: boolean; wrapped: boolean }> {
   const startDay = localDayKey(run.enabledAt * 1000);
   const local = !run.server;
   const maxCalls = local ? Infinity : FULL_MAX_CALLS;
@@ -266,7 +267,7 @@ async function fullPass(run: GsmRun, cursorAtStart: string | null, today: string
   for (;;) {
     const blockEnd = addDays(cursor, FULL_BLOCK_DAYS - 1);
     const last = blockEnd > today ? today : blockEnd;
-    const result = await syncRange(run, cursor, last, maxCalls);
+    const result = await syncRange(run, origin, cursor, last, maxCalls);
     const wrapped = !result.stop && last === today;
     cursor = wrapped ? startDay : addDays(result.through, 1);
     if (!local) await patchGsmState({ fullCursor: cursor }, run.enabledAt);
@@ -280,14 +281,18 @@ async function tick(full: boolean, force: boolean): Promise<void> {
   const state = await getGsmState();
   if (!state.enabled || state.enabledAt === null) { await arm(false, 0); return; }
   const access = await gsmAccess();
-  if (access !== 'ok') {
-    await patchGsmState({ status: access });
+  if (access.status !== 'ok') {
+    await patchGsmState({ status: access.status });
     await arm(false, 0);
     return;
   }
   let games: GsmGame[];
+  let origin: string;
   try {
-    games = await fetchGsmGames();
+    const opened = await openGsm(gsmCandidatePorts(state.port, access.ports));
+    games = opened.games;
+    origin = gsmOrigin(opened.port);
+    if (opened.port !== state.port) await patchGsmState({ port: opened.port }, state.enabledAt);
   } catch (error) {
     const failures = Math.min(BACKOFF_FAILURES, state.failures + 1);
     await patchGsmState({ status: error instanceof GsmReadError ? error.kind : 'unreachable', failures });
@@ -329,13 +334,13 @@ async function tick(full: boolean, force: boolean): Promise<void> {
   }
   const catchUp = owner !== null && state.serverOwner !== owner;
   try {
-    const read = await readRange(run, yesterday > enabledDay ? yesterday : enabledDay, today);
+    const read = await readRange(run, origin, yesterday > enabledDay ? yesterday : enabledDay, today);
     if (read) {
       patch.lastHot = Date.now();
-      await settleGsmImportDeferred({ enabledAt: run.enabledAt, dbId: run.dbId, games }).catch(() => {});
+      await settleGsmImportDeferred({ enabledAt: run.enabledAt, dbId: run.dbId, games, origin }).catch(() => {});
       if (await sendHot(run, read, state, force, patch)) {
         const due = catchUp || full || !state.lastFull || startedAt - state.lastFull >= FULL_INTERVAL_MS;
-        const pass = due ? await fullPass(run, cursor, today) : null;
+        const pass = due ? await fullPass(run, origin, cursor, today) : null;
         if (pass?.ok) patch.lastFull = Date.now();
         if (catchUp && pass?.wrapped) {
           patch.serverOwner = owner;
@@ -380,9 +385,9 @@ export async function setGsmEnabled(enabled: boolean): Promise<GsmState> {
     return getGsmState();
   }
   const access = await gsmAccess();
-  if (access !== 'ok') {
+  if (access.status !== 'ok') {
     await arm(false, 0);
-    return patchGsmState({ status: access });
+    return patchGsmState({ status: access.status });
   }
   await arm(true, 0);
   void syncGsm(true);
@@ -393,8 +398,8 @@ async function refreshAccess(): Promise<void> {
   const state = await getGsmState();
   if (!state.enabled) { await arm(false, 0); return; }
   const access = await gsmAccess();
-  if (access !== 'ok') {
-    await patchGsmState({ status: access });
+  if (access.status !== 'ok') {
+    await patchGsmState({ status: access.status });
     await arm(false, 0);
     return;
   }

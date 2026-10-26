@@ -1,6 +1,6 @@
 import { STORAGE_KEYS } from '../../types';
 import type { GsmState } from '../gsm/state';
-import { emptyGsmState, GSM_ORIGINS } from '../gsm/state';
+import { emptyGsmState, GSM_PORTS, gsmPortPattern } from '../gsm/state';
 import { withStorageLock } from '../storage-lock';
 
 export async function getGsmState(): Promise<GsmState> {
@@ -20,9 +20,15 @@ export async function patchGsmState(patch: Partial<GsmState>, onlyForEnabledAt?:
   });
 }
 
-export async function gsmAccess(): Promise<'ok' | 'desktop_only' | 'permission_needed'> {
-  if ((await browser.runtime.getPlatformInfo()).os === 'android') return 'desktop_only';
-  return await browser.permissions.contains({ origins: GSM_ORIGINS }) ? 'ok' : 'permission_needed';
+export type GsmAccess = { status: 'ok'; ports: number[] } | { status: 'desktop_only' | 'permission_needed' };
+
+export async function gsmAccess(): Promise<GsmAccess> {
+  if ((await browser.runtime.getPlatformInfo()).os === 'android') return { status: 'desktop_only' };
+  const ports: number[] = [];
+  for (const port of GSM_PORTS) {
+    if (await browser.permissions.contains({ origins: [gsmPortPattern(port)] })) ports.push(port);
+  }
+  return ports.length ? { status: 'ok', ports } : { status: 'permission_needed' };
 }
 
 // switching on starts counting from now; db id is kept

@@ -17,7 +17,7 @@ const STATUS_TEXT: Record<GsmStatus, string> = {
   signed_out: 'Log in on jp343.com again to sync your GameSentenceMiner time. It still counts in this browser.',
   server_unavailable: 'jp343.com could not be reached. Syncing retries automatically.',
   call_rejected: 'jp343.com did not accept the last sync. Syncing retries automatically.',
-  permission_needed: 'Allow local access by switching syncing on again.',
+  permission_needed: 'Allow local access to keep syncing.',
   desktop_only: 'GameSentenceMiner syncing is available on desktop only.',
 };
 
@@ -51,7 +51,7 @@ export function buildGsmPanel(container: HTMLElement): void {
 
   const help = document.createElement('div');
   help.className = 'settings-description';
-  help.textContent = 'Syncs your reading time from GameSentenceMiner (GSM). GSM must run on this computer. Without an account the time stays in this browser; with a jp343.com account it is also saved to your account. Time counts from the moment you switch this on; older GSM history can be imported below. Pauses do not count, so times can be lower than what older GSM versions show.';
+  help.textContent = 'Syncs your reading time from GameSentenceMiner (GSM). GSM must run on this computer, on port 7275 or 55000 ("GSM Unified Port" in its settings). Without an account the time stays in this browser; with a jp343.com account it is also saved to your account. Time counts from the moment you switch this on; older GSM history can be imported below. Pauses do not count, so times can be lower than what older GSM versions show.';
   section.appendChild(help);
   const status = document.createElement('div');
   status.className = 'settings-row-desc';
@@ -66,6 +66,23 @@ export function buildGsmPanel(container: HTMLElement): void {
   syncNow.className = 'export-btn';
   syncNow.textContent = 'Sync now';
   syncNow.disabled = true;
+  const allow = document.createElement('button');
+  allow.type = 'button';
+  allow.className = 'export-btn';
+  allow.textContent = 'Allow access';
+  allow.hidden = true;
+  const allowHint = document.createElement('div');
+  allowHint.className = 'settings-row-desc';
+  allowHint.textContent = 'If GameSentenceMiner runs on port 55000, allow access.';
+  allowHint.hidden = true;
+
+  // keeps enabledAt, unlike switching off and on
+  async function updateAllow(state: GsmState): Promise<void> {
+    const stuck = state.enabled && (state.status === 'permission_needed' || state.status === 'unreachable');
+    const missing = stuck && !(await browser.permissions.contains({ origins: GSM_ORIGINS }));
+    allow.hidden = !missing;
+    allowHint.hidden = !missing || state.status !== 'unreachable';
+  }
 
   function render(response: GsmResponse): void {
     if (!response.success || !response.data) throw new Error('Could not read settings');
@@ -75,6 +92,7 @@ export function buildGsmPanel(container: HTMLElement): void {
     status.textContent = statusText(response.data);
     note.textContent = noteText(response.data);
     syncNow.disabled = !enabled;
+    void updateAllow(response.data).catch(() => {});
   }
 
   const row = createToggleRow('Sync GameSentenceMiner reading time', 'Reads your reading sessions from GSM on this computer.', false, async value => {
@@ -113,6 +131,23 @@ export function buildGsmPanel(container: HTMLElement): void {
     }
   });
   section.appendChild(syncNow);
+  allow.addEventListener('click', async () => {
+    allow.disabled = true;
+    try {
+      if (!(await browser.permissions.request({ origins: GSM_ORIGINS }))) {
+        status.textContent = STATUS_TEXT.permission_needed;
+        return;
+      }
+      status.textContent = 'Connecting…';
+      render(await browser.runtime.sendMessage({ type: 'GSM_SYNC_NOW' }) as GsmResponse);
+    } catch {
+      status.textContent = 'Could not sync. Try again.';
+    } finally {
+      allow.disabled = false;
+    }
+  });
+  section.appendChild(allow);
+  section.appendChild(allowHint);
   buildGsmImportPanel(section);
   container.appendChild(section);
   if (toggle) toggle.disabled = true;

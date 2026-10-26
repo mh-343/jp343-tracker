@@ -11,10 +11,18 @@ export default defineConfig({
   // readers + custom-sites wildcard stay optional-only
   hooks: {
     'build:manifestGenerated'(_wxt, manifest) {
+      // no content script adds these, so a hit is a config error
+      const NEVER_REQUIRED = ['http://127.0.0.1:7275/*', 'http://127.0.0.1:55000/*', 'http://127.0.0.1/*'];
+      const declared = [...(manifest.host_permissions ?? []), ...(Array.isArray(manifest.permissions) ? manifest.permissions : [])];
+      if (declared.some(p => NEVER_REQUIRED.includes(p))) {
+        throw new Error('GSM hosts must stay optional');
+      }
       const OPTIONAL_ONLY = [
         'http://localhost:13579/*',
         'http://127.0.0.1:13579/*',
         'http://127.0.0.1:7275/*',
+        'http://127.0.0.1:55000/*',
+        'http://127.0.0.1/*',
         '*://reader.mokuro.app/*',
         '*://reader.ttsu.app/*',
         '*://ttu-ebook.web.app/*',
@@ -30,6 +38,8 @@ export default defineConfig({
       const matchesOptionalOnly = (m: string): boolean =>
         m.includes(':13579/') ||
         m.includes(':7275/') ||
+        m.includes(':55000/') ||
+        m === 'http://127.0.0.1/*' ||
         m.includes('reader.mokuro.app') ||
         m.includes('reader.ttsu.app') ||
         m.includes('ttu-ebook.web.app') ||
@@ -106,6 +116,7 @@ export default defineConfig({
           'http://localhost:13579/*',
           'http://127.0.0.1:13579/*',
           'http://127.0.0.1:7275/*',
+          'http://127.0.0.1:55000/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -115,7 +126,8 @@ export default defineConfig({
           'http://127.0.0.1:8765/*',
           'http://localhost:13579/*',
           'http://127.0.0.1:13579/*',
-          'http://127.0.0.1:7275/*',
+          // Firefox ignores ports in match patterns
+          'http://127.0.0.1/*',
           '*://reader.mokuro.app/*',
           '*://reader.ttsu.app/*',
           '*://ttu-ebook.web.app/*'
@@ -138,7 +150,7 @@ export default defineConfig({
     },
 
     content_security_policy: {
-      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765 http://localhost:13579 http://127.0.0.1:13579 http://127.0.0.1:7275; object-src 'self'"
+      extension_pages: "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; connect-src 'self' https://jp343.com http://127.0.0.1:8765 http://localhost:13579 http://127.0.0.1:13579 http://127.0.0.1:7275 http://127.0.0.1:55000; object-src 'self'"
     },
 
     web_accessible_resources: [

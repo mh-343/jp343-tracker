@@ -1,7 +1,7 @@
 import { classifyGsmLine, countGsmChars, gsmTextHash } from './classify';
 import { localDayKey } from './payload';
 import type { GsmLine } from './rule';
-import { GSM_ORIGIN } from './state';
+import { gsmOrigin } from './state';
 
 const PAGE_SIZE = 5000;
 const MAX_PAGES = 1000;
@@ -27,12 +27,12 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-async function getJson(path: string): Promise<unknown> {
+async function getJson(origin: string, path: string): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(GSM_ORIGIN + path, {
+    response = await fetch(origin + path, {
       signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error',
     });
   } catch {
@@ -90,21 +90,34 @@ export function parseGsmLinePage(body: unknown): { lines: GsmLine[]; rows: numbe
   return { lines, rows: page.results.length, totalPages: Number(page.total_pages) };
 }
 
-export async function fetchGsmGames(): Promise<GsmGame[]> {
-  const games = parseGsmGames(await getJson('/api/games-management'));
+export async function fetchGsmGames(origin: string): Promise<GsmGame[]> {
+  const games = parseGsmGames(await getJson(origin, '/api/games-management'));
   if (!games) throw new GsmReadError('unsupported');
   return games;
 }
 
+// first port that answers as GSM wins
+export async function openGsm(ports: readonly number[]): Promise<{ port: number; games: GsmGame[] }> {
+  let kind: GsmReadError['kind'] = 'unreachable';
+  for (const port of ports) {
+    try {
+      return { port, games: await fetchGsmGames(gsmOrigin(port)) };
+    } catch (error) {
+      if (error instanceof GsmReadError && error.kind === 'unsupported') kind = 'unsupported';
+    }
+  }
+  throw new GsmReadError(kind);
+}
+
 // local dates, both inclusive
-export async function fetchGsmLines(fromDay: string, toDay: string): Promise<GsmLine[]> {
+export async function fetchGsmLines(origin: string, fromDay: string, toDay: string): Promise<GsmLine[]> {
   const byId = new Map<string, GsmLine>();
   for (let page = 1, totalPages = 1; page <= totalPages; page++) {
     const query = new URLSearchParams({
       q: '.*', use_regex: 'true', from_date: fromDay, to_date: toDay,
       sort: 'date_asc', page: String(page), page_size: String(PAGE_SIZE),
     });
-    const parsed = parseGsmLinePage(await getJson(`/api/search-sentences?${query}`));
+    const parsed = parseGsmLinePage(await getJson(origin, `/api/search-sentences?${query}`));
     if (!parsed || parsed.totalPages > MAX_PAGES) throw new GsmReadError('unsupported');
     for (const line of parsed.lines) byId.set(line.id, line);
     totalPages = parsed.totalPages;
@@ -114,12 +127,12 @@ export async function fetchGsmLines(fromDay: string, toDay: string): Promise<Gsm
 }
 
 // local day of the first line; null without lines
-export async function fetchGsmFirstLineDay(toDay: string): Promise<string | null> {
+export async function fetchGsmFirstLineDay(origin: string, toDay: string): Promise<string | null> {
   const query = new URLSearchParams({
     q: '.*', use_regex: 'true', from_date: FIRST_LINE_SEARCH_FROM, to_date: toDay,
     sort: 'date_asc', page: '1', page_size: String(FIRST_LINE_PAGE_SIZE),
   });
-  const parsed = parseGsmLinePage(await getJson(`/api/search-sentences?${query}`));
+  const parsed = parseGsmLinePage(await getJson(origin, `/api/search-sentences?${query}`));
   if (!parsed) throw new GsmReadError('unsupported');
   if (!parsed.lines.length) return null;
   return localDayKey(Math.min(...parsed.lines.map(line => line.timestamp)) * 1000);

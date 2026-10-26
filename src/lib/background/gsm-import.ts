@@ -2,7 +2,7 @@ import type { ExtensionSettings, JP343UserState, PendingEntry } from '../../type
 import { STORAGE_KEYS } from '../../types';
 import { stableUserId } from '../auth-helpers';
 import type { GsmGame } from '../gsm/api';
-import { fetchGsmFirstLineDay, fetchGsmGames, fetchGsmLines, GsmReadError } from '../gsm/api';
+import { fetchGsmFirstLineDay, fetchGsmLines, GsmReadError, openGsm } from '../gsm/api';
 import { resolveGsmDbIdentity } from '../gsm/db-identity';
 import type {
   GsmImportCounts, GsmImportDiff, GsmImportError, GsmImportItem, GsmImportPreview, GsmImportStore, GsmImportUploadStatus,
@@ -15,10 +15,11 @@ import {
 import type { PlannedDay, WireGame } from '../gsm/payload';
 import { addDays, dayRange, localDayKey, mapGsmGames, MAX_CALL_GAMES, planGsmDays } from '../gsm/payload';
 import { gsmV1Sessions } from '../gsm/rule';
+import { gsmCandidatePorts, gsmOrigin } from '../gsm/state';
 import { captureServerRequestContext, isContextStillCurrent, loadUserState } from '../server-cache';
 import type { AuthRecoveryResult } from './auth-recovery';
 import { buildStashedSnapshots } from './deleted-entries';
-import { getGsmState } from './gsm-connect';
+import { getGsmState, gsmAccess } from './gsm-connect';
 import { commitGsmStore, loadGsmLocalStore } from './gsm-local';
 import { awaitGsmCallGap, gsmSignedInContext, postGsmImport } from './gsm-sync';
 
@@ -41,6 +42,7 @@ interface ScanContext {
   enabledAt: number;
   dbId: string;
   games: GsmGame[];
+  origin: string;
 }
 
 class GsmImportScanError extends Error {
@@ -83,7 +85,7 @@ async function scanHistory(ctx: ScanContext, first: string, last: string): Promi
     const blockEnd = addDays(cursor, BLOCK_DAYS - 1);
     const end = blockEnd > last ? last : blockEnd;
     const to = addDays(end, 1) > today ? today : addDays(end, 1);
-    const lines = await fetchGsmLines(addDays(cursor, -1), to);
+    const lines = await fetchGsmLines(ctx.origin, addDays(cursor, -1), to);
     const mapped = await mapGsmGames(lines, ctx.games);
     if (mapped.games.length > MAX_CALL_GAMES) throw new GsmImportScanError('too_many_games');
     const sessions = await gsmV1Sessions(mapped.lines);
@@ -97,22 +99,27 @@ async function scanHistory(ctx: ScanContext, first: string, last: string): Promi
 async function scanContext(): Promise<ScanContext | null> {
   const state = await getGsmState();
   if (!state.enabled || state.enabledAt === null) throw new GsmImportScanError('not_enabled');
+  const access = await gsmAccess();
+  if (access.status !== 'ok') throw new GsmImportScanError('unreachable');
   let games: GsmGame[];
+  let origin: string;
   try {
-    games = await fetchGsmGames();
+    const opened = await openGsm(gsmCandidatePorts(state.port, access.ports));
+    games = opened.games;
+    origin = gsmOrigin(opened.port);
   } catch (error) {
     throw readError(error);
   }
   const identity = resolveGsmDbIdentity(state.dbId, state.knownGameUuids, games.map(game => game.uuid));
   if (!identity) return null;
   if (identity.changed || !state.dbId) throw new GsmImportScanError('not_ready');
-  return { enabledAt: state.enabledAt, dbId: state.dbId, games };
+  return { enabledAt: state.enabledAt, dbId: state.dbId, games, origin };
 }
 
 async function scanItems(ctx: ScanContext, first: string | null): Promise<{ items: GsmImportItem[]; games: WireGame[] }> {
   const enabledDay = localDayKey(ctx.enabledAt * 1000);
   try {
-    const from = first ?? await fetchGsmFirstLineDay(enabledDay);
+    const from = first ?? await fetchGsmFirstLineDay(ctx.origin, enabledDay);
     if (!from) return { items: [], games: [] };
     const scan = await scanHistory(ctx, from > enabledDay ? enabledDay : from, enabledDay);
     const items = classifyGsmImport(scan.days, await loadGsmLocalStore(), await loadGsmImportStore(), {
@@ -159,7 +166,7 @@ export async function startGsmImport(selectedGames: unknown): Promise<{ ok: true
 }
 
 // poller hook: imports deferred sessions once they rest
-export async function settleGsmImportDeferred(input: { enabledAt: number; dbId: string; games: GsmGame[] }): Promise<void> {
+export async function settleGsmImportDeferred(input: { enabledAt: number; dbId: string; games: GsmGame[]; origin: string }): Promise<void> {
   const store = await loadGsmImportStore();
   if (!store.deferred.length) return;
   const now = Date.now();
@@ -169,7 +176,7 @@ export async function settleGsmImportDeferred(input: { enabledAt: number; dbId: 
     return;
   }
   if (store.deferredCheckedAt !== null && now - store.deferredCheckedAt < DEFERRED_CHECK_MS) return;
-  const ctx: ScanContext = { enabledAt: input.enabledAt, dbId: input.dbId, games: input.games };
+  const ctx: ScanContext = { enabledAt: input.enabledAt, dbId: input.dbId, games: input.games, origin: input.origin };
   const { items, games } = await scanItems(ctx, first);
   await addItems(ctx, items, games, new Set(store.deferred));
 }
