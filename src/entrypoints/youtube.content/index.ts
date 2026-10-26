@@ -468,16 +468,20 @@ export default defineContentScript({
         originalTitleResponsePending = false;
         return;
       }
-      originalTitle = null;
-      videoAudioLanguage = null;
-      videoDescription = null;
-      videoAuthor = null;
-      videoChannelId = null;
-      videoCategoryRaw = null;
-      videoIsLive = null;
-      videoResponseRead = false;
+      // same video on resume: keep player data
+      if (videoId !== originalTitleVideoId) {
+        originalTitle = null;
+        videoAudioLanguage = null;
+        videoDescription = null;
+        videoAuthor = null;
+        videoChannelId = null;
+        videoCategoryRaw = null;
+        videoIsLive = null;
+        videoResponseRead = false;
+      }
       originalTitleVideoId = videoId;
-      originalTitleResponsePending = true;
+      // only while the retry chain below runs
+      originalTitleResponsePending = !originalTitle || !videoAudioLanguage;
       if (originalTitleRetryTimer) {
         clearTimeout(originalTitleRetryTimer);
         originalTitleRetryTimer = null;
