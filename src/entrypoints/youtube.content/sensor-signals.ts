@@ -9,6 +9,7 @@ export interface OriginalTitleDetail {
   desc?: string | null;
   author?: string | null;
   channelId?: string | null;
+  ownerUrl?: string | null;
   category?: string | null;
   isLive?: boolean | null;
   responseRead?: boolean;

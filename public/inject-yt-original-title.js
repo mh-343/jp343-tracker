@@ -9,6 +9,7 @@
   var desc = null;
   var author = null;
   var channelId = null;
+  var ownerUrl = null;
   var category = null;
   var isLive = null;
   var responseRead = false;
@@ -48,9 +49,12 @@
         audioLang = (asr && asr.languageCode) || null;
       }
     }
+    var mf = response.microformat && response.microformat.playerMicroformatRenderer;
     if (!category) {
-      var mf = response.microformat && response.microformat.playerMicroformatRenderer;
       category = (mf && mf.category) || null;
+    }
+    if (!ownerUrl) {
+      ownerUrl = (mf && mf.ownerProfileUrl) || null;
     }
     if (isLive === null) {
       var live = response.videoDetails && response.videoDetails.isLiveContent;
@@ -93,6 +97,7 @@
       desc: desc ? String(desc).slice(0, 800) : null,
       author: author,
       channelId: channelId,
+      ownerUrl: ownerUrl,
       category: category,
       isLive: isLive,
       responseRead: responseRead

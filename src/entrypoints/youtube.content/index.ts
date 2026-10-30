@@ -16,6 +16,7 @@ import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
 import { playbackDeltaMs } from '../../lib/playback-delta';
 import { collectUIState, startAdDebugObserver } from './debug-ui';
+import { readWatchOwner, ownerUrlFromPlayer, channelIdFromUrl } from './channel-owner';
 
 export default defineContentScript({
   matches: ['*://*.youtube.com/*'],
@@ -37,6 +38,7 @@ export default defineContentScript({
     let videoDescription: string | null = null;
     let videoAuthor: string | null = null;
     let videoChannelId: string | null = null;
+    let videoOwnerUrl: string | null = null;
     let videoCategoryRaw: string | null = null;
     let videoIsLive: boolean | null = null;
     let videoResponseRead = false;
@@ -298,104 +300,15 @@ export default defineContentScript({
       return fallback.trim() || 'YouTube Video';
     }
 
+    // player data first, then the owner of this video
     function getChannelInfo(): { id: string | null; name: string | null; url: string | null } {
-      let channelId: string | null = null;
-      let channelName: string | null = null;
-      let channelUrl: string | null = null;
-
-      const channelNameSelectors = [
-        '#owner #channel-name yt-formatted-string#text a',
-        '#owner #channel-name yt-formatted-string a',
-        '#owner ytd-channel-name yt-formatted-string a',
-        '#owner ytd-channel-name a',
-        'ytd-video-owner-renderer #channel-name a',
-        'ytd-video-owner-renderer ytd-channel-name a',
-        '#owner #channel-name yt-formatted-string#text',
-        '#owner ytd-channel-name yt-formatted-string',
-        '#channel-name a',
-        'ytd-channel-name a',
-        '.ytd-video-owner-renderer a',
-        '#owner a',
-        'h3.slim-owner-channel-name span',
-        '.slim-owner-channel-name span'
-      ];
-
-      for (const selector of channelNameSelectors) {
-        const element = document.querySelector(selector);
-        if (element?.textContent?.trim()) {
-          channelName = element.textContent.trim();
-          if (element instanceof HTMLAnchorElement && element.href) {
-            channelUrl = element.href;
-          }
-          break;
-        }
-      }
-
-      if (!channelName) {
-        const channelNameEl = document.querySelector('ytd-channel-name #container, ytd-channel-name');
-        const raw = channelNameEl?.textContent?.trim();
-        if (raw) {
-          channelName = raw.split('\n').map(s => s.trim()).find(s => s.length > 0) || null;
-        }
-      }
-
-      // m.youtube: @handle only; collab: localized "A and B"
-      const collabOwner = !!document.querySelector('#owner yt-avatar-stack-view-model');
-      if ((!channelName || collabOwner) && videoAuthor && originalTitleVideoId === getVideoId()) {
-        channelName = videoAuthor;
-      }
-
-      if (!channelUrl) {
-        const linkSelectors = [
-          '#owner #channel-name a',
-          '#owner ytd-channel-name a',
-          'ytd-video-owner-renderer #channel-name a',
-          '#owner a.yt-simple-endpoint',
-          'a.slim-owner-icon-and-title[href*="/@"]',
-          'a.slim-video-owner-icon'
-        ];
-        for (const selector of linkSelectors) {
-          const link = document.querySelector(selector) as HTMLAnchorElement | null;
-          if (link?.href && (link.href.includes('/channel/') || link.href.includes('/@'))) {
-            channelUrl = link.href;
-            if (!channelName && link.textContent?.trim()) {
-              channelName = link.textContent.trim();
-            }
-            break;
-          }
-        }
-      }
-
-      // meta can lag the owner-link; trust the URL UC-id on mismatch
-      const metaChannel = document.querySelector('meta[itemprop="channelId"]') as HTMLMetaElement | null;
-      const metaChannelId = metaChannel?.content?.startsWith('UC') ? metaChannel.content : null;
-
-      let urlChannelId: string | null = null;
-      if (channelUrl) {
-        const channelMatch = channelUrl.match(/\/channel\/(UC[a-zA-Z0-9_-]+)/);
-        if (channelMatch) urlChannelId = channelMatch[1];
-      }
-
-      if (urlChannelId && metaChannelId && urlChannelId !== metaChannelId) {
-        channelId = urlChannelId;
-      } else {
-        channelId = metaChannelId || urlChannelId;
-      }
-
-      // injected uploader id for collab owners
-      if (!channelId && videoChannelId && originalTitleVideoId === getVideoId()) {
-        channelId = videoChannelId;
-      }
-
-      if (!channelId && channelUrl) {
-        const handleMatch = channelUrl.match(/\/@([^/?#]+)/);
-        if (handleMatch) {
-          try { channelId = `@${decodeURIComponent(handleMatch[1])}`; }
-          catch { channelId = `@${handleMatch[1]}`; }
-        }
-      }
-
-      return { id: channelId, name: channelName, url: channelUrl };
+      const videoId = getVideoId();
+      const fromPlayer = videoId !== null && originalTitleVideoId === videoId;
+      const owner = readWatchOwner(videoId);
+      const name = (fromPlayer && videoAuthor) || owner.name;
+      const url = (fromPlayer && videoOwnerUrl) || owner.url;
+      const id = (fromPlayer && videoChannelId) || channelIdFromUrl(url);
+      return { id, name, url };
     }
 
     let cachedPlayer: HTMLElement | null = null;
@@ -427,6 +340,8 @@ export default defineContentScript({
       if (typeof detail.channelId === 'string' && detail.channelId.startsWith('UC')) {
         videoChannelId = detail.channelId;
       }
+      const ownerUrl = ownerUrlFromPlayer(detail.ownerUrl);
+      if (ownerUrl) videoOwnerUrl = ownerUrl;
       if (!videoCategoryRaw && typeof detail.category === 'string' && detail.category) {
         videoCategoryRaw = detail.category;
         gotSignal = true;
@@ -461,6 +376,7 @@ export default defineContentScript({
         videoDescription = null;
         videoAuthor = null;
         videoChannelId = null;
+        videoOwnerUrl = null;
         videoCategoryRaw = null;
         videoIsLive = null;
         videoResponseRead = false;
@@ -475,6 +391,7 @@ export default defineContentScript({
         videoDescription = null;
         videoAuthor = null;
         videoChannelId = null;
+        videoOwnerUrl = null;
         videoCategoryRaw = null;
         videoIsLive = null;
         videoResponseRead = false;
@@ -903,6 +820,7 @@ export default defineContentScript({
         videoDescription = null;
         videoAuthor = null;
         videoChannelId = null;
+        videoOwnerUrl = null;
         videoCategoryRaw = null;
         videoIsLive = null;
         videoResponseRead = false;
