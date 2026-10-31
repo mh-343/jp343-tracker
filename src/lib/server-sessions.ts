@@ -45,7 +45,8 @@ async function runSessionsFetch(): Promise<void> {
     project_id: (s.project_id || '') as string,
     title: (s.project_name || s.title || 'Session') as string,
     platform: (s.platform || '') as string,
-    duration_min: Math.round(((s.duration_seconds as number) || ((s.duration_minutes || s.minutes || 0) as number) * 60) / 60),
+    // unrounded: the popup sums sessions and formats once
+    duration_min: ((s.duration_seconds as number) || ((s.duration_minutes || s.minutes || 0) as number) * 60) / 60,
     date: ((s.logged_at || s.date || '') as string).replace(' ', 'T'),
     url: (s.resource_url || s.url || undefined) as string | undefined,
     thumbnail: (s.image || undefined) as string | undefined,
