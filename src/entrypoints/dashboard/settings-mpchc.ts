@@ -26,6 +26,8 @@ export function buildMpchcPanel(container: HTMLElement): void {
   const help = document.createElement('div');
   help.className = 'settings-description';
   help.textContent = 'In MPC-HC, open Options → Player → Web Interface and turn on “Listen on port” (13579). Keep your browser open while you watch.';
+  // older players send no CORS header, Firefox blocks them
+  if (import.meta.env.FIREFOX) help.textContent += ' In Firefox this needs MPC-HC 2.1.0 or newer.';
   section.appendChild(help);
   const status = document.createElement('div');
   status.className = 'settings-row-desc';
