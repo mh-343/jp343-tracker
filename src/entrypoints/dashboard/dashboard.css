@@ -379,6 +379,7 @@
     }
 
     .btn-logout:hover { border-color: var(--red); color: var(--red); }
+    .btn-logout:disabled { opacity: 0.6; cursor: default; border-color: var(--border); color: var(--text-muted); }
 
     /* ── Hero: Total Time ───────────────────────────── */
     .hero {

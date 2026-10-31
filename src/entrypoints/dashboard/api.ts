@@ -65,11 +65,12 @@ export interface ServerSession {
 export async function ajaxPost(
   action: string,
   params: Record<string, string> = {},
-  credentials: 'omit' | 'include' = 'include'
+  credentials: 'omit' | 'include' = 'include',
+  timeoutMs = 15000
 ): Promise<Record<string, unknown>> {
   const body = new URLSearchParams({ action, ...params });
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(AJAX_URL, {
       method: 'POST',

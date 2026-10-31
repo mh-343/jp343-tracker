@@ -150,26 +150,37 @@ function requestRefresh(): void {
   document.dispatchEvent(new CustomEvent('jp343:refresh'));
 }
 
+const LOGOUT_TIMEOUT_MS = 8000;
+
 export let isLoggingOut = false;
 
 export async function doLogout(): Promise<void> {
+  if (isLoggingOut) return;
   isLoggingOut = true;
+  const button = document.getElementById('btnLogout') as HTMLButtonElement | null;
+  const label = button?.textContent || 'Logout';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Logging out…';
+  }
   try {
-    await browser.runtime.sendMessage({ type: 'ANKI_FLUSH_AND_RESET' });   // flush while token valid
-  } catch { /* ignore */ }
-  try {
-    const r = await fetch(AJAX_URL, {
-      method: 'POST',
-      credentials: 'include',
-      body: new URLSearchParams({ action: 'jp343_extension_logout' })
-    });
-    await r.text();
-  } catch { /* server unreachable is fine, clear local state anyway */ }
-  await commitAuthToBackground('explicit-logout', null);
-  invalidateSessionCache();
-  const msgBtn = document.getElementById('headerMessageBtn');
-  if (msgBtn) msgBtn.style.display = 'none';
-  isLoggingOut = false;
+    try {
+      await browser.runtime.sendMessage({ type: 'ANKI_FLUSH_AND_RESET' });   // flush while token valid
+    } catch { /* ignore */ }
+    try {
+      await ajaxPost('jp343_extension_logout', {}, 'include', LOGOUT_TIMEOUT_MS);
+    } catch { /* server unreachable is fine, clear local state anyway */ }
+    await commitAuthToBackground('explicit-logout', null);
+    invalidateSessionCache();
+    const msgBtn = document.getElementById('headerMessageBtn');
+    if (msgBtn) msgBtn.style.display = 'none';
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = label;
+    }
+    isLoggingOut = false;
+  }
   requestRefresh();
 }
 
