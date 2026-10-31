@@ -13,8 +13,7 @@ const OWNER_NAME_SELECTORS = [
   'ytd-channel-name yt-formatted-string a',
   'ytd-channel-name a',
   '#channel-name yt-formatted-string#text',
-  'ytd-channel-name yt-formatted-string',
-  'a'
+  'ytd-channel-name yt-formatted-string'
 ];
 
 const OWNER_LINK_SELECTORS = [
