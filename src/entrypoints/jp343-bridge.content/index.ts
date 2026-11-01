@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { loadBackground } from '../../lib/background-image';
 import { normalizeUserId } from '../../lib/auth-helpers';
 import { createDebugLogger } from '../../lib/debug-logger';
+import { PLAYBACK_SIGNAL_ATTR, playbackSignalFrom } from '../../lib/playback-signal';
 
 export default defineContentScript({
   matches: [
@@ -339,10 +340,32 @@ export default defineContentScript({
     if (document.body) startBgObserver();
     else document.addEventListener('DOMContentLoaded', startBgObserver, { once: true });
 
+    let lastPlaybackAttr: string | null = null;
+
+    function publishPlayback(stored: unknown): void {
+      if (disposed) return;
+      const value = JSON.stringify(playbackSignalFrom(stored));
+      if (value === lastPlaybackAttr) return;
+      lastPlaybackAttr = value;
+      document.documentElement.setAttribute(PLAYBACK_SIGNAL_ATTR, value);
+    }
+
+    async function syncPlayback(): Promise<void> {
+      try {
+        const res = await browser.storage.local.get(STORAGE_KEYS.SESSION);
+        publishPlayback(res[STORAGE_KEYS.SESSION]);
+      } catch { /* extension context gone */ }
+    }
+
+    void syncPlayback();
+
     function onStorageChanged(changes: Record<string, Browser.storage.StorageChange>, area: string): void {
       if (area !== 'local') return;
       if (changes[STORAGE_KEYS.BG_IMAGE_REVISION] || changes[STORAGE_KEYS.SETTINGS]) {
         syncHubBackgroundLayer();
+      }
+      if (changes[STORAGE_KEYS.SESSION]) {
+        publishPlayback(changes[STORAGE_KEYS.SESSION].newValue);
       }
     }
     browser.storage.onChanged.addListener(onStorageChanged);
@@ -354,6 +377,7 @@ export default defineContentScript({
         startBgObserver();
         browser.storage.onChanged.addListener(onStorageChanged);
         storageListeners.push(onStorageChanged);
+        void syncPlayback();
       }
     });
   }
