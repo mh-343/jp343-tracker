@@ -1,8 +1,8 @@
 // JP343 Extension - Popup UI
 
 import { STORAGE_KEYS, activityAllowsPassive, EMPTY_DAILY_GOALS } from '../../types';
-import type { TrackingSession, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, ActiveTabInfo, ActivityType, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
-import { formatDuration, formatDurationMs, formatGoalMinutes, isValidImageUrl, getWeekDates } from '../../lib/format-utils';
+import type { TrackingSession, PendingEntry, BlockedChannel, WhitelistedChannel, ExtensionSettings, SpotifyContentType, AttentionPreference, DailyGoals } from '../../types';
+import { formatDurationMs, formatGoalMinutes, isValidImageUrl } from '../../lib/format-utils';
 import { initThemeToggle, applyColorTheme } from '../../lib/theme';
 import { reportError, flushErrors } from '../../lib/error-reporter';
 import { renderPendingList } from './pending-list';
@@ -11,8 +11,12 @@ import { createTodayLive, type LiveDisplay } from './today-live';
 import { createPlayerCard } from './player-card';
 import { PLATFORM_ICONS } from '../../lib/platform-labels';
 import { sameChannel } from '../../lib/channel-identity';
-import { computeActivityGoalRows, type ActivityGoalRow } from '../../lib/activity-goals';
-import { appendActivityGoalLines } from './activity-goals-tooltip';
+import { computeActivityGoalRows } from '../../lib/activity-goals';
+import { createGoalBar } from './goal-bar';
+import { createManualTrack } from './manual-track';
+import { initTitleEdit } from './title-edit';
+import { createStatsBar, renderWeekBars } from './stats-bar';
+import { initResizeGrabber } from './resize-grabber';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -84,7 +88,6 @@ let hideNonJapanese = false;
 let trackJapaneseOnly = false;
 let currentChannelId: string | null = null;
 let lastSkippedChannel: { channelId: string; channelName: string; channelUrl: string | null; platform: string } | null = null;
-let activeTabInfo: ActiveTabInfo | null = null;
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let fetchSeq = 0;
 let isFetchingState = false;
@@ -123,151 +126,10 @@ let popupDailyGoals: DailyGoals = EMPTY_DAILY_GOALS;
 let popupAttentionPref: AttentionPreference = 'auto';
 let popupSkippedMusic: { videoId: string | null; title: string } | null = null;
 
-function createGoalTooltipText<K extends keyof HTMLElementTagNameMap>(
-  tagName: K,
-  className: string,
-  text: string
-): HTMLElementTagNameMap[K] {
-  const element = document.createElement(tagName);
-  element.className = className;
-  element.textContent = text;
-  return element;
-}
-
-function createGoalTooltipChip(text: string, isLevel = false): HTMLSpanElement {
-  const chip = document.createElement('span');
-  chip.className = `goal-tooltip-chip${isLevel ? ' is-level' : ''}`;
-  chip.textContent = text;
-  return chip;
-}
-
-function renderGoalMicroBar(todayMinutes: number, activityRows: ActivityGoalRow[] = []): void {
-  const fill = document.getElementById('goalMicroFill') as HTMLDivElement | null;
-  if (!fill) return;
-  const bar = fill.parentElement;
-  const wrap = document.getElementById('goalMicroWrap') as HTMLDivElement | null;
-  const tooltip = document.getElementById('goalTooltip') as HTMLDivElement | null;
-  const safeGoal = _popupGoalMinutes || 60;
-  const progress = Math.round((todayMinutes / safeGoal) * 100);
-  const isOverflow = progress >= 100;
-  const timeStr = formatDuration(todayMinutes);
-  const goalStr = formatDuration(safeGoal);
-
-  fill.classList.remove('overflow', 'stretch');
-  if (bar) bar.classList.remove('overflow');
-  fill.style.background = '';
-  fill.style.removeProperty('--goal-cutoff');
-  if (wrap) {
-    delete wrap.dataset.level;
-    wrap.dataset.goalState = isOverflow ? (_popupStretchEnabled ? 'stretch' : 'complete') : 'progress';
-  }
-
-  let currentLevel = 0;
-  let detailText = '';
-
-  if (isOverflow && _popupStretchEnabled) {
-    const ratio = todayMinutes / safeGoal;
-    const thresholds = [1.0, 1.5, 2.0, 2.5, 3.0];
-    currentLevel = 1;
-    for (let i = thresholds.length - 1; i >= 0; i--) {
-      if (ratio >= thresholds[i]) { currentLevel = i + 1; break; }
-    }
-
-    if (wrap) wrap.dataset.level = String(currentLevel);
-
-    const levelIdx = currentLevel - 1;
-    const start = thresholds[levelIdx];
-    const end = levelIdx + 1 < thresholds.length ? thresholds[levelIdx + 1] : null;
-
-    if (end !== null) {
-      const intra = Math.round(((ratio - start) / (end - start)) * 100);
-      fill.style.width = `${Math.min(intra, 100)}%`;
-      fill.classList.add('stretch');
-    } else if (ratio > 3.0) {
-      fill.style.width = '100%';
-      fill.classList.add('stretch', 'overflow');
-      if (bar) bar.classList.add('overflow');
-      const overProgress = Math.round(((ratio - 3.0) / 0.5) * 100);
-      const cutoff = Math.round((100 / overProgress) * 100);
-      fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
-      if (wrap) wrap.dataset.goalState = 'overflow';
-    } else {
-      fill.style.width = '100%';
-      fill.classList.add('stretch');
-    }
-  } else if (isOverflow) {
-    fill.style.width = '100%';
-    fill.classList.add('overflow');
-    if (bar) bar.classList.add('overflow');
-    const cutoff = (100 / progress) * 100;
-    fill.style.background = `linear-gradient(90deg, var(--accent) ${cutoff}%, var(--gradient-secondary) ${cutoff}%)`;
-    fill.style.setProperty('--goal-cutoff', `${cutoff}%`);
-  } else {
-    fill.style.width = `${progress}%`;
-  }
-
-  if (!tooltip) return;
-
-  const header = document.createElement('div');
-  header.className = 'goal-tooltip-header';
-  header.append(
-    createGoalTooltipText('span', 'goal-tooltip-kicker', 'Today'),
-    createGoalTooltipText('strong', 'goal-tooltip-value', timeStr)
-  );
-
-  const metrics = document.createElement('div');
-  metrics.className = 'goal-tooltip-metrics';
-  metrics.appendChild(createGoalTooltipChip(`${progress}%`));
-
-  if (currentLevel > 0) {
-    metrics.appendChild(createGoalTooltipChip(`Stretch ${currentLevel}/5`, true));
-  }
-
-  metrics.appendChild(createGoalTooltipChip(`Goal: ${goalStr}`));
-
-  if (todayMinutes < safeGoal) {
-    detailText = `${formatDuration(safeGoal - todayMinutes)} left to reach your goal`;
-  } else if (currentLevel > 0) {
-    if (currentLevel >= 5) {
-      detailText = `${formatDuration(todayMinutes - safeGoal * 3)} past the final stretch`;
-    } else {
-      const nextThreshold = [1.5, 2.0, 2.5, 3.0][currentLevel - 1];
-      const nextTime = safeGoal * nextThreshold;
-      detailText = `${formatDuration(nextTime - todayMinutes)} until stretch ${currentLevel + 1}/5`;
-    }
-  } else {
-    detailText = `${formatDuration(todayMinutes - safeGoal)} past your goal`;
-  }
-
-  const card = document.createElement('div');
-  card.className = 'goal-tooltip-card';
-  card.append(
-    header,
-    metrics,
-    createGoalTooltipText('div', 'goal-tooltip-note', detailText)
-  );
-  appendActivityGoalLines(card, activityRows);
-
-  tooltip.replaceChildren(card);
-
-  if (wrap) {
-    wrap.setAttribute(
-      'aria-label',
-      `Daily goal progress. Today ${timeStr}. ${progress}% of goal. ${detailText}.`
-    );
-  }
-}
-
-const goalWrap = document.getElementById('goalMicroWrap');
-if (goalWrap) {
-  goalWrap.addEventListener('click', (e) => {
-    e.stopPropagation();
-    goalWrap.classList.toggle('tooltip-open');
-  });
-  document.addEventListener('click', () => {
-    goalWrap.classList.remove('tooltip-open');
-  });
-}
+const goalBar = createGoalBar({
+  getGoalMinutes: () => _popupGoalMinutes,
+  getStretchEnabled: () => _popupStretchEnabled
+});
 
 async function loadAndApplySettings(): Promise<void> {
   try {
@@ -306,7 +168,7 @@ function updateJpFilterDisplay(active: boolean): void {
 function updateSpotifyFilterUI(settings: ExtensionSettings): void {
   const section = document.getElementById('spotifyFilterSection');
   if (!section) return;
-  const onSpotify = currentSession?.platform === 'spotify' || /open\.spotify\.com/.test(activeTabInfo?.url || '');
+  const onSpotify = currentSession?.platform === 'spotify' || /open\.spotify\.com/.test(manualTrack.activeTabInfo()?.url || '');
   section.style.display = onSpotify ? 'flex' : 'none';
   if (!onSpotify) return;
   const types = settings.spotifyContentTypes || ['podcast', 'audiobook'];
@@ -367,111 +229,13 @@ function initCollapsible(headerId: string, bodyId: string, arrowId: string, card
   });
 }
 
-// --- MANUAL TRACKING ---
-
-let lastLoadedDomain = '';
-
-async function loadActiveTabInfo(): Promise<void> {
-  try {
-    const response = await browser.runtime.sendMessage({ type: 'GET_ACTIVE_TAB_INFO' });
-    if (response.success && response.data) {
-      activeTabInfo = response.data as ActiveTabInfo;
-      updateManualTrackDisplay();
-      loadAndApplySettings();
-      if (activeTabInfo.domain?.includes('youtube.com')) {
-        const jpBtn = document.getElementById('btnJpFilter');
-        if (jpBtn) (jpBtn as HTMLElement).style.display = 'flex';
-      }
-      if (activeTabInfo.tabId) {
-        browser.tabs.sendMessage(activeTabInfo.tabId, { type: 'TAB_ACTIVATED' }).catch(() => {});
-      }
-    }
-  } catch (error) {
-    log('[JP343 Popup] Failed to load tab info:', error);
-  }
-}
-
-function updateManualTrackDisplay(): void {
-  if (!activeTabInfo) {
-    elements.manualTrackMode.style.display = 'none';
-    return;
-  }
-
-  const shouldShowManual = !currentSession && !activeTabInfo.isStreamingSite;
-
-  if (shouldShowManual) {
-    elements.noSession.style.display = 'none';
-    elements.manualTrackMode.style.display = 'block';
-    elements.currentDomain.textContent = activeTabInfo.domain;
-    elements.manualTitle.value = activeTabInfo.title;
-    elements.manualTitle.placeholder = activeTabInfo.title;
-    if (lastLoadedDomain !== activeTabInfo.domain) {
-      lastLoadedDomain = activeTabInfo.domain;
-      loadActivityTypePreference(activeTabInfo.domain);
-    }
-  } else {
-    elements.manualTrackMode.style.display = 'none';
-    if (!currentSession) {
-      elements.noSession.style.display = playerCard.visible() ? 'none' : 'block';
-      const noSessionTitle = document.getElementById('noSessionTitle');
-      const noSessionHint = document.getElementById('noSessionHint');
-      if (activeTabInfo.isStreamingSite && noSessionTitle && noSessionHint) {
-        noSessionTitle.textContent = 'Waiting for playback';
-        noSessionHint.textContent = 'Start a video to auto-track';
-      } else if (noSessionTitle && noSessionHint) {
-        noSessionTitle.textContent = 'No active session';
-        noSessionHint.textContent = playerCard.placeholderHint() ?? 'Visit a supported streaming site to start tracking';
-      }
-    }
-  }
-}
-
-async function loadActivityTypePreference(domain: string): Promise<void> {
-  try {
-    const result = await browser.storage.local.get(STORAGE_KEYS.ACTIVITY_PREFS);
-    const prefs = result[STORAGE_KEYS.ACTIVITY_PREFS] as Record<string, ActivityType> | undefined;
-    elements.activityTypeSelect.value = prefs?.[domain] ?? 'watching';
-  } catch {
-    elements.activityTypeSelect.value = 'watching';
-  }
-}
-
-async function saveActivityTypePreference(domain: string, activityType: ActivityType): Promise<void> {
-  try {
-    const result = await browser.storage.local.get(STORAGE_KEYS.ACTIVITY_PREFS);
-    const prefs = (result[STORAGE_KEYS.ACTIVITY_PREFS] as Record<string, ActivityType>) ?? {};
-    prefs[domain] = activityType;
-    await browser.storage.local.set({ [STORAGE_KEYS.ACTIVITY_PREFS]: prefs });
-  } catch { /* non-critical */ }
-}
-
-elements.btnStartManual.addEventListener('click', async () => {
-  if (!activeTabInfo) return;
-
-  const title = elements.manualTitle.value.trim() || activeTabInfo.title;
-  const activityType = elements.activityTypeSelect.value as ActivityType;
-
-  await saveActivityTypePreference(activeTabInfo.domain, activityType);
-
-  try {
-    const response = await browser.runtime.sendMessage({
-      type: 'MANUAL_TRACK_START',
-      title: title,
-      url: activeTabInfo.url,
-      tabId: activeTabInfo.tabId,
-      activityType
-    });
-
-    if (response.success) {
-      await fetchCurrentState();
-    } else {
-      log('[JP343 Popup] Failed to start:', response.error);
-      showToast(response.error || 'Could not start tracking', 'warning');
-    }
-  } catch (error) {
-    log('[JP343 Popup] Error:', error);
-    showToast('Could not start tracking', 'warning');
-  }
+const manualTrack = createManualTrack({
+  elements,
+  playerCard,
+  getCurrentSession: () => currentSession,
+  loadAndApplySettings,
+  fetchCurrentState,
+  showToast
 });
 
 elements.toggleEnabled.addEventListener('click', async () => {
@@ -484,8 +248,6 @@ elements.toggleEnabled.addEventListener('click', async () => {
     log('[JP343 Popup] Failed to toggle:', error);
   }
 });
-
-// --- CHANNEL BLOCKING ---
 
 function storedChannels<T extends { channelId: string; channelUrl: string | null }>(list: T[], channelId: string, channelUrl: string | null): T[] {
   return list.filter(c => sameChannel(c, { channelId, channelUrl }));
@@ -631,89 +393,7 @@ elements.btnAllowChannel.addEventListener('click', async () => {
   for (const entry of stored) await unallowChannel(entry.channelId);
 });
 
-// --- TITLE EDITING ---
-
-let isEditingTitle = false;
-
-elements.btnEditTitle.addEventListener('click', () => {
-  if (isEditingTitle || !currentSession) return;
-  startTitleEdit();
-});
-
-function showTitleEditError(): void {
-  const el = elements.sessionPlatform;
-  const prev = el.textContent;
-  el.textContent = 'Rename failed';
-  setTimeout(() => {
-    if (el.textContent === 'Rename failed') el.textContent = prev;
-  }, 3000);
-}
-
-function startTitleEdit(): void {
-  if (!currentSession) return;
-  isEditingTitle = true;
-
-  const titleRow = elements.sessionTitle.parentElement;
-  if (!titleRow) return;
-
-  const currentTitle = elements.sessionTitle.textContent || '';
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'session-title-input';
-  input.value = currentTitle;
-
-  elements.sessionTitle.style.display = 'none';
-  elements.btnEditTitle.style.display = 'none';
-
-  titleRow.insertBefore(input, elements.sessionTitle);
-  input.focus();
-  input.select();
-
-  let isSavingTitle = false;
-  const saveEdit = async () => {
-    if (isSavingTitle) return;
-    const newTitle = input.value.trim();
-    if (newTitle && newTitle !== currentTitle) {
-      isSavingTitle = true;
-      input.disabled = true;
-      try {
-        const res = await browser.runtime.sendMessage({
-          type: 'UPDATE_SESSION_TITLE',
-          title: newTitle
-        });
-        if (res?.success) {
-          elements.sessionTitle.textContent = res.data?.title ?? newTitle;
-          log('[JP343 Popup] Title updated:', newTitle);
-        } else {
-          elements.sessionTitle.textContent = currentTitle;
-          showTitleEditError();
-          log('[JP343 Popup] Title update rejected:', res?.error);
-        }
-      } catch (error) {
-        showTitleEditError();
-        log('[JP343 Popup] Failed to update title:', error);
-      }
-    }
-
-    input.remove();
-    elements.sessionTitle.style.display = '';
-    elements.btnEditTitle.style.display = '';
-    isEditingTitle = false;
-  };
-
-  input.addEventListener('blur', saveEdit);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      saveEdit();
-    }
-    if (e.key === 'Escape') {
-      input.value = currentTitle;
-      saveEdit();
-    }
-  });
-}
+initTitleEdit({ elements, getCurrentSession: () => currentSession });
 
 function updateStatus(session: TrackingSession | null, isAd: boolean): void {
   if (isAd) {
@@ -755,7 +435,7 @@ function updateSessionDisplay(
     elements.noSession.style.display = playerCard.visible() ? 'none' : 'block';
     elements.activeSession.style.display = 'none';
     const hint = document.getElementById('noSessionHint');
-    if (hint && !activeTabInfo) hint.textContent = playerCard.placeholderHint() ?? 'Visit a supported streaming site to start tracking';
+    if (hint && !manualTrack.activeTabInfo()) hint.textContent = playerCard.placeholderHint() ?? 'Visit a supported streaming site to start tracking';
     return;
   }
 
@@ -893,7 +573,7 @@ async function fetchCurrentState(): Promise<void> {
       tickTimerDisplay();
       updateChannelDisplay(session, skippedChannel);
       updateStatusBanners(session);
-      updateManualTrackDisplay();
+      manualTrack.updateDisplay();
       if (platformChanged) {
         loadAndApplySettings();
       }
@@ -995,51 +675,14 @@ document.getElementById('btnJpFilter')?.addEventListener('click', async () => {
   }
 });
 
-// --- STATS BAR ---
-
-function renderWeekBars(dailyMinutes: Record<string, number>): void {
-  const container = document.getElementById('weekBars');
-  if (!container) return;
-
-  const days = getWeekDates(_popupDayStartHour);
-  const maxVal = Math.max(1, ...days.map(d => dailyMinutes[d.date] || 0));
-
-  container.replaceChildren();
-  for (const { date, label, isToday } of days) {
-    const minutes = dailyMinutes[date] || 0;
-    const heightPx = minutes > 0 ? Math.max(2, Math.round((minutes / maxVal) * 24)) : 2;
-
-    const item = document.createElement('div');
-    item.className = 'week-bar-item';
-
-    const track = document.createElement('div');
-    track.className = 'week-bar-track';
-
-    const fill = document.createElement('div');
-    fill.className = minutes === 0 ? 'week-bar-fill empty' : isToday ? 'week-bar-fill today' : 'week-bar-fill';
-    fill.style.height = heightPx + 'px';
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'week-bar-label';
-    labelEl.textContent = label;
-
-    track.appendChild(fill);
-    item.appendChild(track);
-    item.appendChild(labelEl);
-    container.appendChild(item);
-  }
-
-  container.style.display = 'flex';
-}
-
 function applyLiveDisplay(d: LiveDisplay): void {
   elements.statWeek.textContent = formatGoalMinutes(d.weekMinutes);
   elements.statToday.textContent = formatGoalMinutes(d.todayMinutes);
-  renderGoalMicroBar(
+  goalBar.render(
     d.todayMinutes,
     computeActivityGoalRows(popupDailyGoals, d.byActivity, d.activeMinutes, _popupShowAttention)
   );
-  renderWeekBars(d.dailyMinutes);
+  renderWeekBars(d.dailyMinutes, _popupDayStartHour);
 }
 
 const todayLive = createTodayLive({
@@ -1048,116 +691,19 @@ const todayLive = createTodayLive({
   onDisplay: applyLiveDisplay
 });
 
-let statsFetching = false;
-let statsRefreshQueued = false;
-
-async function fetchAndRenderStats(): Promise<void> {
-  if (statsFetching) {
-    statsRefreshQueued = true;
-    return;
-  }
-  statsRefreshQueued = false;
-  statsFetching = true;
-  try {
-    const response = await browser.runtime.sendMessage({ type: 'GET_STATS' });
-    if (response?.success && response.data) {
-      const { weekMinutes, todayMinutes, streak, rawDailyMinutes, todayByActivity, todayActiveMinutes } = response.data;
-      elements.statStreak.textContent = `${streak || 0}d`;
-      todayLive.setBase({
-        liveSessionId: response.data.liveSessionId,
-        livePlayerSessionId: response.data.livePlayerSessionId ?? null,
-        dayKey: response.data.dayKey,
-        dayStartHour: response.data.dayStartHour,
-        todayMinutes: todayMinutes || 0,
-        weekMinutes: weekMinutes || 0,
-        byActivity: todayByActivity || {},
-        activeMinutes: todayActiveMinutes || 0,
-        dailyMinutes: rawDailyMinutes || {}
-      });
-    }
-  } catch (error) {
-    log('[JP343 Popup] Stats fetch failed:', error);
-  } finally {
-    statsFetching = false;
-    if (statsRefreshQueued) void fetchAndRenderStats();
-  }
-}
-
+const { fetchAndRenderStats } = createStatsBar({ statStreak: elements.statStreak, todayLive });
 
 // Theme Toggle
 initThemeToggle('themeTogglePopup');
 
 initCollapsible('pendingHeader', 'pendingList', 'pendingCollapseArrow', 'popup-sessions');
 
-const POPUP_MIN_HEIGHT = 450;
-const POPUP_MAX_HEIGHT = 600;
-
-function initResizeGrabber(): void {
-  const grabber = elements.resizeGrabber;
-  let isDragging = false;
-
-  function saveHeight(): void {
-    const h = document.body.offsetHeight;
-    browser.storage.local.set({ [STORAGE_KEYS.POPUP_HEIGHT]: h }).catch(() => {});
-  }
-
-  function startDrag(startY: number): void {
-    const startHeight = document.body.offsetHeight;
-    isDragging = true;
-    grabber.classList.add('dragging');
-
-    function applyDelta(currentY: number): void {
-      const delta = currentY - startY;
-      const newHeight = Math.min(POPUP_MAX_HEIGHT, Math.max(POPUP_MIN_HEIGHT, startHeight + delta));
-      document.body.style.height = `${newHeight}px`;
-    }
-
-    function endDrag(): void {
-      isDragging = false;
-      grabber.classList.remove('dragging');
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.removeEventListener('touchmove', onTouchMove);
-      document.removeEventListener('touchend', onTouchEnd);
-      saveHeight();
-    }
-
-    const onMouseMove = (e: MouseEvent) => applyDelta(e.clientY);
-    const onMouseUp = () => endDrag();
-    const onTouchMove = (e: TouchEvent) => { e.preventDefault(); applyDelta(e.touches[0].clientY); };
-    const onTouchEnd = () => endDrag();
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
-    document.addEventListener('touchend', onTouchEnd);
-  }
-
-  grabber.addEventListener('mousedown', (e: MouseEvent) => { e.preventDefault(); startDrag(e.clientY); });
-  grabber.addEventListener('touchstart', (e: TouchEvent) => { e.preventDefault(); startDrag(e.touches[0].clientY); }, { passive: false });
-
-  window.addEventListener('blur', () => {
-    if (isDragging) saveHeight();
-  });
-
-  grabber.addEventListener('dblclick', () => {
-    document.body.style.height = '';
-    browser.storage.local.remove(STORAGE_KEYS.POPUP_HEIGHT).catch(() => {});
-  });
-}
-
-browser.storage.local.get(STORAGE_KEYS.POPUP_HEIGHT).then(result => {
-  const stored = result[STORAGE_KEYS.POPUP_HEIGHT];
-  if (typeof stored === 'number' && stored >= POPUP_MIN_HEIGHT && stored <= POPUP_MAX_HEIGHT) {
-    document.body.style.height = `${stored}px`;
-  }
-});
-initResizeGrabber();
+initResizeGrabber(elements.resizeGrabber);
 
 // Init
 loadAndApplySettings().then(() => fetchAndRenderStats());
 initSpotifyFilterChips();
-loadActiveTabInfo();
+manualTrack.loadActiveTabInfo();
 fetchCurrentState();
 fetchPendingEntries();
 
