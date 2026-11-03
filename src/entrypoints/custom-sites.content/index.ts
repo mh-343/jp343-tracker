@@ -3,7 +3,14 @@ import { showUpdateNotification } from '../../lib/update-notification';
 import { claimContentScript } from '../../lib/content-guard';
 import { sampleAttention } from '../../lib/attention';
 import { playbackDeltaMs } from '../../lib/playback-delta';
-import { resolveCustomSiteMeta, resolveMetaSource, isWatchableVideo } from './custom-sites-meta';
+import {
+  resolveCustomSiteMeta,
+  resolveMetaSource,
+  isDecorativeVideo,
+  isAudibleVideo,
+  videoCandidates,
+  MUTED_START_MS
+} from './custom-sites-meta';
 import type { CustomSiteMeta } from './custom-sites-meta';
 
 export default defineContentScript({
@@ -55,6 +62,9 @@ export default defineContentScript({
     let pauseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     // rejected plays back off for 60s
     let nextPlayAttemptAt = 0;
+    let mutedProbeMs = 0;
+    // elements that already had a session here
+    const confirmedVideos = new WeakSet<HTMLVideoElement>();
 
     window.addEventListener('pagehide', () => {
       endSession();
@@ -128,9 +138,15 @@ export default defineContentScript({
       };
     }
 
-    function startTracking(video: HTMLVideoElement): void {
+    function canStartNow(video: HTMLVideoElement): boolean {
+      return !isDecorativeVideo(video) && (isAudibleVideo(video) || confirmedVideos.has(video));
+    }
+
+    // carryMs: muted probe time, counted once confirmed
+    function startTracking(video: HTMLVideoElement, carryMs = 0): void {
       flushDelta();
-      accumulatedDeltaMs = 0;
+      accumulatedDeltaMs = carryMs;
+      mutedProbeMs = 0;
       lastVideoTime = video.currentTime;
       lastTickAt = performance.now();
       pendingPlay = true;
@@ -140,8 +156,11 @@ export default defineContentScript({
         pendingPlay = false;
         if (response && typeof response === 'object' && 'sessionId' in response) {
           currentSessionId = (response as { sessionId: string }).sessionId;
+          confirmedVideos.add(video);
+          if (carryMs > 0) flushDelta();
         } else if (response && typeof response === 'object' && 'skipped' in response) {
           nextPlayAttemptAt = Date.now() + 60_000;
+          accumulatedDeltaMs = 0;
         }
       });
       log('[JP343] custom-sites: play', currentTitle);
@@ -166,7 +185,9 @@ export default defineContentScript({
       video.addEventListener('play', () => {
         if (video !== boundVideo) return;
         if (pauseDebounceTimer) { clearTimeout(pauseDebounceTimer); pauseDebounceTimer = null; }
-        if (!isWatchableVideo(video)) return;
+        // a running session resumes even muted
+        const resuming = Boolean(currentSessionId || pendingPlay) && !isDecorativeVideo(video);
+        if (!resuming && !canStartNow(video)) return;
         nextPlayAttemptAt = 0;
         if (video.readyState >= 3) startTracking(video);
       });
@@ -178,6 +199,7 @@ export default defineContentScript({
       });
       video.addEventListener('pause', () => {
         if (video !== boundVideo) return;
+        mutedProbeMs = 0;
         flushDelta();
         if (pauseDebounceTimer) clearTimeout(pauseDebounceTimer);
         pauseDebounceTimer = setTimeout(() => {
@@ -194,6 +216,7 @@ export default defineContentScript({
       video.addEventListener('ended', () => {
         if (video !== boundVideo) return;
         log('[JP343] custom-sites: ended');
+        mutedProbeMs = 0;
         endSession();
       });
       video.addEventListener('waiting', () => { if (video === boundVideo) flushDelta(); });
@@ -207,9 +230,12 @@ export default defineContentScript({
         lastVideoTime = ct;
         lastTickAt = now;
         if (!currentSessionId && !pendingPlay) {
-          if (ms > 0 && isWatchableVideo(video) && Date.now() >= nextPlayAttemptAt) {
-            startTracking(video);
-          }
+          if (ms <= 0 || isDecorativeVideo(video) || Date.now() < nextPlayAttemptAt) return;
+          if (canStartNow(video)) { startTracking(video, mutedProbeMs); return; }
+          // probe only while the tab is seen
+          if (document.visibilityState !== 'visible') return;
+          mutedProbeMs += ms;
+          if (mutedProbeMs >= MUTED_START_MS) startTracking(video, mutedProbeMs);
           return;
         }
         if (delta < 0 && video.loop) { endSession(); return; }
@@ -233,15 +259,17 @@ export default defineContentScript({
           currentVideoId = meta.videoId;
           currentUrl = meta.url;
           boundSrc = boundVideo.currentSrc;
-          if (!boundVideo.paused && !boundVideo.ended && isWatchableVideo(boundVideo) && boundVideo.readyState >= 3) startTracking(boundVideo);
+          if (!boundVideo.paused && !boundVideo.ended && canStartNow(boundVideo) && boundVideo.readyState >= 3) startTracking(boundVideo);
         }
         return;
       }
 
+      const previous = boundVideo;
       endSession();
       boundVideo = null;
 
-      const video = pickVideo(vids.filter(isWatchableVideo));
+      const video = pickVideo(videoCandidates(vids));
+      if (video !== previous) mutedProbeMs = 0;
       if (!video) return;
       const meta = currentMeta();
       boundVideo = video;
@@ -250,8 +278,8 @@ export default defineContentScript({
       currentVideoId = meta.videoId;
       currentUrl = meta.url;
       bindVideo(video);
-      if (!video.paused && !video.ended && video.readyState >= 3 && Date.now() >= nextPlayAttemptAt) {
-        startTracking(video);
+      if (!video.paused && !video.ended && canStartNow(video) && video.readyState >= 3 && Date.now() >= nextPlayAttemptAt) {
+        startTracking(video, mutedProbeMs);
       }
     }
 

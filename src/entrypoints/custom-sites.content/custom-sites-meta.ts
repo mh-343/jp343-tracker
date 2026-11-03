@@ -34,9 +34,23 @@ function hashString(input: string): string {
   return (hash >>> 0).toString(36);
 }
 
-// autoplay decoration is muted and/or looping; watchable content is neither
-export function isWatchableVideo(v: HTMLVideoElement): boolean {
-  return !v.loop && !v.muted && v.volume > 0;
+// decoration loops; muted alone can be content
+export function isDecorativeVideo(v: HTMLVideoElement): boolean {
+  return v.loop;
+}
+
+export function isAudibleVideo(v: HTMLVideoElement): boolean {
+  return !v.muted && v.volume > 0;
+}
+
+// muted play this long counts as watching
+export const MUTED_START_MS = 30_000;
+
+// audible non-loop videos win over muted ones
+export function videoCandidates(vids: HTMLVideoElement[]): HTMLVideoElement[] {
+  const content = vids.filter(v => !isDecorativeVideo(v));
+  const audible = content.filter(isAudibleVideo);
+  return audible.length > 0 ? audible : content;
 }
 
 export function resolveCustomSiteMeta(loc: MetaSource): CustomSiteMeta {
