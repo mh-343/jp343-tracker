@@ -1,5 +1,5 @@
 import type { JP343UserState, DailyGoalsWire } from '../../types';
-import { normalizeIsPassive } from '../../lib/attention';
+import { normalizeIsPassive, serverPassiveShare } from '../../lib/attention';
 
 export const AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 
@@ -60,6 +60,8 @@ export interface ServerSession {
   activity_type?: string;
   is_passive?: number | string | null;
   isPassive?: boolean;
+  attention_passive_share?: number | string | null;
+  passiveShare?: number;
 }
 
 export async function ajaxPost(
@@ -137,6 +139,7 @@ function normalizeServerSessions(raw: ServerSession[]): ServerSession[] {
     duration_seconds: s.duration_seconds ?? (s.duration_minutes ?? s.minutes ?? 0) * 60,
     url: s.resource_url || s.url || undefined,
     isPassive: normalizeIsPassive(s.is_passive),
+    passiveShare: serverPassiveShare(s),
   }));
 }
 

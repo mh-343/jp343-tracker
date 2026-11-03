@@ -128,7 +128,7 @@ export async function handleStatsSyncMessage(
       }
 
       const pending = await loadPendingEntries();
-      const progress = computeTodayProgress(cached ?? null, pending, todayStr, dsh, browserTz);
+      const progress = computeTodayProgress(cached ?? null, pending, todayStr, dsh, browserTz, settings.attentionVisibleActive === true);
       const todayByActivity = progress ? progress.byActivity : (stats.dailyMinutesByActivity?.[todayStr] ?? {});
       const todayActiveMinutes = progress ? progress.activeMinutes : (stats.dailyActiveMinutes?.[todayStr] ?? 0);
 

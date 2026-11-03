@@ -30,8 +30,9 @@ export async function commitGsmStore<S>(
     }
     await withStatsUpdate(async () => {
       let stats = await loadStats();
-      for (const entry of diff.subtract) stats = applyStatsSubtraction(stats, entry, dayStartHour);
-      for (const entry of diff.add) stats = applyStatsAddition(stats, entry, dayStartHour);
+      // gsm entries carry no attention counters
+      for (const entry of diff.subtract) stats = applyStatsSubtraction(stats, entry, dayStartHour, false);
+      for (const entry of diff.add) stats = applyStatsAddition(stats, entry, dayStartHour, false);
       await browser.storage.local.set({ ...write, [STORAGE_KEYS.STATS]: stats });
     });
     return diff;

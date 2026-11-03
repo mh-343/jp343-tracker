@@ -20,6 +20,19 @@ export interface DailyGoalsWire {
 
 export type AttentionMode = 'active' | 'passive';
 export type AttentionPreference = 'auto' | AttentionMode;
+export type AttentionSample = 'focus' | 'visible' | 'hidden';
+
+export interface AttentionCounters {
+  focusMs: number;
+  visibleMs: number;
+  hiddenMs: number;
+}
+
+export interface AttentionHold {
+  since: number;
+  visibleMs: number;
+  hiddenMs: number;
+}
 
 export const PASSIVE_CAPABLE_ACTIVITIES: ReadonlyArray<ActivityType> = ['watching', 'listening', 'other'];
 
@@ -121,8 +134,9 @@ export interface TrackingSession {
   activityType?: ActivityType;
   attention?: AttentionMode;
   attentionOverride?: AttentionMode;
-  attentionCandidate?: AttentionMode;
-  attentionCandidateSince?: number;
+  attnCounters?: AttentionCounters;
+  attnHold?: AttentionHold;
+  attnLast?: AttentionSample;
   previousIds?: string[];
 }
 
@@ -168,6 +182,10 @@ export interface PendingEntry {
   trackingMode?: TrackingMode;
   sensorVersion?: number;
   isPassive?: boolean;
+  attnFocusSec?: number;
+  attnVisibleSec?: number;
+  attnHiddenSec?: number;
+  attentionChoice?: AttentionMode;
 }
 
 export interface DeletedEntrySnapshot {
@@ -246,6 +264,8 @@ export interface ExtensionSettings {
   difficultyContribEnabled?: boolean;
   showAttentionUi?: boolean;
   attentionPreference?: AttentionPreference;
+  // server rule, pull-only
+  attentionVisibleActive?: boolean;
   dailyGoals?: DailyGoals;
   dailyGoalsTouched?: boolean;
   platformDefaultsMigrated?: boolean;
@@ -319,6 +339,7 @@ export interface SettingsPullResponse {
     hide_non_japanese?: boolean;
     track_japanese_only?: boolean;
     attention_ui_enabled?: boolean;
+    attention_visible_active?: boolean;
     daily_goal?: number;
     day_boundary_hour?: number;
     daily_goals?: DailyGoalsWire | null;
@@ -335,7 +356,7 @@ export type ExtensionMessage =
   | { type: 'AD_START'; platform: Platform }
   | { type: 'AD_END'; platform: Platform }
   | { type: 'VIDEO_STATE_UPDATE'; platform: Platform; state: VideoState }
-  | { type: 'TIME_DELTA'; platform: Platform; deltaMs: number; sessionId: string; attention?: AttentionMode }
+  | { type: 'TIME_DELTA'; platform: Platform; deltaMs: number; sessionId: string; attention?: AttentionSample | AttentionMode }
   | { type: 'JP343_SITE_LOADED'; userState: JP343UserState; displayName?: string }
   | { type: 'JP343_GET_USER_STATE' }
   | { type: 'GET_CURRENT_SESSION' }
@@ -599,6 +620,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   difficultyContribEnabled: false,
   showAttentionUi: true,
   attentionPreference: 'auto',
+  attentionVisibleActive: false,
   dailyGoals: EMPTY_DAILY_GOALS,
   dailyGoalsTouched: false
 };
@@ -690,6 +712,7 @@ export interface CachedServerSession {
   thumbnail?: string;
   activityType?: string;
   isPassive?: boolean;
+  passiveShare?: number;
 }
 
 export interface PlatformHealth {

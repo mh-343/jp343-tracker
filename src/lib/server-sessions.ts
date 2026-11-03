@@ -4,7 +4,7 @@ import { withStorageLock } from './storage-lock';
 import { postJsonWithRetry, coalesceRefresh, type RefreshState } from './server-fetch';
 import { applyLocalRenamesToSessions } from './background/custom-site-names';
 import { reconcileDeletedServerEntries } from './background/server-session-reconcile';
-import { normalizeIsPassive } from './attention';
+import { normalizeIsPassive, serverPassiveShare } from './attention';
 import {
   applyAuthParams,
   awaitServerCacheStartup,
@@ -52,6 +52,7 @@ async function runSessionsFetch(): Promise<void> {
     thumbnail: (s.image || undefined) as string | undefined,
     activityType: (s.activity_type || undefined) as string | undefined,
     isPassive: normalizeIsPassive(s.is_passive),
+    passiveShare: serverPassiveShare(s),
   }));
 
   const wrote = await withStorageLock(async () => {

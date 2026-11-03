@@ -161,8 +161,6 @@ async function applyAttentionChoice(
   } else {
     session.attentionOverride = attention;
     session.attention = attention;
-    session.attentionCandidate = undefined;
-    session.attentionCandidateSince = undefined;
   }
   await context.saveSessionState(session);
   const settings = await context.loadSettings();
@@ -522,9 +520,8 @@ export async function handleTrackingMessage(
           tracker.resumeSession();
           recordDiagnostic?.('heartbeat_resume', message.platform);
         }
-        tracker.addDelta(message.deltaMs);
-        if ('attention' in message) {
-          await applyAttentionSample(message.attention, context, recordDiagnostic);
+        if (tracker.addDelta(message.deltaMs) && 'attention' in message) {
+          applyAttentionSample(message.attention, message.deltaMs);
         }
         await context.saveSessionState(tracker.getCurrentSession());
         scheduleStatusBadgeUpdate();

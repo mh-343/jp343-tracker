@@ -9,7 +9,7 @@ import { setupThemeToggle } from './theme';
 import { setupAuthUI, tryRefreshNonce, isLoggingOut, renderSyncCta, renderTierBadge, renderAuthUI } from './auth';
 import { setLocalDailyMinutes, setLocalHourlyMinutes, setLocalFirstSessions, setLocalAttentionMinutes, setGoalMinutes, setDayStartHour, setAttentionDisplay, renderGoalBar, setupGoalEditor, renderStats, renderHeatmap, renderWeekBars, renderMonthBars, renderHourlyBars, applyServerStats, applyCachedServerStats, refreshDashboardScope, isScopeStillCurrent, resetAccountScopedState } from './stats';
 import { setTargetStartTimes, setDayStartHourForTargetStart, computeLocalFirstSessions, renderTargetStartFromLocal, renderTargetStartChart } from './target-start';
-import { showSessionsLoading, renderSessions, renderServerSessions, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
+import { showSessionsLoading, renderSessions, renderServerSessions, setAttentionVisibleActive, getCachedServerSessions, cacheServerSessions, clearRawCache } from './sessions';
 import { renderRecentlyDeleted } from './recently-deleted';
 import { renderFooter } from './footer';
 import { loadNews } from './news';
@@ -33,6 +33,7 @@ interface DashboardData {
   targetStartTimes: (string | null)[];
   stretchGoalsEnabled: boolean;
   showAttentionUi: boolean;
+  attentionVisibleActive: boolean;
 }
 
 async function loadData(): Promise<DashboardData> {
@@ -63,7 +64,8 @@ async function loadData(): Promise<DashboardData> {
     dayStartHour: Math.max(0, Math.min(6, result[STORAGE_KEYS.SETTINGS]?.dayStartHour ?? 0)),
     targetStartTimes: result[STORAGE_KEYS.SETTINGS]?.targetStartTimes ?? [null, null, null, null, null, null, null],
     stretchGoalsEnabled: result[STORAGE_KEYS.SETTINGS]?.stretchGoalsEnabled ?? true,
-    showAttentionUi: (result[STORAGE_KEYS.SETTINGS] as { showAttentionUi?: boolean } | undefined)?.showAttentionUi ?? true
+    showAttentionUi: (result[STORAGE_KEYS.SETTINGS] as { showAttentionUi?: boolean } | undefined)?.showAttentionUi ?? true,
+    attentionVisibleActive: (result[STORAGE_KEYS.SETTINGS] as { attentionVisibleActive?: boolean } | undefined)?.attentionVisibleActive === true
   };
 }
 
@@ -94,6 +96,7 @@ async function refresh(): Promise<void> {
     setGoalMinutes(data.goalMinutes);
     setDayStartHour(data.dayStartHour);
     setAttentionDisplay(data.showAttentionUi);
+    setAttentionVisibleActive(data.attentionVisibleActive);
     const todayMinutes = data.stats.dailyMinutes[getLocalDateString(new Date(), data.dayStartHour)] || 0;
     renderGoalBar(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);
     renderStretchGoals(todayMinutes, data.goalMinutes, data.stretchGoalsEnabled);

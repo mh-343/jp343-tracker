@@ -7,10 +7,13 @@ import { formatDuration, formatStatDuration, isValidImageUrl, formatSessionStart
 import { subtractSessionFromServerStats } from '../../lib/server-stats';
 import type { ServerSession } from './api';
 import { getDayStartHour, isAttentionDisplayEnabled } from './stats';
+import { groupPendingEntries, groupServerSessions, serverSessionShare, type AttentionAggregate, type ServerSessionGroup } from './attention-groups';
+import { attentionMinutes, hasAttentionCounters, passiveShare } from '../../lib/attention';
 import { setText, renderHeroTime, readCachedServerStats } from './stats';
 import { showStatus as showBulkStatus } from './settings-helpers';
 
 let sessionDisplayCount = 20;
+let attentionVisibleActive = false;
 let rawServerCache: ServerSession[] | null = null;
 let cacheTimestamp = 0;
 let serverSessionsExpanded = false;
@@ -204,18 +207,6 @@ function attachSeriesRename(
   });
 }
 
-interface AttentionAggregate {
-  activeMin: number;
-  passiveMin: number;
-  totalMin: number;
-  tagged: boolean;
-}
-
-function historyGroupKey(projectKey: string, dateStr: string | undefined, tagged: boolean): string {
-  const day = dateStr ? getLocalDateString(new Date(dateStr), getDayStartHour()) : '';
-  return `${projectKey}|${day}|${tagged ? 't' : 'u'}`;
-}
-
 async function retagSequentially<T>(
   items: T[],
   isPassive: boolean,
@@ -296,59 +287,6 @@ function attachAttentionLabels(
   if (agg.passiveMin > 0) addLabel('passive', agg.passiveMin);
   item.classList.add('has-attention-bar');
   item.appendChild(buildAttentionBar(agg));
-}
-
-interface ServerSessionGroup {
-  first: ServerSession;
-  members: ServerSession[];
-  agg: AttentionAggregate;
-}
-
-function groupServerSessions(sessions: ServerSession[]): ServerSessionGroup[] {
-  const byKey = new Map<string, ServerSessionGroup>();
-  const groups: ServerSessionGroup[] = [];
-  for (const s of sessions) {
-    const tagged = s.isPassive !== undefined;
-    const key = historyGroupKey(s.project_id || s.title || '', s.date, tagged);
-    let group = byKey.get(key);
-    if (!group) {
-      group = { first: s, members: [], agg: { activeMin: 0, passiveMin: 0, totalMin: 0, tagged } };
-      byKey.set(key, group);
-      groups.push(group);
-    }
-    group.members.push(s);
-    const min = (s.duration_seconds || 0) / 60;
-    group.agg.totalMin += min;
-    if (s.isPassive === true) group.agg.passiveMin += min;
-    else if (s.isPassive === false) group.agg.activeMin += min;
-  }
-  return groups;
-}
-
-interface PendingGroup {
-  first: PendingEntry;
-  members: PendingEntry[];
-  agg: AttentionAggregate;
-}
-
-function groupPendingEntries(entries: PendingEntry[]): PendingGroup[] {
-  const byKey = new Map<string, PendingGroup>();
-  const groups: PendingGroup[] = [];
-  for (const entry of entries) {
-    const tagged = entry.isPassive !== undefined;
-    const key = historyGroupKey(`${entry.project_id}|${entry.project}`, entry.date, tagged);
-    let group = byKey.get(key);
-    if (!group) {
-      group = { first: entry, members: [], agg: { activeMin: 0, passiveMin: 0, totalMin: 0, tagged } };
-      byKey.set(key, group);
-      groups.push(group);
-    }
-    group.members.push(entry);
-    group.agg.totalMin += entry.duration_min;
-    if (entry.isPassive === true) group.agg.passiveMin += entry.duration_min;
-    else if (entry.isPassive === false) group.agg.activeMin += entry.duration_min;
-  }
-  return groups;
 }
 
 function createBulkTagToolbar(): HTMLElement {
@@ -460,12 +398,16 @@ export function showSessionsLoading(): void {
   container.appendChild(placeholder);
 }
 
+export function setAttentionVisibleActive(on: boolean): void {
+  attentionVisibleActive = on;
+}
+
 export function renderSessions(entries: PendingEntry[]): void {
   const container = document.getElementById('sessionList');
   if (!container) return;
 
   const sorted = [...entries].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  const groups = groupPendingEntries(sorted);
+  const groups = groupPendingEntries(sorted, getDayStartHour(), attentionVisibleActive);
   const display = groups.slice(0, sessionDisplayCount);
 
   if (display.length === 0) {
@@ -540,9 +482,18 @@ export function renderSessions(entries: PendingEntry[]): void {
 
     if (isAttentionDisplayEnabled() && group.agg.tagged) {
       attachAttentionLabels(meta, item, group.agg, entry.activityType, (mode, targetIsPassive) => {
-        const targets = group.members.filter(m => m.isPassive === (mode === 'passive'));
+        const targets = group.members.filter(m => {
+          const share = attentionMinutes(m, attentionVisibleActive);
+          if (!share) return false;
+          return mode === 'passive' ? share.passiveMin > 0 : share.activeMin > 0;
+        });
         return retagSequentially(targets, targetIsPassive, (m, v) => requestRetagPendingEntry(m.id, v)).then(res => {
-          if (res?.success) for (const m of targets) m.isPassive = targetIsPassive;
+          if (res?.success) {
+            for (const m of targets) {
+              m.isPassive = targetIsPassive;
+              if (hasAttentionCounters(m)) m.attentionChoice = targetIsPassive ? 'passive' : 'active';
+            }
+          }
           return res;
         });
       });
@@ -601,6 +552,7 @@ function pendingToServerSession(entry: PendingEntry): ServerSession {
     url: entry.url,
     activity_type: entry.activityType,
     isPassive: entry.isPassive,
+    passiveShare: passiveShare(entry, attentionVisibleActive) ?? undefined,
   };
 }
 
@@ -694,13 +646,21 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
 
   if (isAttentionDisplayEnabled() && group.agg.tagged) {
     attachAttentionLabels(meta, item, group.agg, session.activity_type as ActivityType | undefined, (mode, targetIsPassive) => {
-      const targets = group.members.filter(m => m.isPassive === (mode === 'passive'));
+      const targets = group.members.filter(m => {
+        const share = serverSessionShare(m);
+        if (share === null) return false;
+        return mode === 'passive' ? share > 0 : share < 1;
+      });
       return retagSequentially(targets, targetIsPassive, (m, v) => requestRetagServerEntry(m, v)).then(res => {
         if (res?.success) {
           const ids = new Set(targets.map(m => String(m.id)));
-          for (const m of targets) m.isPassive = targetIsPassive;
+          const newShare = targetIsPassive ? 1 : 0;
+          for (const m of targets) {
+            m.isPassive = targetIsPassive;
+            m.passiveShare = newShare;
+          }
           if (rawServerCache) {
-            rawServerCache = rawServerCache.map(s => ids.has(String(s.id)) ? { ...s, isPassive: targetIsPassive } : s);
+            rawServerCache = rawServerCache.map(s => ids.has(String(s.id)) ? { ...s, isPassive: targetIsPassive, passiveShare: newShare } : s);
           }
         }
         return res;
@@ -747,7 +707,9 @@ function createServerSessionItem(group: ServerSessionGroup): HTMLElement {
           const weekDays = getWeekDates(dsh);
           const weekStart = weekDays[0]?.date ?? '';
           const weekEnd = weekDays[weekDays.length - 1]?.date ?? '';
-          subtractSessionFromServerStats(cached, durationSec, sessionDate, today, weekStart, weekEnd, browserTz, member.isPassive);
+          const memberShare = serverSessionShare(member);
+          const memberSplit = memberShare === null ? null : { activeSec: durationSec * (1 - memberShare), passiveSec: durationSec * memberShare };
+          subtractSessionFromServerStats(cached, durationSec, sessionDate, today, weekStart, weekEnd, browserTz, memberSplit);
           if (cached.total_seconds !== undefined) renderHeroTime(cached.total_seconds / 60);
           if (sessionDate === today && tzMatch && cached.today_seconds !== undefined) {
             setText('statToday', formatStatDuration(cached.today_seconds / 60));
@@ -796,7 +758,7 @@ export function renderServerSessions(sessions: ServerSession[], unsyncedLocal: P
 
   if (isAttentionDisplayEnabled()) container.appendChild(createBulkTagToolbar());
 
-  const groups = groupServerSessions(merged);
+  const groups = groupServerSessions(merged, getDayStartHour());
   const display = serverSessionsExpanded ? groups : groups.slice(0, INITIAL_SERVER_SESSIONS);
   const remaining = serverSessionsExpanded ? 0 : groups.length - INITIAL_SERVER_SESSIONS;
 

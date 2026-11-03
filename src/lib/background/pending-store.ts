@@ -4,7 +4,7 @@ import { withStorageLock } from '../storage-lock';
 import { readSyncPending } from './sync-queue';
 import { shouldSkipYoutubeMusic } from '../youtube-music';
 import { updateBadge } from '../badge-service';
-import { updateStats } from './stats-managers';
+import { attentionRetagBefore, updateStats, type AttentionRetagMove } from './stats-managers';
 import { findMergeTarget, applyMergeUpdate } from './pending-merge';
 
 interface PendingStoreDeps {
@@ -17,6 +17,8 @@ export async function storePendingEntry(
   bypassMusicSkip: boolean,
   deps: PendingStoreDeps
 ): Promise<SavePendingResult> {
+  // a merge rebooks the target's share, not just the new piece
+  let mergeMove: AttentionRetagMove | undefined;
   const result = await withStorageLock<SavePendingResult>(async () => {
     try {
       const pending = await readSyncPending();
@@ -28,7 +30,9 @@ export async function storePendingEntry(
         const dsh = settings.dayStartHour || 0;
         const mergeTarget = findMergeTarget(pending, entry, dsh);
         if (mergeTarget) {
+          const before = attentionRetagBefore(mergeTarget);
           applyMergeUpdate(mergeTarget, entry);
+          mergeMove = { entry: { ...mergeTarget }, before };
           await browser.storage.local.set({ [STORAGE_KEYS.PENDING]: pending });
           deps.log('[JP343] Session merged. Total:', mergeTarget.duration_min.toFixed(1), 'min');
           return 'merged';
@@ -45,6 +49,6 @@ export async function storePendingEntry(
       return 'error';
     }
   });
-  if (result === 'saved' || result === 'merged') await updateStats(entry);
+  if (result === 'saved' || result === 'merged') await updateStats(entry, result === 'merged' ? mergeMove : undefined);
   return result;
 }

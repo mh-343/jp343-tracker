@@ -1,6 +1,7 @@
 import type { ActivityType, PendingEntry } from '../../types';
 import { getLocalDateString, getLogicalNow } from '../format-utils';
 import { ACTIVITY_GOAL_ORDER } from '../activity-goals';
+import { attentionMinutes } from '../attention';
 
 export interface TodayServerBase {
   today_by_activity_seconds?: Record<string, number>;
@@ -27,7 +28,8 @@ export function computeTodayProgress(
   pending: PendingEntry[],
   todayKey: string,
   dayStartHour: number,
-  browserTz: string
+  browserTz: string,
+  visibleActive: boolean
 ): TodayProgress | null {
   if (!cached) return null;
 
@@ -52,9 +54,7 @@ export function computeTodayProgress(
     if (entry.activityType) {
       byActivity[entry.activityType] = (byActivity[entry.activityType] ?? 0) + entry.duration_min;
     }
-    if (entry.isPassive === false) {
-      activeMinutes += entry.duration_min;
-    }
+    activeMinutes += attentionMinutes(entry, visibleActive)?.activeMin ?? 0;
   }
 
   return { byActivity, activeMinutes };

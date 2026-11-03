@@ -11,6 +11,7 @@ import { withStorageLock } from '../storage-lock';
 import { loadPendingEntries } from '../pending-entries';
 import { getLocalDateString, getWeekDates } from '../format-utils';
 import { subtractSessionFromServerStats, type DecrementableServerStats } from '../server-stats';
+import { attentionSecondsSplit } from '../attention';
 import { postJsonWithRetry } from '../server-fetch';
 import {
   applyAuthParams,
@@ -209,7 +210,8 @@ async function markConfirmed(key: string): Promise<void> {
 function serverStatsAfterDelete(
   cached: DecrementableServerStats,
   snapshot: PendingEntry,
-  dayStartHour: number
+  dayStartHour: number,
+  visibleActive: boolean
 ): DecrementableServerStats {
   const deltaSeconds = (snapshot.duration_min || 0) * 60;
   if (deltaSeconds <= 0 || !snapshot.date) return cached;
@@ -222,7 +224,7 @@ function serverStatsAfterDelete(
     weekDays[0]?.date ?? '',
     weekDays[weekDays.length - 1]?.date ?? '',
     Intl.DateTimeFormat().resolvedOptions().timeZone,
-    snapshot.isPassive
+    attentionSecondsSplit(snapshot, visibleActive)
   );
   return cached;
 }
@@ -253,7 +255,8 @@ export async function applyConfirmedDelete(key: string): Promise<boolean> {
         const value = serverStatsAfterDelete(
           cached.value as DecrementableServerStats,
           record.snapshot,
-          settings.dayStartHour || 0
+          settings.dayStartHour || 0,
+          settings.attentionVisibleActive === true
         );
         patch[STORAGE_KEYS.CACHED_SERVER_STATS] = buildOwnedCache(owner, value, cached.cachedAt);
       }

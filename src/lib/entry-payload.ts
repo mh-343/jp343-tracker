@@ -1,5 +1,6 @@
 import type { PendingEntry } from '../types';
 import { buildSensorParams } from './background/sensor-params';
+import { hasAttentionCounters } from './attention';
 
 // 255 column, headroom for "&lt;"
 const MAX_CHANNEL_NAME_CHARS = 200;
@@ -80,9 +81,21 @@ export function buildEntryParams(
         }
       : {}),
     ...(typeof entry.isPassive === 'boolean' ? { is_passive: entry.isPassive ? '1' : '0' } : {}),
+    ...attentionParams(entry),
     ...(entry.platform === 'mokuro' ? seriesParams(entry) : {}),
     ...(entry.platform === 'ttu' ? { ...charPositionParams(entry), ...takeoverParams(entry, takeovers) } : {}),
     ...buildSensorParams(entry)
+  };
+}
+
+// choice only travels with counters
+function attentionParams(entry: PendingEntry): Record<string, string> {
+  if (!hasAttentionCounters(entry)) return {};
+  return {
+    attn_focus_sec: String(entry.attnFocusSec ?? 0),
+    attn_visible_sec: String(entry.attnVisibleSec ?? 0),
+    attn_hidden_sec: String(entry.attnHiddenSec ?? 0),
+    ...(entry.attentionChoice ? { attention_choice: entry.attentionChoice === 'passive' ? '1' : '0' } : {})
   };
 }
 

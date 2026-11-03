@@ -1,5 +1,6 @@
 import type { PendingEntry, Platform } from '../../types';
 import { formatDuration, formatSessionStart, earliestIsoDate, getLocalDateString, isValidImageUrl } from '../../lib/format-utils';
+import { attentionMinutes, passiveShare } from '../../lib/attention';
 import { platformLabel } from '../../lib/platform-labels';
 
 export interface PendingListDeps {
@@ -7,6 +8,7 @@ export interface PendingListDeps {
   platformIcons: Record<Platform, string>;
   getDayStartHour: () => number;
   showAttention: boolean;
+  visibleActive: boolean;
   onEntriesChanged: (entries: PendingEntry[]) => void;
 }
 
@@ -163,8 +165,10 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
   let activeMin = 0;
   let passiveMin = 0;
   for (const e of group.entries) {
-    if (e.isPassive === true) passiveMin += e.duration_min;
-    else if (e.isPassive === false) activeMin += e.duration_min;
+    const split = attentionMinutes(e, deps.visibleActive);
+    if (!split) continue;
+    activeMin += split.activeMin;
+    passiveMin += split.passiveMin;
   }
   const hasSplitData = activeMin > 0 || passiveMin > 0;
 
@@ -323,7 +327,8 @@ function renderEntryGroup(group: GroupedEntry, deps: PendingListDeps): HTMLEleme
       durSpan.textContent = formatDuration(e.duration_min);
       detail.appendChild(durSpan);
 
-      if (deps.showAttention && e.isPassive) {
+      const entryShare = passiveShare(e, deps.visibleActive);
+      if (deps.showAttention && entryShare !== null && entryShare >= 0.5) {
         const passiveChip = document.createElement('span');
         passiveChip.className = 'entry-passive-chip';
         passiveChip.textContent = 'passive';

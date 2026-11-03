@@ -2,6 +2,15 @@ import type { PendingEntry } from '../../types';
 import { getLocalDateString } from '../format-utils';
 import { readerForPlatform } from '../reader-sources';
 import { resetEntrySync } from '../sync-policy';
+import { focusMajorityIsPassive, hasAttentionCounters } from '../attention';
+
+// measured and old entries never mix
+function sameAttentionKind(a: PendingEntry, b: PendingEntry): boolean {
+  if (a.attentionChoice !== b.attentionChoice) return false;
+  const measuredA = hasAttentionCounters(a);
+  if (measuredA !== hasAttentionCounters(b)) return false;
+  return measuredA || a.isPassive === b.isPassive;
+}
 
 export function findMergeTarget(
   pending: PendingEntry[],
@@ -13,7 +22,7 @@ export function findMergeTarget(
   return pending.find(e =>
     e.project_id === entry.project_id &&
     (isReaderEntry || e.project === entry.project) &&
-    e.isPassive === entry.isPassive &&
+    sameAttentionKind(e, entry) &&
     getLocalDateString(new Date(e.date), dayStartHour) === entryDay
   );
 }
@@ -45,6 +54,12 @@ export function applyMergeUpdate(mergeTarget: PendingEntry, entry: PendingEntry)
     mergeTarget.mergedSessionIds = [...(mergeTarget.mergedSessionIds ?? []), entry.id];
   }
   mergeTarget.duration_min += entry.duration_min;
+  if (hasAttentionCounters(entry)) {
+    mergeTarget.attnFocusSec = (mergeTarget.attnFocusSec ?? 0) + (entry.attnFocusSec ?? 0);
+    mergeTarget.attnVisibleSec = (mergeTarget.attnVisibleSec ?? 0) + (entry.attnVisibleSec ?? 0);
+    mergeTarget.attnHiddenSec = (mergeTarget.attnHiddenSec ?? 0) + (entry.attnHiddenSec ?? 0);
+    if (!mergeTarget.attentionChoice) mergeTarget.isPassive = focusMajorityIsPassive(mergeTarget);
+  }
   if (entry.chars) mergeTarget.chars = (mergeTarget.chars ?? 0) + entry.chars;
   mergeReadingState(mergeTarget, entry);
   if (!mergeTarget.thumbnail && entry.thumbnail) {

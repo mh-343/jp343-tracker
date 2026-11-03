@@ -1,5 +1,6 @@
-import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, AttentionMode, AttentionPreference, LangSignalSource } from '../types';
+import type { TrackingSession, VideoState, PendingEntry, Platform, ActivityType, AttentionPreference, LangSignalSource } from '../types';
 import { PLATFORM_ACTIVITY_TYPE, SENSOR_VERSION, activityAllowsPassive } from '../types';
+import { countersToEntryFields, flushAttentionHold, focusMajorityIsPassive } from './attention';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -45,12 +46,22 @@ export function sensorEntryFields(session: TrackingSession): Partial<PendingEntr
 }
 
 export function attentionEntryFields(session: TrackingSession): Partial<PendingEntry> {
-  const mode = session.attentionOverride ?? session.attention;
+  const flushed = flushAttentionHold({ counters: session.attnCounters, hold: session.attnHold, last: session.attnLast });
+  const counted = activityAllowsPassive(session.activityType) ? countersToEntryFields(flushed.counters) : {};
+  const choice = session.attentionOverride;
+  if (counted.attnFocusSec !== undefined) {
+    return {
+      ...counted,
+      ...(choice ? { attentionChoice: choice } : {}),
+      isPassive: choice ? choice === 'passive' : focusMajorityIsPassive(counted)
+    };
+  }
+  const mode = choice ?? session.attention;
   if (!mode) return {};
   return { isPassive: mode === 'passive' };
 }
 
-// split successors keep answering to predecessor ids
+// sessions from older versions keep old ids
 export function sessionOwnsId(session: TrackingSession, id: unknown): boolean {
   if (id === session.id) return true;
   return typeof id === 'string' && Array.isArray(session.previousIds) && session.previousIds.includes(id);
@@ -125,6 +136,7 @@ export class TimeTracker {
       originalTitle: videoState.originalTitle ?? null,
       activityType: activityTypeOverride ?? PLATFORM_ACTIVITY_TYPE[videoState.platform]
     };
+    // a preset is a choice, measuring goes on
     if (attentionPreference === 'passive' && activityAllowsPassive(this.session.activityType)) {
       this.session.attention = 'passive';
       this.session.attentionOverride = 'passive';
@@ -159,8 +171,6 @@ export class TimeTracker {
   resumeAutoAttention(): boolean {
     if (!this.session || this.session.attentionOverride === undefined) return false;
     this.session.attentionOverride = undefined;
-    this.session.attentionCandidate = undefined;
-    this.session.attentionCandidateSince = undefined;
     return true;
   }
 
@@ -292,28 +302,6 @@ export class TimeTracker {
     return this.finalizeSession();
   }
 
-  splitSession(newAttention: AttentionMode): PendingEntry | null {
-    if (!this.session) return null;
-    const predecessor = this.session;
-    const entry = this.finalizeSession();
-    const now = Date.now();
-    this.session = {
-      ...predecessor,
-      id: generateId(),
-      startTime: now,
-      accumulatedMs: 0,
-      lastUpdate: now,
-      isActive: true,
-      isPaused: false,
-      attention: newAttention,
-      attentionCandidate: undefined,
-      attentionCandidateSince: undefined,
-      previousIds: [...(predecessor.previousIds ?? []), predecessor.id].slice(-50)
-    };
-    log('[JP343] Session split on attention change:', newAttention);
-    return entry;
-  }
-
   getCurrentSession(): TrackingSession | null {
     return this.session;
   }
@@ -408,13 +396,13 @@ export class TimeTracker {
     return false;
   }
 
-  addDelta(deltaMs: number, expectedSessionId?: string): void {
-    if (!this.session || !this.session.isActive || this.isInAd) return;
-    if (expectedSessionId !== undefined && this.session.id !== expectedSessionId) return;
-    if (deltaMs > 0) {
-      this.session.accumulatedMs += deltaMs;
-      this.session.lastUpdate = Date.now();
-    }
+  addDelta(deltaMs: number, expectedSessionId?: string): boolean {
+    if (!this.session || !this.session.isActive || this.isInAd) return false;
+    if (expectedSessionId !== undefined && this.session.id !== expectedSessionId) return false;
+    if (!(deltaMs > 0)) return false;
+    this.session.accumulatedMs += deltaMs;
+    this.session.lastUpdate = Date.now();
+    return true;
   }
 
   getSessionId(): string | null {

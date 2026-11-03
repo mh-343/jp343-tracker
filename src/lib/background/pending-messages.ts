@@ -7,6 +7,7 @@ import { fetchAndCacheServerSessions } from '../server-sessions';
 import { withStorageLock } from '../storage-lock';
 import { getLocalDateString, getWeekDates } from '../format-utils';
 import { subtractSessionFromServerStats, type DecrementableServerStats } from '../server-stats';
+import { attentionSecondsSplit } from '../attention';
 import { loadDeletedSnapshots, buildStashedSnapshots, hasDeletedSnapshot, takeDeletedSnapshot, putDeletedSnapshot, currentUserId, snapshotVisibleFor } from './deleted-entries';
 import { deleteServerEntry } from './server-delete';
 import { bulkRetagUntagged, retagPendingEntry, retagServerEntry } from './attention-retag';
@@ -38,7 +39,7 @@ async function applyDeleteToStatsCache(
     cached, deltaSeconds,
     getLocalDateString(new Date(snapshot.date), dsh), getLocalDateString(new Date(), dsh),
     weekDays[0]?.date ?? '', weekDays[weekDays.length - 1]?.date ?? '', browserTz,
-    snapshot.isPassive
+    attentionSecondsSplit(snapshot, settings.attentionVisibleActive === true)
   );
   return buildOwnedCache(owner, cached, envelope.cachedAt);
 }

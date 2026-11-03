@@ -101,7 +101,7 @@ export async function reconcileDeletedServerEntries(requestedAt: number): Promis
       await withStatsUpdate(async () => {
         let stats: ExtensionStats = await loadStats();
         for (const entry of deleted) {
-          stats = applyStatsSubtraction(stats, entry, dayStartHour);
+          stats = applyStatsSubtraction(stats, entry, dayStartHour, settings.attentionVisibleActive === true);
         }
         const remaining = pending.filter(entry => {
           const id = canonicalServerEntryId(entry.serverEntryId);

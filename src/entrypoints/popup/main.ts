@@ -122,6 +122,7 @@ let _popupGoalMinutes = 60;
 let _popupDayStartHour = 0;
 let _popupStretchEnabled = true;
 let _popupShowAttention = true;
+let popupVisibleActive = false;
 let popupDailyGoals: DailyGoals = EMPTY_DAILY_GOALS;
 let popupAttentionPref: AttentionPreference = 'auto';
 let popupSkippedMusic: { videoId: string | null; title: string } | null = null;
@@ -151,6 +152,7 @@ async function loadAndApplySettings(): Promise<void> {
       const attnChanged = _popupShowAttention !== (settings.showAttentionUi ?? true);
       _popupShowAttention = settings.showAttentionUi ?? true;
       if (attnChanged) void fetchPendingEntries();
+      popupVisibleActive = settings.attentionVisibleActive === true;
       popupAttentionPref = settings.attentionPreference ?? 'auto';
     }
   } catch (error) {
@@ -522,6 +524,7 @@ async function fetchPendingEntries(): Promise<void> {
         platformIcons: PLATFORM_ICONS,
         getDayStartHour: () => _popupDayStartHour,
         showAttention: _popupShowAttention,
+        visibleActive: popupVisibleActive,
         onEntriesChanged: updatePendingDisplay
       });
     }
@@ -564,7 +567,10 @@ async function fetchCurrentState(): Promise<void> {
         measuredMs: newDurationMs,
         activityType: currentSession.activityType,
         attention: currentSession.attention,
-        attentionOverride: currentSession.attentionOverride
+        attentionOverride: currentSession.attentionOverride,
+        attnCounters: currentSession.attnCounters,
+        attnHold: currentSession.attnHold,
+        attnLast: currentSession.attnLast
       } : null);
       playerCard.update(player ?? null, !!session);
       todayLive.setPlayerSession(playerCard.liveInput());
@@ -687,6 +693,7 @@ function applyLiveDisplay(d: LiveDisplay): void {
 
 const todayLive = createTodayLive({
   getDayStartHour: () => _popupDayStartHour,
+  getVisibleActive: () => popupVisibleActive,
   onNeedRefresh: () => { void fetchAndRenderStats(); },
   onDisplay: applyLiveDisplay
 });

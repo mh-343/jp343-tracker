@@ -1,4 +1,5 @@
-import type { ActivityType, AttentionMode } from '../../types';
+import type { ActivityType, AttentionCounters, AttentionHold, AttentionMode, AttentionSample } from '../../types';
+import { flushAttentionHold, passiveShare } from '../../lib/attention';
 import { getLocalDateString, getWeekDates } from '../../lib/format-utils';
 
 export interface LiveBase {
@@ -20,6 +21,9 @@ export interface LiveSessionInput {
   activityType?: ActivityType;
   attention?: AttentionMode;
   attentionOverride?: AttentionMode;
+  attnCounters?: AttentionCounters;
+  attnHold?: AttentionHold;
+  attnLast?: AttentionSample;
 }
 
 export interface LivePlayerInput {
@@ -38,6 +42,7 @@ export interface LiveDisplay {
 
 export interface TodayLiveOptions {
   getDayStartHour: () => number;
+  getVisibleActive?: () => boolean;
   onNeedRefresh: () => void;
   onDisplay: (display: LiveDisplay) => void;
 }
@@ -59,6 +64,25 @@ function contribution(input: { startTime: number; measuredMs: number } | null, d
     todayLive: startDay === today ? minutes : 0,
     weekLive: getWeekDates(dsh).some(day => day.date === startDay) ? minutes : 0
   };
+}
+
+function liveActiveMinutes(session: LiveSessionInput | null, todayLive: number, visibleActive: boolean): number {
+  if (!session) return 0;
+  if (session.attentionOverride) return session.attentionOverride === 'active' ? todayLive : 0;
+  if (session.attnCounters) {
+    const flushed = flushAttentionHold({ counters: session.attnCounters, hold: session.attnHold, last: session.attnLast });
+    const c = flushed.counters ?? session.attnCounters;
+    if (c.focusMs + c.visibleMs + c.hiddenMs > 0) {
+      const share = passiveShare({
+        attnFocusSec: c.focusMs / 1000,
+        attnVisibleSec: c.visibleMs / 1000,
+        attnHiddenSec: c.hiddenMs / 1000,
+        activityType: session.activityType
+      }, visibleActive);
+      return todayLive * (1 - (share ?? 0));
+    }
+  }
+  return session.attention === 'active' ? todayLive : 0;
 }
 
 export function createTodayLive(options: TodayLiveOptions) {
@@ -96,12 +120,12 @@ export function createTodayLive(options: TodayLiveOptions) {
     for (const day of Object.keys(dailyMinutes)) dailyMinutes[day] = Math.floor(dailyMinutes[day]);
 
     // player time carries no attention, like its saved entry
-    const attention = session?.attentionOverride ?? session?.attention;
+    const liveActive = liveActiveMinutes(session, browser.todayLive, options.getVisibleActive?.() ?? false);
     const display: LiveDisplay = {
       todayMinutes,
       weekMinutes: Math.floor(base.weekMinutes + browser.weekLive + local.weekLive),
       byActivity,
-      activeMinutes: Math.floor(base.activeMinutes + (attention === 'active' ? browser.todayLive : 0)),
+      activeMinutes: Math.floor(base.activeMinutes + liveActive),
       dailyMinutes
     };
     const nextSignature = JSON.stringify(display);

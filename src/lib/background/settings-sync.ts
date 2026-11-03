@@ -227,6 +227,7 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     const serverHideNonJp: boolean | undefined = result.data?.hide_non_japanese;
     const serverTrackJpOnly: boolean | undefined = result.data?.track_japanese_only;
     const serverAttentionUi: boolean | undefined = result.data?.attention_ui_enabled;
+    const serverVisibleActive: boolean | undefined = result.data?.attention_visible_active;
     const serverDailyGoal: number | undefined = result.data?.daily_goal;
     const serverDayBoundary: number | undefined = result.data?.day_boundary_hour;
 
@@ -259,6 +260,10 @@ async function doPullAndMergeSettings(): Promise<boolean> {
     }
     if (serverAttentionUi !== undefined && settings.showAttentionUi !== serverAttentionUi) {
       settings.showAttentionUi = serverAttentionUi;
+      changed = true;
+    }
+    if (typeof serverVisibleActive === 'boolean' && settings.attentionVisibleActive !== serverVisibleActive) {
+      settings.attentionVisibleActive = serverVisibleActive;
       changed = true;
     }
     if (serverDailyGoal !== undefined && serverDailyGoal > 0 && settings.dailyGoalMinutes !== serverDailyGoal) {

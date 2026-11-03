@@ -5,6 +5,7 @@ import { withStorageLock } from '../storage-lock';
 import { isReading } from '../time-tracker';
 import { addHourlyMinutes, subtractHourlyMinutes } from './hourly-stats';
 import { loadPendingEntries } from '../pending-entries';
+import { attentionMinutes, type AttentionShareInput } from '../attention';
 
 interface StatsManagerDeps {
   log: (...args: unknown[]) => void;
@@ -38,7 +39,35 @@ function addToActivityMap(stats: ExtensionStats, entry: PendingEntry, entryDate:
 
 export const STATS_EPSILON_MIN = 1e-6;
 
-export function applyStatsAddition(stats: ExtensionStats, entry: PendingEntry, dayStartHour: number): ExtensionStats {
+type AttentionSplit = { activeMin: number; passiveMin: number } | null;
+
+function shiftAttentionMinutes(stats: ExtensionStats, entryDate: string, split: AttentionSplit, sign: 1 | -1): void {
+  if (!split) return;
+  const parts: [keyof Pick<ExtensionStats, 'dailyActiveMinutes' | 'dailyPassiveMinutes'>, number][] = [
+    ['dailyActiveMinutes', split.activeMin],
+    ['dailyPassiveMinutes', split.passiveMin]
+  ];
+  for (const [key, minutes] of parts) {
+    if (minutes <= 0) continue;
+    if (sign > 0) {
+      const map = (stats[key] ??= {});
+      map[entryDate] = (map[entryDate] || 0) + minutes;
+      continue;
+    }
+    const map = stats[key];
+    if (!map?.[entryDate]) continue;
+    map[entryDate] = Math.max(0, map[entryDate] - minutes);
+    if (map[entryDate] <= STATS_EPSILON_MIN) delete map[entryDate];
+  }
+}
+
+export function applyStatsAddition(
+  stats: ExtensionStats,
+  entry: PendingEntry,
+  dayStartHour: number,
+  visibleActive: boolean,
+  withAttention = true
+): ExtensionStats {
   const entryDate = getLocalDateString(new Date(entry.date), dayStartHour);
 
   stats.totalMinutes += entry.duration_min;
@@ -50,12 +79,7 @@ export function applyStatsAddition(stats: ExtensionStats, entry: PendingEntry, d
     stats.readingDailyMinutes[entryDate] = (stats.readingDailyMinutes[entryDate] || 0) + entry.duration_min;
   }
 
-  if (typeof entry.isPassive === 'boolean') {
-    const attentionMap = entry.isPassive
-      ? (stats.dailyPassiveMinutes ??= {})
-      : (stats.dailyActiveMinutes ??= {});
-    attentionMap[entryDate] = (attentionMap[entryDate] || 0) + entry.duration_min;
-  }
+  if (withAttention) shiftAttentionMinutes(stats, entryDate, attentionMinutes(entry, visibleActive), 1);
 
   addToActivityMap(stats, entry, entryDate);
 
@@ -89,11 +113,18 @@ export function applyStatsAddition(stats: ExtensionStats, entry: PendingEntry, d
   return stats;
 }
 
-export async function updateStats(entry: PendingEntry): Promise<void> {
+export async function updateStats(entry: PendingEntry, mergeMove?: AttentionRetagMove): Promise<void> {
   await withStorageLock(async () => {
     try {
       const settings = await deps.loadSettings();
-      const stats = applyStatsAddition(await loadStats(), entry, settings.dayStartHour || 0);
+      const dsh = settings.dayStartHour || 0;
+      const visibleActive = settings.attentionVisibleActive === true;
+      const stats = applyStatsAddition(await loadStats(), entry, dsh, visibleActive, !mergeMove);
+      if (mergeMove) {
+        const targetDate = getLocalDateString(new Date(mergeMove.entry.date), dsh);
+        shiftAttentionMinutes(stats, targetDate, attentionMinutes(mergeMove.before, visibleActive), -1);
+        shiftAttentionMinutes(stats, targetDate, attentionMinutes(mergeMove.entry, visibleActive), 1);
+      }
       await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
       deps.log('[JP343] Stats updated: total=' + Math.round(stats.totalMinutes) + 'm, streak=' + stats.currentStreak);
     } catch (error) {
@@ -132,7 +163,8 @@ export function recalculateStreak(dailyMinutes: Record<string, number>, dayStart
 export function applyStatsSubtraction(
   stats: ExtensionStats,
   entry: PendingEntry,
-  dayStartHour: number
+  dayStartHour: number,
+  visibleActive: boolean
 ): ExtensionStats {
   const entryDate = getLocalDateString(new Date(entry.date), dayStartHour);
 
@@ -149,15 +181,7 @@ export function applyStatsSubtraction(
       delete stats.readingDailyMinutes[entryDate];
     }
   }
-  if (typeof entry.isPassive === 'boolean') {
-    const attentionMap = entry.isPassive ? stats.dailyPassiveMinutes : stats.dailyActiveMinutes;
-    if (attentionMap?.[entryDate]) {
-      attentionMap[entryDate] = Math.max(0, attentionMap[entryDate] - entry.duration_min);
-      if (attentionMap[entryDate] <= STATS_EPSILON_MIN) {
-        delete attentionMap[entryDate];
-      }
-    }
-  }
+  shiftAttentionMinutes(stats, entryDate, attentionMinutes(entry, visibleActive), -1);
   if (entry.activityType) {
     const dayMap = stats.dailyMinutesByActivity?.[entryDate];
     const current = dayMap?.[entry.activityType];
@@ -176,9 +200,23 @@ export function applyStatsSubtraction(
   return stats;
 }
 
+export type AttentionRetagBefore = AttentionShareInput & { duration_min: number };
+
 export interface AttentionRetagMove {
   entry: PendingEntry;
-  oldIsPassive: boolean | undefined;
+  before: AttentionRetagBefore;
+}
+
+export function attentionRetagBefore(entry: PendingEntry): AttentionRetagBefore {
+  return {
+    duration_min: entry.duration_min,
+    activityType: entry.activityType,
+    isPassive: entry.isPassive,
+    attentionChoice: entry.attentionChoice,
+    attnFocusSec: entry.attnFocusSec,
+    attnVisibleSec: entry.attnVisibleSec,
+    attnHiddenSec: entry.attnHiddenSec
+  };
 }
 
 // Caller must hold the storage lock
@@ -188,23 +226,11 @@ export async function applyAttentionRetagToStats(moves: AttentionRetagMove[]): P
     const stats = await loadStats();
     const settings = await deps.loadSettings();
     const dsh = settings.dayStartHour || 0;
-    for (const { entry, oldIsPassive } of moves) {
+    const visibleActive = settings.attentionVisibleActive === true;
+    for (const { entry, before } of moves) {
       const entryDate = getLocalDateString(new Date(entry.date), dsh);
-      if (typeof oldIsPassive === 'boolean') {
-        const oldMap = oldIsPassive ? stats.dailyPassiveMinutes : stats.dailyActiveMinutes;
-        if (oldMap?.[entryDate]) {
-          oldMap[entryDate] = Math.max(0, oldMap[entryDate] - entry.duration_min);
-          if (oldMap[entryDate] <= 0) {
-            delete oldMap[entryDate];
-          }
-        }
-      }
-      if (typeof entry.isPassive === 'boolean') {
-        const newMap = entry.isPassive
-          ? (stats.dailyPassiveMinutes ??= {})
-          : (stats.dailyActiveMinutes ??= {});
-        newMap[entryDate] = (newMap[entryDate] || 0) + entry.duration_min;
-      }
+      shiftAttentionMinutes(stats, entryDate, attentionMinutes(before, visibleActive), -1);
+      shiftAttentionMinutes(stats, entryDate, attentionMinutes(entry, visibleActive), 1);
     }
     await browser.storage.local.set({ [STORAGE_KEYS.STATS]: stats });
   } catch (error) {
@@ -217,7 +243,7 @@ export async function buildStatsAfterSubtraction(entry: PendingEntry): Promise<E
   try {
     const stats = await loadStats();
     const settings = await deps.loadSettings();
-    return applyStatsSubtraction(stats, entry, settings.dayStartHour || 0);
+    return applyStatsSubtraction(stats, entry, settings.dayStartHour || 0, settings.attentionVisibleActive === true);
   } catch (error) {
     deps.log('[JP343] Failed to build subtracted stats:', error);
     return null;

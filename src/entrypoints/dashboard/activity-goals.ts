@@ -25,7 +25,7 @@ export async function refreshActivityGoals(): Promise<void> {
   const todayKey = getLocalDateString(new Date(), dsh);
   const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const cached = await readCachedServerStats();
-  const progress = computeTodayProgress(cached, pending, todayKey, dsh, browserTz);
+  const progress = computeTodayProgress(cached, pending, todayKey, dsh, browserTz, settings?.attentionVisibleActive === true);
 
   const rows = computeActivityGoalRows(
     settings?.dailyGoals ?? EMPTY_DAILY_GOALS,
