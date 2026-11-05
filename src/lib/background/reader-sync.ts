@@ -10,6 +10,7 @@ import { getLocalDateString } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { isValidCharPosition } from '../entry-payload';
 import { adoptTtuIds, rekeyPendingTtu } from './ttu-identity';
+import { readerDelta } from './reader-delta';
 
 const WALLCLOCK_SLACK_MIN = 1;
 const DAILY_CAP_MIN = 720;
@@ -333,14 +334,9 @@ export async function ingestReaderSnapshot(
         const pid = generateProjectId(source.platform, '', id);
         if (!state.pendingCompletionPushes.includes(pid)) state.pendingCompletionPushes.push(pid);
       }
-      // First sight or reset: rebase only
-      if (!baseline || vol.effectiveMin < baseline.lastEffectiveMin || vol.chars < baseline.lastChars) {
-        state.baselines[id] = { lastEffectiveMin: vol.effectiveMin, lastChars: vol.chars, lastObservedAt: now };
-        continue;
-      }
-
-      const minutesDelta = vol.effectiveMin - baseline.lastEffectiveMin;
-      const charsDelta = vol.chars - baseline.lastChars;
+      const { baseline: next, minutes: minutesDelta, chars: charsDelta } = readerDelta(baseline, vol, now);
+      state.baselines[id] = next;
+      if (!baseline) continue;
 
       const elapsedMin = Math.floor((now - baseline.lastObservedAt) / 60000) + WALLCLOCK_SLACK_MIN;
       const usedToday = state.creditedByDay[today] || 0;
@@ -379,8 +375,6 @@ export async function ingestReaderSnapshot(
           sensorVersion: SENSOR_VERSION
         });
       }
-
-      state.baselines[id] = { lastEffectiveMin: vol.effectiveMin, lastChars: vol.chars, lastObservedAt: now };
     }
 
     state.creditedByDay = pruneDays(state.creditedByDay);

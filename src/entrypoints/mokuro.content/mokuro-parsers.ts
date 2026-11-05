@@ -10,6 +10,7 @@ interface RawVolume {
   series_uuid?: string;
   completed?: boolean;
   deletedOn?: string;
+  archivedReads?: unknown[];
 }
 
 const IDLE_CAP_MIN = 10;
@@ -74,7 +75,8 @@ export function buildSnapshot(
       volumeTitle: v.volume_title ?? null,
       seriesUuid: v.series_uuid ?? null,
       completed: !!v.completed,
-      deleted: !!v.deletedOn
+      deleted: !!v.deletedOn,
+      restarts: Array.isArray(v.archivedReads) ? v.archivedReads.length : 0
     };
   }
   return out;

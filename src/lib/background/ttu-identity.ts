@@ -37,6 +37,7 @@ function movedBaseline(state: ReaderState, to: string, froms: Set<string>): Read
   return {
     lastEffectiveMin: parts.reduce((sum, b) => sum + b.lastEffectiveMin, 0),
     lastChars: parts.reduce((sum, b) => sum + b.lastChars, 0),
+    maxChars: parts.reduce((sum, b) => sum + (b.maxChars ?? b.lastChars), 0),
     lastObservedAt: Math.max(...parts.map(b => b.lastObservedAt))
   };
 }

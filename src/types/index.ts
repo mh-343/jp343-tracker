@@ -547,11 +547,16 @@ export interface ReaderVolumeSnapshot {
   readingTotal?: number;
   // old title ids of a ttsu book, oldest first
   legacyIds?: string[];
+  // archived read passes, mokuro only
+  restarts?: number;
 }
 
 export interface ReaderBaseline {
   lastEffectiveMin: number;
   lastChars: number;
+  // highest chars credited; missing = lastChars
+  maxChars?: number;
+  restarts?: number;
   lastObservedAt: number;
 }
 
