@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { loadBackground } from '../../lib/background-image';
 import { normalizeUserId } from '../../lib/auth-helpers';
 import { createDebugLogger } from '../../lib/debug-logger';
-import { PLAYBACK_SIGNAL_ATTR, playbackSignalFrom } from '../../lib/playback-signal';
+import { PLAYBACK_SIGNAL_ATTR, combinedPlaybackSignal, playbackSignalFrom, playerSignalFrom } from '../../lib/playback-signal';
 
 export default defineContentScript({
   matches: [
@@ -341,10 +341,13 @@ export default defineContentScript({
     else document.addEventListener('DOMContentLoaded', startBgObserver, { once: true });
 
     let lastPlaybackAttr: string | null = null;
+    let storedSession: unknown = null;
+    let storedPlayer: unknown = null;
 
-    function publishPlayback(stored: unknown): void {
+    function publishPlayback(): void {
       if (disposed) return;
-      const value = JSON.stringify(playbackSignalFrom(stored));
+      const signal = combinedPlaybackSignal(playbackSignalFrom(storedSession), playerSignalFrom(storedPlayer));
+      const value = JSON.stringify(signal);
       if (value === lastPlaybackAttr) return;
       lastPlaybackAttr = value;
       document.documentElement.setAttribute(PLAYBACK_SIGNAL_ATTR, value);
@@ -352,8 +355,10 @@ export default defineContentScript({
 
     async function syncPlayback(): Promise<void> {
       try {
-        const res = await browser.storage.local.get(STORAGE_KEYS.SESSION);
-        publishPlayback(res[STORAGE_KEYS.SESSION]);
+        const res = await browser.storage.local.get([STORAGE_KEYS.SESSION, STORAGE_KEYS.MPCHC]);
+        storedSession = res[STORAGE_KEYS.SESSION];
+        storedPlayer = res[STORAGE_KEYS.MPCHC];
+        publishPlayback();
       } catch { /* extension context gone */ }
     }
 
@@ -364,8 +369,10 @@ export default defineContentScript({
       if (changes[STORAGE_KEYS.BG_IMAGE_REVISION] || changes[STORAGE_KEYS.SETTINGS]) {
         syncHubBackgroundLayer();
       }
-      if (changes[STORAGE_KEYS.SESSION]) {
-        publishPlayback(changes[STORAGE_KEYS.SESSION].newValue);
+      if (changes[STORAGE_KEYS.SESSION] || changes[STORAGE_KEYS.MPCHC]) {
+        if (changes[STORAGE_KEYS.SESSION]) storedSession = changes[STORAGE_KEYS.SESSION].newValue;
+        if (changes[STORAGE_KEYS.MPCHC]) storedPlayer = changes[STORAGE_KEYS.MPCHC].newValue;
+        publishPlayback();
       }
     }
     browser.storage.onChanged.addListener(onStorageChanged);
