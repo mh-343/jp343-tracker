@@ -1,6 +1,6 @@
 import type { AnkiState, AnkiCollectionState, AnkiDay, AnkiStatus } from '../../types';
 import { STORAGE_KEYS, DEFAULT_SETTINGS } from '../../types';
-import { getLocalDateString, formatStatDuration } from '../../lib/format-utils';
+import { getLocalDateString, formatStatDuration, shiftDateString } from '../../lib/format-utils';
 import { recalculateStreak } from '../../lib/background/stats-managers';
 
 interface AnkiView {
@@ -18,12 +18,6 @@ async function loadView(): Promise<AnkiView | null> {
   if (!col || Object.keys(col.days).length === 0) return null;
   const settings = { ...DEFAULT_SETTINGS, ...(res[STORAGE_KEYS.SETTINGS] || {}) };
   return { state, col, dayStartHour: settings.dayStartHour || 0 };
-}
-
-function shiftDate(dateKey: string, deltaDays: number): string {
-  const d = new Date(dateKey + 'T12:00:00');
-  d.setDate(d.getDate() + deltaDays);
-  return getLocalDateString(d, 0);
 }
 
 function sumField(col: AnkiCollectionState, field: keyof AnkiDay, fromDate?: string): number {
@@ -95,7 +89,7 @@ function formatDate(dateKey: string): string {
 
 function buildSparkline(col: AnkiCollectionState, today: string): HTMLElement {
   const vals: number[] = [];
-  for (let i = 29; i >= 0; i--) vals.push(col.days[shiftDate(today, -i)]?.reviews ?? 0);
+  for (let i = 29; i >= 0; i--) vals.push(col.days[shiftDateString(today, -i)]?.reviews ?? 0);
 
   if (vals.every(v => v === 0)) {
     const hint = el('div', 'anki-empty-hint');
@@ -247,8 +241,8 @@ export async function renderAnkiCard(): Promise<void> {
 
   const { state, col, dayStartHour } = view;
   const today = getLocalDateString(new Date(), dayStartHour);
-  const from7 = shiftDate(today, -6);
-  const from30 = shiftDate(today, -29);
+  const from7 = shiftDateString(today, -6);
+  const from30 = shiftDateString(today, -29);
 
   const reviewsToday = col.days[today]?.reviews ?? 0;
   const reviews7 = sumField(col, 'reviews', from7);

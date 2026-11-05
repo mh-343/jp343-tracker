@@ -1,6 +1,9 @@
 import type { ReaderState, PendingEntry, ExtensionStats, JP343UserState } from '../../types';
 import { STORAGE_KEYS, DEFAULT_READER_STATE, DEFAULT_SETTINGS, DEFAULT_STATS } from '../../types';
-import { getLocalDateString, formatStatDuration } from '../../lib/format-utils';
+import { getLocalDateString, formatStatDuration, shiftDateString } from '../../lib/format-utils';
+import { platformLabel } from '../../lib/platform-labels';
+import type { SpeedLanes, SpeedMedium } from '../../lib/reading-speed';
+import { speedLanesFromEntries } from '../../lib/reading-speed';
 import { isReading } from '../../lib/time-tracker';
 import { isDashboardSignedIn } from '../../lib/auth-helpers';
 import { gsmImportViewEntries, toGsmImportStore } from '../../lib/gsm/import';
@@ -76,23 +79,43 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-function tile(value: string, label: string, sub: string): HTMLElement {
+function tile(value: string, label: string): HTMLElement {
   const card = el('div', 'qs-card');
   card.appendChild(el('div', 'qs-value', value));
   card.appendChild(el('div', 'qs-label', label));
-  card.appendChild(el('div', 'reading-sub', sub));
   return card;
 }
 
-function shiftDay(today: string, deltaDays: number): string {
-  const d = new Date(today + 'T12:00:00');
-  d.setDate(d.getDate() + deltaDays);
-  return getLocalDateString(d, 0);
+const MEDIUM_LABELS: Record<SpeedMedium, string> = { text: 'Text', manga: 'Manga' };
+
+function speedWaitText(speed: SpeedLanes): string {
+  if (speed.lanes.length === 0) return 'No timed reading yet';
+  const waiting = speed.lanes.filter(l => l.status !== 'stale');
+  if (waiting.length === 0) return 'No reading in the last 180 days';
+  const lane = waiting.reduce((a, b) => (b.days > a.days || (b.days === a.days && b.secs > a.secs) ? b : a));
+  if (lane.days < lane.needDays) return `Learning your pace, ${lane.days} of ${lane.needDays} reading days`;
+  return `Learning your pace, ${formatStatDuration(lane.secs / 60)} of ${formatStatDuration(lane.needSecs / 60)} timed`;
+}
+
+function speedTile(speed: SpeedLanes): HTMLElement {
+  const main = speed.lanes.find(l => l.lane === speed.primary && l.status === 'ok');
+  if (!main || main.cph === null) {
+    const card = tile('—', 'chars/h');
+    card.title = speedWaitText(speed);
+    return card;
+  }
+  const card = tile(main.cph.toLocaleString('en-US'), `${MEDIUM_LABELS[main.medium]} chars/h`);
+  const range = main.p25 !== null && main.p75 !== null
+    ? ` Typical range ${main.p25.toLocaleString('en-US')} to ${main.p75.toLocaleString('en-US')}.`
+    : '';
+  card.title = `Your ${main.medium} speed in ${platformLabel(main.platform)}, `
+    + `median of your last ${main.days} reading days.${range}`;
+  return card;
 }
 
 function lastDays(daily: Record<string, number>, today: string, count: number): number[] {
   const vals: number[] = [];
-  for (let i = count - 1; i >= 0; i--) vals.push(daily[shiftDay(today, -i)] ?? 0);
+  for (let i = count - 1; i >= 0; i--) vals.push(daily[shiftDateString(today, -i)] ?? 0);
   return vals;
 }
 
@@ -144,7 +167,8 @@ function buildSeriesList(entries: PendingEntry[]): HTMLElement {
     if (agg.chars > 0) {
       meta.appendChild(el('span', 'reading-series-chars', agg.chars.toLocaleString('en-US') + ' chars'));
       if (agg.minutes > 0) {
-        meta.appendChild(el('span', 'reading-series-speed', Math.round(agg.chars / agg.minutes) + ' chars/min'));
+        const cph = Math.round(agg.chars * 60 / agg.minutes);
+        meta.appendChild(el('span', 'reading-series-speed', cph.toLocaleString('en-US') + ' chars/h'));
       }
     }
     item.appendChild(meta);
@@ -201,17 +225,15 @@ export async function renderReadingCard(): Promise<void> {
   const today = getLocalDateString(new Date(), dayStartHour);
   const localTotalMinutes = states.reduce((sum, s) => sum + (s.state.totalMinutes ?? 0), 0);
   const localTotalChars = states.reduce((sum, s) => sum + (s.state.totalChars ?? 0), 0);
-  const localSpeed = localTotalMinutes > 0 ? Math.round(localTotalChars / localTotalMinutes) : 0;
 
   const useServer = serverHasData;
-  const scopeSub = useServer ? 'all sources' : 'this browser';
 
   const todayMin = useServer ? (server!.today_minutes ?? 0) : (readingDaily[today] ?? 0);
   const weekMin = useServer
     ? sumRecentDaily(server!.daily, 7)
     : lastDays(readingDaily, today, 7).reduce((sum, m) => sum + m, 0);
   const totalChars = useServer ? (server!.total_chars ?? 0) : localTotalChars;
-  const speed = useServer ? (server!.reading_speed ?? 0) : localSpeed;
+  const speed = useServer ? server!.speed : speedLanesFromEntries(entries, dayStartHour, today);
   const showAggregates = useServer || localTotalMinutes > 0;
 
   card.style.display = '';
@@ -219,11 +241,11 @@ export async function renderReadingCard(): Promise<void> {
   for (const warning of warnings) body.appendChild(warning);
 
   const grid = el('div', 'reading-grid');
-  grid.appendChild(tile(formatStatDuration(todayMin), 'Read today', scopeSub));
-  grid.appendChild(tile(formatStatDuration(weekMin), 'Last 7 days', scopeSub));
+  grid.appendChild(tile(formatStatDuration(todayMin), 'Read today'));
+  grid.appendChild(tile(formatStatDuration(weekMin), 'Last 7 days'));
   if (showAggregates) {
-    grid.appendChild(tile(totalChars > 0 ? totalChars.toLocaleString('en-US') : '—', 'Characters', scopeSub));
-    grid.appendChild(tile(speed > 0 ? String(speed) : '—', 'chars/min', speed > 0 ? scopeSub : 'no timed reading yet'));
+    grid.appendChild(tile(totalChars > 0 ? totalChars.toLocaleString('en-US') : '—', 'Characters'));
+    grid.appendChild(speedTile(speed));
   }
   body.appendChild(grid);
 

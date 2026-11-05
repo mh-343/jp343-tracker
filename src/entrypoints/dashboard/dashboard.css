@@ -540,11 +540,6 @@
     .anki-reset-btn:disabled { opacity: 0.6; cursor: default; }
 
     /* ── Reading Card ───────────────────────────────── */
-    .reading-sub {
-      font-size: 10px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
     .reading-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));

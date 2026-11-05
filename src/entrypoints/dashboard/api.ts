@@ -1,5 +1,6 @@
 import type { JP343UserState, DailyGoalsWire } from '../../types';
 import { normalizeIsPassive, serverPassiveShare } from '../../lib/attention';
+import type { SpeedLane, SpeedLanes, SpeedStatus } from '../../lib/reading-speed';
 
 export const AJAX_URL = 'https://jp343.com/wp-admin/admin-ajax.php';
 
@@ -34,8 +35,55 @@ export interface ServerReadingStatsResponse {
   today_minutes?: number;
   total_minutes?: number;
   total_chars?: number;
-  reading_speed?: number | null;
   daily?: { day: string; minutes: number }[];
+  speed: SpeedLanes;
+}
+
+interface RawSpeedLane {
+  lane?: unknown;
+  medium?: unknown;
+  platform?: unknown;
+  status?: unknown;
+  cph?: unknown;
+  p25?: unknown;
+  p75?: unknown;
+  days?: unknown;
+  secs?: unknown;
+  need_days?: unknown;
+  need_secs?: unknown;
+}
+
+type RawReadingStats = Omit<ServerReadingStatsResponse, 'speed'> & { speed_lanes?: unknown; primary_lane?: unknown };
+
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function toSpeedLane(raw: RawSpeedLane): SpeedLane | null {
+  if (typeof raw.lane !== 'string' || (raw.medium !== 'text' && raw.medium !== 'manga')) return null;
+  const status: SpeedStatus = raw.status === 'ok' || raw.status === 'stale' ? raw.status : 'learning';
+  return {
+    lane: raw.lane,
+    medium: raw.medium,
+    platform: typeof raw.platform === 'string' ? raw.platform : '',
+    status,
+    cph: numOrNull(raw.cph),
+    p25: numOrNull(raw.p25),
+    p75: numOrNull(raw.p75),
+    days: numOrNull(raw.days) ?? 0,
+    secs: numOrNull(raw.secs) ?? 0,
+    needDays: numOrNull(raw.need_days) ?? 0,
+    needSecs: numOrNull(raw.need_secs) ?? 0
+  };
+}
+
+function toReadingStats(data: unknown): ServerReadingStatsResponse {
+  const raw = (data && typeof data === 'object' ? data : { has_data: false }) as RawReadingStats;
+  const { speed_lanes: rawLanes, primary_lane: rawPrimary, ...rest } = raw;
+  const lanes = Array.isArray(rawLanes)
+    ? rawLanes.map(l => toSpeedLane((l ?? {}) as RawSpeedLane)).filter((l): l is SpeedLane => l !== null)
+    : [];
+  return { ...rest, speed: { lanes, primary: typeof rawPrimary === 'string' ? rawPrimary : null } };
 }
 
 export interface ServerSession {
@@ -111,13 +159,13 @@ export async function fetchReadingStats(userState: JP343UserState): Promise<Serv
       const result = await ajaxPost('jp343_extension_get_reading_stats', {
         ext_api_token: userState.extApiToken
       }, 'omit');
-      if (result.success) return result.data as ServerReadingStatsResponse;
+      if (result.success) return toReadingStats(result.data);
     } catch {}
   }
   if (userState.nonce) {
     try {
       const result = await ajaxPost('jp343_get_reading_stats', { nonce: userState.nonce });
-      if (result.success) return result.data as ServerReadingStatsResponse;
+      if (result.success) return toReadingStats(result.data);
     } catch {}
   }
   return null;

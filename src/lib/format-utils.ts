@@ -120,6 +120,12 @@ export function getLocalDateString(date: Date = new Date(), dayStartHour = 0): s
   return `${year}-${month}-${day}`;
 }
 
+export function shiftDateString(dateKey: string, deltaDays: number): string {
+  const d = new Date(dateKey + 'T12:00:00');
+  d.setDate(d.getDate() + deltaDays);
+  return getLocalDateString(d, 0);
+}
+
 export function getWeekDates(dayStartHour = 0): { date: string; label: string; isToday: boolean }[] {
   const now = getLogicalNow(dayStartHour);
   const dayOfWeek = now.getDay();
