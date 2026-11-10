@@ -244,6 +244,7 @@ export interface ExtensionSettings {
   mergeSameDaySessions: boolean;
   minDurationMinutes: number;
   enabledPlatforms: Platform[];
+  disabledPlatforms: Platform[];
   blockedChannels: BlockedChannel[];
   spotifyContentTypes: SpotifyContentType[];
   dailyGoalMinutes: number;
@@ -602,7 +603,9 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   autoSync: true,
   mergeSameDaySessions: true,
   minDurationMinutes: 1,
+  // toggle list; user choice: disabledPlatforms
   enabledPlatforms: ['youtube', 'netflix', 'crunchyroll', 'primevideo', 'disneyplus', 'cijapanese', 'nihongojikan', 'spotify', 'twitch', 'asbplayer'],
+  disabledPlatforms: [],
   blockedChannels: [],
   spotifyContentTypes: ['podcast', 'audiobook'],
   dailyGoalMinutes: 60,

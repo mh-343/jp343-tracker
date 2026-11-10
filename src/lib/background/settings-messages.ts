@@ -15,6 +15,7 @@ import { reconcileConfirmedDeletes } from './server-delete';
 import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
 import { acknowledgeSyncCounts } from './sync-queue';
+import { isPlatformDisabled } from '../platform-toggles';
 
 async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMessageContext): Promise<void> {
   const state = commit.state;
@@ -27,6 +28,16 @@ async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMess
   if (!state.extApiToken) return;
   await context.pullAndMergeSettingsFromServer().catch(() => {});
   flushCustomSiteRenames({ saveSessionState: context.saveSessionState }).catch(() => {});
+}
+
+async function finalizeActiveSession(context: BackgroundMessageContext, reason: string): Promise<void> {
+  const entry = tracker.finalizeSession();
+  if (entry) {
+    await context.savePendingEntry(entry);
+    context.log('[JP343] Active session finalized on ' + reason);
+  }
+  await context.saveSessionState(null);
+  await updateStatusBadge();
 }
 
 export async function handleSettingsMessage(
@@ -72,6 +83,10 @@ export async function handleSettingsMessage(
         delete (newSettings as Record<string, unknown>).whitelistedChannels;
         newSettings.attentionPreference = prev.attentionPreference;
         await context.saveSettings(newSettings);
+        const running = tracker.getCurrentSession();
+        if (running && isPlatformDisabled(newSettings, running.platform)) {
+          await finalizeActiveSession(context, 'platform disable');
+        }
         if (newSettings.diagnosticsEnabled === false) await acknowledgeSyncCounts({});
         context.syncSettingsToServer(newSettings).catch(() => {});
 
@@ -87,14 +102,7 @@ export async function handleSettingsMessage(
         await context.saveSettings(settings);
 
         if (!message.enabled) {
-          const entry = tracker.finalizeSession();
-          if (entry) {
-            await context.savePendingEntry(entry);
-            context.log('[JP343] Active session finalized on disable');
-          }
-          await context.saveSessionState(null);
-
-          await updateStatusBadge();
+          await finalizeActiveSession(context, 'disable');
         } else {
           scheduleStatusBadgeUpdate();
         }

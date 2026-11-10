@@ -2,6 +2,7 @@ import type { ExtensionSettings, Platform, SpotifyContentType, ColorTheme, Reade
 import { STORAGE_KEYS, DEFAULT_SETTINGS, COLOR_THEMES, DAILY_GOAL_MIN_MINUTES, DAILY_GOAL_MAX_MINUTES } from '../../types';
 import { resizeImage, saveBackground, loadBackground, removeBackground, applyDashboardBackground, clearBackgroundDom } from '../../lib/background-image';
 import { applyColorTheme } from '../../lib/theme';
+import { isPlatformDisabled } from '../../lib/platform-toggles';
 import { buildTargetStartSection } from './target-start-settings';
 import { getSettings, getFreshSettings, updateSettings, createToggleRow, setToggleRowDisabled, showStatus } from './settings-helpers';
 import { buildActivityGoalsSection } from './activity-goals-settings';
@@ -430,13 +431,14 @@ function buildPlatformToggles(container: HTMLElement, settings: ExtensionSetting
     container.appendChild(createToggleRow(
       PLATFORM_LABELS[platform] || platform,
       '',
-      settings.enabledPlatforms.includes(platform),
+      !isPlatformDisabled(settings, platform),
       async (val) => {
         const current = await getSettings();
+        const disabled = current.disabledPlatforms ?? [];
         const list = val
-          ? [...new Set([...current.enabledPlatforms, platform])]
-          : current.enabledPlatforms.filter(p => p !== platform);
-        await updateSettings({ enabledPlatforms: list as Platform[] });
+          ? disabled.filter(p => p !== platform)
+          : [...new Set([...disabled, platform])];
+        await updateSettings({ disabledPlatforms: list as Platform[] });
       }
     ));
   }

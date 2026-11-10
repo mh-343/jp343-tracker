@@ -16,6 +16,7 @@ import { getCustomSitesState, allowedCustomSiteHost } from './custom-sites';
 import { getPlayerLive } from './mpchc-live';
 import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
+import { isPlatformDisabled } from '../platform-toggles';
 
 const jpCheckCache = new Map<string, LangSignalSource | null>();
 
@@ -189,6 +190,7 @@ export async function handleTrackingMessage(
       }
 
       if ('state' in message && message.state && typeof message.state === 'object') {
+        if (isPlatformDisabled(settings, message.state.platform)) return { success: true, skipped: true };
         let customSiteGrantHost: string | null = null;
         if (message.state.platform === 'generic' && message.state.videoId?.startsWith('cs_')) {
           customSiteGrantHost = await allowedCustomSiteHost(
@@ -478,6 +480,7 @@ export async function handleTrackingMessage(
           !tracker.getCurrentSession() &&
           (message.state.originalTitle || message.state.audioLanguage) &&
           isJapaneseGatedPlatform(message.state.platform) &&
+          !isPlatformDisabled(settings, message.state.platform) &&
           message.state.isPlaying
         ) {
           if (settings.trackJapaneseOnly) {
