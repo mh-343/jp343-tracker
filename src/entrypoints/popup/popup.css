@@ -547,7 +547,36 @@ body.sessions-full .pending-header-actions {
 body.sessions-full .pending-header { cursor: default; }
 body.sessions-full .pending-header:hover { color: var(--text-secondary); }
 body.sessions-full .sessions-back { display: flex; }
-body.sessions-full .pending-list { display: block !important; }
+body.sessions-full .pending-list {
+  display: block !important;
+  flex: 0 1 auto;
+}
+.sessions-history-link {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 6px;
+  padding: 8px;
+  background: transparent;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sessions-history-link:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+.sessions-history-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+body.sessions-full .sessions-history-link:not([hidden]) { display: flex; }
 
 .pending-info {
   display: flex;

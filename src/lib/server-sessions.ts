@@ -15,6 +15,8 @@ import {
 } from './server-cache';
 
 const REFRESH_THROTTLE_MS = 30000;
+const RECENT_SESSIONS_REQUEST_LIMIT = 50;
+const LEGACY_SERVER_SESSION_CAP = 20;
 const refreshState: RefreshState = { inFlight: null, lastAttempt: 0 };
 
 export function fetchAndCacheServerSessions(force = false): Promise<void> {
@@ -31,7 +33,7 @@ async function runSessionsFetch(): Promise<void> {
     token: 'jp343_extension_get_recent_sessions',
     nonce: 'jp343_get_recent_sessions'
   });
-  params.set('limit', '20');
+  params.set('limit', String(RECENT_SESSIONS_REQUEST_LIMIT));
 
   const requestedAt = Date.now();
   const result = await postJsonWithRetry(context.ajaxUrl, params, 'get_recent_sessions', {
@@ -39,6 +41,7 @@ async function runSessionsFetch(): Promise<void> {
   });
   const rawSessions = result?.data?.sessions;
   if (!result?.success || !Array.isArray(rawSessions)) return;
+  const appliedLimit = appliedServerLimit(result.data?.limit);
 
   const mapped: CachedServerSession[] = (rawSessions as Record<string, unknown>[]).map(s => ({
     id: s.id as number | string,
@@ -62,5 +65,12 @@ async function runSessionsFetch(): Promise<void> {
     await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: envelope });
     return true;
   });
-  if (wrote) await reconcileDeletedServerEntries(requestedAt);
+  if (wrote) await reconcileDeletedServerEntries(requestedAt, appliedLimit);
+}
+
+// servers without a limit field still cap at 20
+function appliedServerLimit(raw: unknown): number {
+  const value = typeof raw === 'number' ? raw : Number(raw);
+  if (Number.isInteger(value) && value > 0) return Math.min(value, RECENT_SESSIONS_REQUEST_LIMIT);
+  return LEGACY_SERVER_SESSION_CAP;
 }

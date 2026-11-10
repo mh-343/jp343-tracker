@@ -9,8 +9,6 @@ import { applyStatsSubtraction, loadStats } from './stats-managers';
 import { withStatsUpdate } from './stats-snapshot';
 import { updateBadge } from '../badge-service';
 
-const RECENT_SESSIONS_REQUEST_LIMIT = 20;
-
 // logged_at from the server has no timezone; parse naive
 // timestamps as UTC so they line up with the entry's ISO date.
 function parseServerTime(value: string): number {
@@ -73,7 +71,7 @@ export function selectServerDeletedEntries(
   });
 }
 
-export async function reconcileDeletedServerEntries(requestedAt: number): Promise<void> {
+export async function reconcileDeletedServerEntries(requestedAt: number, requestLimit: number): Promise<void> {
   await withStorageLock(async () => {
     try {
       const owner = stableUserId(await loadUserState());
@@ -86,7 +84,7 @@ export async function reconcileDeletedServerEntries(requestedAt: number): Promis
         pending,
         envelope.value,
         requestedAt,
-        RECENT_SESSIONS_REQUEST_LIMIT
+        requestLimit
       );
       if (deleted.length === 0) return;
 

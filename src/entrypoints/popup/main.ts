@@ -515,6 +515,7 @@ const syncIssues = createSyncIssues(document.getElementById('syncIssues')!, () =
 const sessionsView = createSessionsView({
   expandBtn: document.getElementById('btnSessionsExpand') as HTMLButtonElement,
   backBtn: document.getElementById('btnSessionsBack') as HTMLButtonElement,
+  historyBtn: document.getElementById('btnFullHistory') as HTMLButtonElement,
   listEl: elements.pendingList,
   onChange: () => {
     syncPopupHeight();
