@@ -65,7 +65,7 @@ async function runSessionsFetch(): Promise<void> {
     await browser.storage.local.set({ [STORAGE_KEYS.CACHED_SERVER_SESSIONS]: envelope });
     return true;
   });
-  if (wrote) await reconcileDeletedServerEntries(requestedAt, appliedLimit);
+  if (wrote) await reconcileDeletedServerEntries(requestedAt, appliedLimit, context);
 }
 
 // servers without a limit field still cap at 20

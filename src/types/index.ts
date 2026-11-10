@@ -461,6 +461,7 @@ export interface ActiveTabInfo {
   title: string;
   domain: string;
   isStreamingSite: boolean;
+  disabledPlatform?: Platform | null;
 }
 
 export interface ExtensionStats {

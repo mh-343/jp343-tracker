@@ -16,6 +16,7 @@ import { tracker } from '../time-tracker';
 import type { BackgroundMessageContext } from './message-context';
 import { acknowledgeSyncCounts } from './sync-queue';
 import { isPlatformDisabled } from '../platform-toggles';
+import { collectUnflushedTime } from './tracking-messages';
 
 async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMessageContext): Promise<void> {
   const state = commit.state;
@@ -31,6 +32,8 @@ async function applyAuthCommit(commit: AuthCommitResult, context: BackgroundMess
 }
 
 async function finalizeActiveSession(context: BackgroundMessageContext, reason: string): Promise<void> {
+  const running = tracker.getCurrentSession();
+  if (running) await collectUnflushedTime(running);
   const entry = tracker.finalizeSession();
   if (entry) {
     await context.savePendingEntry(entry);

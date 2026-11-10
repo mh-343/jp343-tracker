@@ -3,7 +3,7 @@ import { STORAGE_KEYS } from '../../types';
 import { withStorageLock } from '../storage-lock';
 import { readSyncPending } from './sync-queue';
 import { stableUserId } from '../auth-helpers';
-import { loadUserState, readOwnedServerSessions } from '../server-cache';
+import { isContextStillCurrent, loadUserState, readOwnedServerSessions, type ServerRequestContext } from '../server-cache';
 import { canonicalServerEntryId } from './server-delete';
 import { applyStatsSubtraction, loadStats } from './stats-managers';
 import { withStatsUpdate } from './stats-snapshot';
@@ -61,8 +61,9 @@ export function selectServerDeletedEntries(
     const id = canonicalServerEntryId(entry.serverEntryId);
     if (id === null || presentIds.has(id)) return false;
 
+    // server keeps seconds, the client keeps ms
     const loggedAt = parseServerTime(entry.date);
-    if (!Number.isFinite(loggedAt) || loggedAt <= windowMin) return false;
+    if (!Number.isFinite(loggedAt) || loggedAt < windowMin + 1000) return false;
 
     if (!entry.syncedAt) return false;
     const syncedAt = parseServerTime(entry.syncedAt);
@@ -71,9 +72,15 @@ export function selectServerDeletedEntries(
   });
 }
 
-export async function reconcileDeletedServerEntries(requestedAt: number, requestLimit: number): Promise<void> {
+export async function reconcileDeletedServerEntries(
+  requestedAt: number,
+  requestLimit: number,
+  context: ServerRequestContext
+): Promise<void> {
   await withStorageLock(async () => {
     try {
+      // a delete in between shrinks the cache
+      if (!await isContextStillCurrent(context)) return;
       const owner = stableUserId(await loadUserState());
       if (owner === null) return;
       const envelope = await readOwnedServerSessions(owner);

@@ -1,6 +1,7 @@
 import type { TrackingSession, ActiveTabInfo, ActivityType } from '../../types';
 import { STORAGE_KEYS } from '../../types';
 import type { createPlayerCard } from './player-card';
+import { PLATFORM_LABELS } from '../../lib/platform-labels';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -78,7 +79,10 @@ export function createManualTrack(options: ManualTrackOptions): {
         elements.noSession.style.display = playerCard.visible() ? 'none' : 'block';
         const noSessionTitle = document.getElementById('noSessionTitle');
         const noSessionHint = document.getElementById('noSessionHint');
-        if (activeTabInfo.isStreamingSite && noSessionTitle && noSessionHint) {
+        if (activeTabInfo.disabledPlatform && noSessionTitle && noSessionHint) {
+          noSessionTitle.textContent = `${PLATFORM_LABELS[activeTabInfo.disabledPlatform]} tracking is off`;
+          noSessionHint.textContent = 'Turn it back on in Settings > Platforms';
+        } else if (activeTabInfo.isStreamingSite && noSessionTitle && noSessionHint) {
           noSessionTitle.textContent = 'Waiting for playback';
           noSessionHint.textContent = 'Start a video to auto-track';
         } else if (noSessionTitle && noSessionHint) {

@@ -16,7 +16,7 @@ import { getCustomSitesState, allowedCustomSiteHost } from './custom-sites';
 import { getPlayerLive } from './mpchc-live';
 import { applyCustomSiteRename, getCustomSiteName, normalizeCustomTitle } from './custom-site-names';
 import type { BackgroundMessageContext } from './message-context';
-import { isPlatformDisabled } from '../platform-toggles';
+import { isPlatformDisabled, platformForUrl } from '../platform-toggles';
 
 const jpCheckCache = new Map<string, LangSignalSource | null>();
 
@@ -99,7 +99,7 @@ export function endStateBelongsToSession(
   return true;
 }
 
-async function collectUnflushedTime(
+export async function collectUnflushedTime(
   session: TrackingSession,
   recordDiagnostic?: (code: string, platform?: string) => void
 ): Promise<void> {
@@ -698,21 +698,9 @@ export async function handleTrackingMessage(
         return { success: false, error: 'Cannot track browser pages' };
       }
 
-      const streamingDomains = [
-        /youtube\.com/,
-        /netflix\.com/,
-        /crunchyroll\.com/,
-        /primevideo\.com/,
-        /amazon\.\w+.*\/gp\/video/,
-        /disneyplus\.com/,
-        /cijapanese\.com/,
-        /nijapanese\.com/,
-        /nihongo-jikan\.com/,
-        /open\.spotify\.com/,
-        /twitch\.tv/,
-        /app\.asbplayer\.dev/
-      ];
-      let isStreamingSite = streamingDomains.some(p => p.test(tab.url || ''));
+      const tabPlatform = platformForUrl(tab.url);
+      let isStreamingSite = tabPlatform !== null;
+      const tabPlatformOff = tabPlatform !== null && isPlatformDisabled(await context.loadSettings(), tabPlatform);
       if (!isStreamingSite) {
         try {
           const host = new URL(tab.url).hostname.replace(/^www\./, '');
@@ -733,7 +721,8 @@ export async function handleTrackingMessage(
           url: tab.url,
           title: tab.title || 'Untitled',
           domain: domain,
-          isStreamingSite: isStreamingSite
+          isStreamingSite: isStreamingSite,
+          disabledPlatform: tabPlatformOff ? tabPlatform : null
         }
       };
     }
