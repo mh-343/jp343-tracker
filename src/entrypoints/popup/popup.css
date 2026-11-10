@@ -301,12 +301,58 @@ body {
   text-shadow: none;
 }
 
-.session-timer .ad-label {
-  display: block;
+.ad-label {
   font-size: 11px;
   color: var(--warning);
-  margin-top: 4px;
+  margin-top: 6px;
 }
+
+.session-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-meta .session-platform {
+  flex: none;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-meta .channel-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 6px;
+}
+.session-meta .channel-label { display: none; }
+.session-meta .channel-name::before {
+  content: '·';
+  margin-right: 6px;
+}
+.session-meta .btn-block,
+.session-meta .btn-allow {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.session-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.session-controls .session-timer {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+.session-controls .button-row { flex: none; }
+.session-controls .btn { flex: none; }
+.session-controls .btn-danger { min-width: 108px; }
 
 .player-hint {
   text-align: center;
@@ -440,6 +486,68 @@ body {
   transition: transform 0.2s;
 }
 .pending-header:hover .pending-collapse-arrow { opacity: 1; }
+.pending-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sessions-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.15s ease;
+}
+.sessions-expand:hover {
+  opacity: 1;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--accent);
+}
+.sessions-back {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px 2px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sessions-back:hover {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+}
+.sessions-expand:focus-visible,
+.sessions-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+body.sessions-full .session-card,
+body.sessions-full .stats-bar,
+body.sessions-full .goal-micro-wrap,
+body.sessions-full .week-bars,
+body.sessions-full .channel-section,
+body.sessions-full .spotify-filter-section,
+body.sessions-full .sync-issues,
+body.sessions-full .pending-header-actions {
+  display: none !important;
+}
+body.sessions-full .pending-header { cursor: default; }
+body.sessions-full .pending-header:hover { color: var(--text-secondary); }
+body.sessions-full .sessions-back { display: flex; }
+body.sessions-full .pending-list { display: block !important; }
 
 .pending-info {
   display: flex;
@@ -1632,6 +1740,23 @@ body {
   .resize-grabber::before {
     width: 40px;
     height: 4px;
+  }
+  .pending-header-actions {
+    gap: 14px;
+  }
+  .session-meta .btn-block,
+  .session-meta .btn-allow {
+    padding: 6px 10px;
+  }
+  .sessions-expand {
+    width: 44px;
+    height: 44px;
+    margin: -6px 0;
+  }
+  .sessions-back {
+    min-height: 44px;
+    margin: -6px 0;
+    padding: 0 14px 0 4px;
   }
 }
 

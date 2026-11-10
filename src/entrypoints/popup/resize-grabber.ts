@@ -3,11 +3,24 @@ import { STORAGE_KEYS } from '../../types';
 const POPUP_MIN_HEIGHT = 450;
 const POPUP_MAX_HEIGHT = 600;
 
-export function initResizeGrabber(grabber: HTMLElement): void {
+export interface PopupHeightControl {
+  setSuspended: (suspended: boolean) => void;
+}
+
+export function initResizeGrabber(grabber: HTMLElement): PopupHeightControl {
+  let storedHeight: number | null = null;
+  let suspended = false;
+
+  function applyHeight(): void {
+    grabber.hidden = suspended;
+    document.body.style.height = !suspended && storedHeight !== null ? `${storedHeight}px` : '';
+  }
+
   browser.storage.local.get(STORAGE_KEYS.POPUP_HEIGHT).then(result => {
     const stored = result[STORAGE_KEYS.POPUP_HEIGHT];
     if (typeof stored === 'number' && stored >= POPUP_MIN_HEIGHT && stored <= POPUP_MAX_HEIGHT) {
-      document.body.style.height = `${stored}px`;
+      storedHeight = stored;
+      applyHeight();
     }
   });
 
@@ -15,6 +28,7 @@ export function initResizeGrabber(grabber: HTMLElement): void {
 
   function saveHeight(): void {
     const h = document.body.offsetHeight;
+    storedHeight = h;
     browser.storage.local.set({ [STORAGE_KEYS.POPUP_HEIGHT]: h }).catch(() => {});
   }
 
@@ -58,7 +72,16 @@ export function initResizeGrabber(grabber: HTMLElement): void {
   });
 
   grabber.addEventListener('dblclick', () => {
+    storedHeight = null;
     document.body.style.height = '';
     browser.storage.local.remove(STORAGE_KEYS.POPUP_HEIGHT).catch(() => {});
   });
+
+  return {
+    setSuspended(next: boolean): void {
+      if (next === suspended) return;
+      suspended = next;
+      applyHeight();
+    }
+  };
 }

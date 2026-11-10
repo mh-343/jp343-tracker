@@ -16,7 +16,9 @@ import { createGoalBar } from './goal-bar';
 import { createManualTrack } from './manual-track';
 import { initTitleEdit } from './title-edit';
 import { createStatsBar, renderWeekBars } from './stats-bar';
-import { initResizeGrabber } from './resize-grabber';
+import { initResizeGrabber, type PopupHeightControl } from './resize-grabber';
+import { createSessionsView } from './sessions-view';
+import { initCollapsible } from './collapsible';
 
 const DEBUG_MODE = import.meta.env.DEV;
 const log = DEBUG_MODE ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -54,6 +56,8 @@ const elements = {
   toggleLabel: document.getElementById('toggleLabel') as HTMLElement,
   sessionCard: document.getElementById('sessionCard') as HTMLElement,
   channelSection: document.getElementById('channelSection') as HTMLElement,
+  channelInfo: document.getElementById('channelInfo') as HTMLElement,
+  sessionMeta: document.getElementById('sessionMeta') as HTMLElement,
   channelLabel: document.getElementById('channelLabel') as HTMLElement,
   currentChannelName: document.getElementById('currentChannelName') as HTMLElement,
   btnBlockChannel: document.getElementById('btnBlockChannel') as HTMLButtonElement,
@@ -95,6 +99,9 @@ let baseDurationMs = 0;
 let baseTimestamp = 0;
 let sessionTicking = false;
 let lastDisplayedSecond = -1;
+let sessionsCollapsed = false;
+let sessionsHasEntries = true;
+let popupHeight: PopupHeightControl | null = null;
 const playerCard = createPlayerCard(document.getElementById('playerSession') as HTMLElement);
 
 function showToast(message: string, type: 'warning' | 'success' = 'warning', duration = 3000): void {
@@ -203,34 +210,6 @@ function initSpotifyFilterChips(): void {
   });
 }
 
-function initCollapsible(headerId: string, bodyId: string, arrowId: string, cardId: string): void {
-  const header = document.getElementById(headerId);
-  const body = document.getElementById(bodyId);
-  const arrow = document.getElementById(arrowId);
-  if (!header || !body || !arrow) return;
-  let collapsed = false;
-  browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
-    const ids: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
-    if (ids.includes(cardId)) {
-      collapsed = true;
-      body.style.display = 'none';
-      arrow.style.transform = 'rotate(-90deg)';
-    }
-  });
-  header.addEventListener('click', () => {
-    collapsed = !collapsed;
-    body.style.display = collapsed ? 'none' : '';
-    arrow.style.transform = collapsed ? 'rotate(-90deg)' : '';
-    browser.storage.local.get(STORAGE_KEYS.COLLAPSED_CARDS).then(result => {
-      const current: string[] = result[STORAGE_KEYS.COLLAPSED_CARDS] || [];
-      const updated = collapsed
-        ? [...current.filter(id => id !== cardId), cardId]
-        : current.filter(id => id !== cardId);
-      browser.storage.local.set({ [STORAGE_KEYS.COLLAPSED_CARDS]: updated });
-    });
-  });
-}
-
 const manualTrack = createManualTrack({
   elements,
   playerCard,
@@ -263,10 +242,14 @@ function updateChannelDisplay(
   session: TrackingSession | null,
   skippedChannel?: { channelId: string; channelName: string; channelUrl: string | null; platform: string } | null
 ): void {
+  const channelHost = session?.channelId ? elements.sessionMeta : elements.channelSection;
+  if (elements.channelInfo.parentElement !== channelHost) channelHost.appendChild(elements.channelInfo);
+  elements.btnBlockChannel.title = '';
   if (session && session.channelId) {
     currentChannelId = session.channelId;
-    elements.channelSection.style.display = 'block';
+    elements.channelSection.style.display = 'none';
     elements.channelLabel.textContent = session.platform === 'youtube' ? 'Channel' : 'Title';
+    elements.btnBlockChannel.title = session.platform === 'youtube' ? 'Block this channel' : 'Block this title';
     elements.currentChannelName.textContent = session.channelName || session.channelId;
     (elements.currentChannelName.parentElement as HTMLElement).style.display = '';
     const allowed = session.platform === 'youtube' && trackJapaneseOnly
@@ -304,7 +287,7 @@ function updateChannelDisplay(
     }
   } else {
     currentChannelId = null;
-    elements.channelSection.style.display = blockedChannels.length > 0 ? 'block' : 'none';
+    elements.channelSection.style.display = 'none';
     (elements.currentChannelName.parentElement as HTMLElement).style.display = 'none';
     elements.btnBlockChannel.style.display = 'none';
     elements.btnAllowChannel.style.display = 'none';
@@ -427,6 +410,15 @@ function tickTimerDisplay(): void {
   if (displaySecond < lastDisplayedSecond) return;
   lastDisplayedSecond = displaySecond;
   elements.sessionTimer.textContent = formatDurationMs(displayMs);
+  fitTimerFont(elements.sessionTimer);
+}
+
+function fitTimerFont(el: HTMLElement): void {
+  el.style.fontSize = '';
+  for (const size of [20, 18, 16, 14]) {
+    if (el.scrollWidth <= el.clientWidth) return;
+    el.style.fontSize = `${size}px`;
+  }
 }
 
 function updateSessionDisplay(
@@ -509,10 +501,26 @@ function updateStatusBanners(session: TrackingSession | null): void {
 
 function updatePendingDisplay(entries: PendingEntry[]): void {
   elements.pendingSection.style.display = entries.length > 0 ? 'flex' : 'none';
+  sessionsHasEntries = entries.length > 0;
+  if (!sessionsHasEntries) sessionsView.exit();
+  syncPopupHeight();
 }
 
+function syncPopupHeight(): void {
+  const listHidden = sessionsCollapsed || !sessionsHasEntries;
+  popupHeight?.setSuspended(listHidden && !sessionsView.isFull());
+}
 
 const syncIssues = createSyncIssues(document.getElementById('syncIssues')!, () => _popupDayStartHour);
+const sessionsView = createSessionsView({
+  expandBtn: document.getElementById('btnSessionsExpand') as HTMLButtonElement,
+  backBtn: document.getElementById('btnSessionsBack') as HTMLButtonElement,
+  listEl: elements.pendingList,
+  onChange: () => {
+    syncPopupHeight();
+    void fetchPendingEntries();
+  }
+});
 async function fetchPendingEntries(): Promise<void> {
   void syncIssues.refresh();
   try {
@@ -525,6 +533,7 @@ async function fetchPendingEntries(): Promise<void> {
         getDayStartHour: () => _popupDayStartHour,
         showAttention: _popupShowAttention,
         visibleActive: popupVisibleActive,
+        maxGroups: sessionsView.maxGroups(),
         onEntriesChanged: updatePendingDisplay
       });
     }
@@ -703,9 +712,16 @@ const { fetchAndRenderStats } = createStatsBar({ statStreak: elements.statStreak
 // Theme Toggle
 initThemeToggle('themeTogglePopup');
 
-initCollapsible('pendingHeader', 'pendingList', 'pendingCollapseArrow', 'popup-sessions');
+initCollapsible('pendingHeader', 'pendingList', 'pendingCollapseArrow', 'popup-sessions', {
+  isLocked: sessionsView.isFull,
+  onChange: (collapsed) => {
+    sessionsCollapsed = collapsed;
+    syncPopupHeight();
+  }
+});
 
-initResizeGrabber(elements.resizeGrabber);
+popupHeight = initResizeGrabber(elements.resizeGrabber);
+syncPopupHeight();
 
 // Init
 loadAndApplySettings().then(() => fetchAndRenderStats());

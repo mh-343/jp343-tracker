@@ -9,6 +9,7 @@ export interface PendingListDeps {
   getDayStartHour: () => number;
   showAttention: boolean;
   visibleActive: boolean;
+  maxGroups: number;
   onEntriesChanged: (entries: PendingEntry[]) => void;
 }
 
@@ -361,7 +362,7 @@ export function renderPendingList(entries: PendingEntry[], deps: PendingListDeps
   const grouped = groupEntriesByVideo(entries);
   const sorted = [...grouped]
     .sort((a, b) => new Date(b.primary.date).getTime() - new Date(a.primary.date).getTime())
-    .slice(0, 8);
+    .slice(0, deps.maxGroups);
 
   deps.listEl.textContent = '';
   for (const g of sorted) {

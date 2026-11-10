@@ -75,19 +75,20 @@
               </svg>
             </button>
           </div>
-          <div class="session-platform" id="sessionPlatform">youtube.com</div>
+          <div class="session-meta" id="sessionMeta">
+            <div class="session-platform" id="sessionPlatform">youtube.com</div>
+          </div>
         </div>
       </div>
 
-      <div class="session-timer" id="sessionTimer">
-        0m 0s
-        <span class="ad-label" id="adLabel" style="display: none;">Ad detected - paused</span>
+      <div class="session-controls">
+        <div class="session-timer" id="sessionTimer">0m 0s</div>
+        <div class="button-row">
+          <button class="btn btn-secondary" id="btnPause">Pause</button>
+          <button class="btn btn-danger" id="btnStop">Stop & Save</button>
+        </div>
       </div>
-
-      <div class="button-row">
-        <button class="btn btn-secondary" id="btnPause">Pause</button>
-        <button class="btn btn-danger" id="btnStop">Stop & Save</button>
-      </div>
+      <div class="ad-label" id="adLabel" style="display: none;">Ad detected - paused</div>
 
       <div class="attention-row" id="attentionRow" style="display: none;">
         <span class="attention-label">Attention</span>
@@ -127,8 +128,8 @@
   <div class="week-bars" id="weekBars"></div>
 
   <div class="channel-section" id="channelSection" style="display: none;">
-    <div class="channel-info">
-      <span class="channel-name"><span id="channelLabel">Channel</span>: <strong id="currentChannelName">-</strong></span>
+    <div class="channel-info" id="channelInfo">
+      <span class="channel-name"><span class="channel-label"><span id="channelLabel">Channel</span>: </span><strong id="currentChannelName">-</strong></span>
       <button class="btn-block" id="btnBlockChannel">Block</button>
       <button class="btn-allow" id="btnAllowChannel" style="display: none;" title="Always track this channel (whitelist)">Allow</button>
     </div>
@@ -159,8 +160,12 @@
   <section class="sync-issues" id="syncIssues" aria-label="Sync issues" hidden></section>
   <div class="pending-section" id="pendingSection" style="display: none;">
     <div class="pending-header" id="pendingHeader">
-      <span>Sessions</span>
-      <span class="pending-collapse-arrow" id="pendingCollapseArrow">&#x25BE;</span>
+      <button class="sessions-back" id="btnSessionsBack" title="Back to overview"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>Back</button>
+      <span class="pending-title">Sessions</span>
+      <span class="pending-header-actions">
+        <button class="sessions-expand" id="btnSessionsExpand" title="Show sessions in full view" aria-label="Show sessions in full view" aria-expanded="false"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+        <span class="pending-collapse-arrow" id="pendingCollapseArrow">&#x25BE;</span>
+      </span>
     </div>
     <div class="pending-list" id="pendingList"></div>
   </div>
