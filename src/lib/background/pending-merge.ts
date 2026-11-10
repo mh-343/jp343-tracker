@@ -1,4 +1,5 @@
 import type { PendingEntry } from '../../types';
+import { MAX_ENTRY_MIN } from '../../types';
 import { getLocalDateString } from '../format-utils';
 import { readerForPlatform } from '../reader-sources';
 import { resetEntrySync } from '../sync-policy';
@@ -22,6 +23,7 @@ export function findMergeTarget(
   return pending.find(e =>
     e.project_id === entry.project_id &&
     (isReaderEntry || e.project === entry.project) &&
+    e.duration_min + entry.duration_min <= MAX_ENTRY_MIN &&
     sameAttentionKind(e, entry) &&
     getLocalDateString(new Date(e.date), dayStartHour) === entryDay
   );

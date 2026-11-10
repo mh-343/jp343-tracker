@@ -1,20 +1,17 @@
 import type { ReaderState, ReaderVolumeSnapshot, PendingEntry, JP343UserState } from '../../types';
-import { DEFAULT_READER_STATE, SENSOR_VERSION } from '../../types';
+import { DEFAULT_READER_STATE, MAX_ENTRY_MIN, SENSOR_VERSION } from '../../types';
 import type { BackgroundMessageContext } from './message-context';
 import type { ReaderSource } from '../reader-sources';
 import { READER_SOURCE_LIST } from '../reader-sources';
 import { loadUserState } from '../server-cache';
 import { stableUserId } from '../auth-helpers';
 import { generateProjectId } from '../time-tracker';
-import { getLocalDateString } from '../format-utils';
 import { withStorageLock } from '../storage-lock';
 import { isValidCharPosition } from '../entry-payload';
 import { adoptTtuIds, rekeyPendingTtu } from './ttu-identity';
 import { readerDelta } from './reader-delta';
 
 const WALLCLOCK_SLACK_MIN = 1;
-const DAILY_CAP_MIN = 720;
-const DAY_RETENTION = 8;
 
 const DEBUG = import.meta.env.DEV;
 const log = DEBUG ? console.log.bind(console) : (..._args: unknown[]) => {};
@@ -22,7 +19,7 @@ const log = DEBUG ? console.log.bind(console) : (..._args: unknown[]) => {};
 async function loadReaderState(source: ReaderSource): Promise<ReaderState> {
   const result = await browser.storage.local.get(source.stateKey);
   const stored = result[source.stateKey] as ReaderState | undefined;
-  if (!stored) return { ...DEFAULT_READER_STATE, baselines: {}, creditedByDay: {}, completedVolumes: {}, pendingCompletionPushes: [] };
+  if (!stored) return { ...DEFAULT_READER_STATE, baselines: {}, completedVolumes: {}, pendingCompletionPushes: [] };
   return {
     ...DEFAULT_READER_STATE,
     ...stored,
@@ -289,24 +286,13 @@ function readingFields(source: ReaderSource, vol: ReaderVolumeSnapshot): Partial
   };
 }
 
-function pruneDays(creditedByDay: Record<string, number>): Record<string, number> {
-  const days = Object.keys(creditedByDay).sort();
-  if (days.length <= DAY_RETENTION) return creditedByDay;
-  const keep = new Set(days.slice(days.length - DAY_RETENTION));
-  const out: Record<string, number> = {};
-  for (const d of days) if (keep.has(d)) out[d] = creditedByDay[d];
-  return out;
-}
-
 export async function ingestReaderSnapshot(
   source: ReaderSource,
   volumes: Record<string, ReaderVolumeSnapshot>,
   ctx: BackgroundMessageContext
 ): Promise<void> {
   const settings = await ctx.loadSettings();
-  const dayStartHour = settings.dayStartHour || 0;
   const now = Date.now();
-  const today = getLocalDateString(new Date(now), dayStartHour);
 
   const entries: PendingEntry[] = [];
 
@@ -339,12 +325,10 @@ export async function ingestReaderSnapshot(
       if (!baseline) continue;
 
       const elapsedMin = Math.floor((now - baseline.lastObservedAt) / 60000) + WALLCLOCK_SLACK_MIN;
-      const usedToday = state.creditedByDay[today] || 0;
-      const credit = Math.min(minutesDelta, Math.max(0, elapsedMin), Math.max(0, DAILY_CAP_MIN - usedToday));
+      const credit = Math.min(minutesDelta, Math.max(0, elapsedMin), MAX_ENTRY_MIN);
 
       if (credit > 0 || charsDelta > 0) {
         if (credit > 0) {
-          state.creditedByDay[today] = usedToday + credit;
           creditedTotal += credit;
           state.totalChars = (state.totalChars ?? 0) + charsDelta;
         }
@@ -377,7 +361,6 @@ export async function ingestReaderSnapshot(
       }
     }
 
-    state.creditedByDay = pruneDays(state.creditedByDay);
     state.lastSyncAt = now;
     state.totalMinutes += creditedTotal;
     await saveReaderState(source, state);

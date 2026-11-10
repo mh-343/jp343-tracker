@@ -75,6 +75,8 @@ export type AsrState = 'ja' | 'other' | 'no_asr_track';
 export type SensorEstimateState = 'ok' | 'music_title' | 'low_speech' | 'no_transcript';
 export type TrackingMode = 'jp_only' | 'all';
 export const SENSOR_VERSION = 1;
+// server rejects entries over 24h
+export const MAX_ENTRY_MIN = 1440;
 
 export interface VideoState {
   isPlaying: boolean;
@@ -563,7 +565,6 @@ export interface ReaderBaseline {
 export interface ReaderState {
   enabled: boolean;
   baselines: Record<string, ReaderBaseline>;
-  creditedByDay: Record<string, number>;
   lastSyncAt: number | null;
   totalMinutes: number;
   totalChars: number;
@@ -585,7 +586,6 @@ export interface ReaderState {
 export const DEFAULT_READER_STATE: ReaderState = {
   enabled: false,
   baselines: {},
-  creditedByDay: {},
   lastSyncAt: null,
   totalMinutes: 0,
   totalChars: 0,
